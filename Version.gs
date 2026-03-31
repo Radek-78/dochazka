@@ -3,9 +3,23 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.4.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.4.2",
+    "date": "2026-03-31",
+    "changes": [
+      "Testovaci nasazeni"
+    ]
+  },
+  {
+    "version": "2.4.1",
+    "date": "2026-03-31",
+    "changes": [
+      "Test commit"
+    ]
+  },
   {
     "version": "2.4.0",
     "date": "2026-03-28",
