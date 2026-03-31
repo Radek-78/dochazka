@@ -478,7 +478,10 @@
             <span>Aktivita</span>
           </button>
         </div>
-        <div id="deploy-time-footer">v2.4.0 | RBAC Scoped Engine Ready | Aktualizace: 28.03.2026 09:40</div>
+        <div id="deploy-time-footer">
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.4.0</a> 
+          | RBAC Scoped Engine Ready | Aktualizace: 28.03.2026 09:40
+        </div>
       </footer>
     </div>
     <? } ?>
@@ -1443,6 +1446,63 @@
   <?!= include('App_js') ?>
   <?!= include('Admin_js') ?>
   <? } ?>
+  <!-- CHANGELOG MODAL -->
+  <div id="changelog-modal" class="footer-modal-backdrop" style="display:none;">
+    <div class="footer-modal-card" style="width:600px; max-height: 80vh;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <div class="modal-header-icon">🚀</div>
+        <h2 class="modal-header-title">Co je nového</h2>
+        <p class="modal-header-sub">Historie změn a aktualizací systému</p>
+        <button class="modal-close-btn" onclick="document.getElementById('changelog-modal').style.display='none'">&times;</button>
+      </div>
+      <div class="footer-modal-body" style="overflow-y: auto;">
+        <div id="changelog-content" class="changelog-list">
+          <!-- Dynamicky plněno z Version.gs -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * Zobrazí modál s historií změn (Changelog).
+     */
+    async function _showChangelog() {
+      const modal = document.getElementById('changelog-modal');
+      const content = document.getElementById('changelog-content');
+      if (!modal || !content) return;
+
+      modal.style.display = 'flex';
+      content.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">Načítám seznam změn...</div>';
+
+      try {
+        const info = await callServer('getAppVersionInfo');
+        if (info && info.changelog) {
+          content.innerHTML = info.changelog.map(item => `
+            <div class="changelog-item" style="margin-bottom: 24px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                <span style="font-weight: 800; font-size: 16px; color: var(--primary);">v${item.version}</span>
+                <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">${new Date(item.date).toLocaleDateString('cs-CZ')}</span>
+              </div>
+              <ul style="margin: 0; padding-left: 20px; list-style-type: none;">
+                ${item.changes.map(change => `
+                  <li style="position: relative; font-size: 13px; color: #334155; margin-bottom: 5px; line-height: 1.5;">
+                    <span style="position: absolute; left: -15px; color: var(--primary); font-weight: 900;">•</span>
+                    ${change}
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          `).join('');
+        } else {
+          content.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444;">Nepodařilo se načíst data o změnách.</div>';
+        }
+      } catch (e) {
+        content.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444;">Chyba: ' + e.toString() + '</div>';
+      }
+    }
+  </script>
 </body>
 
 </html>

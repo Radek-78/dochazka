@@ -49,6 +49,16 @@ function getUserEmail() {
 }
 
 /**
+ * Vrátí informace o verzi a changelogu aplikace.
+ */
+function getAppVersionInfo() {
+  return { 
+    version: typeof APP_VERSION !== 'undefined' ? APP_VERSION : "v0.0.0",
+    changelog: typeof APP_CHANGELOG !== 'undefined' ? APP_CHANGELOG : []
+  };
+}
+
+/**
  * Serverová funkce pro spuštění inicializace z UI.
  */
 function runInitialization() {
