@@ -1,0 +1,18 @@
+# Dependency directories
+node_modules/
+
+# IDE and Assistant files
+.vscode/
+.idea/
+.claude/
+.gemini/
+
+# OS-specific files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temporary files and logs
+*.log
+tmp/
+*.tmp

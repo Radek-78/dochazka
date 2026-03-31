@@ -1,0 +1,35 @@
+<div id="admin-module" class="module-container">
+    <div class="admin-header">
+        <h2>Administrace - Organizační struktura</h2>
+        <div class="admin-actions">
+            <button class="btn btn-sm" onclick="admin.showAddLocation()">+ Nová Lokace</button>
+            <button class="btn btn-sm" onclick="admin.showAddSection()">+ Nový Úsek</button>
+        </div>
+    </div>
+
+    <div class="admin-grid">
+        <!-- Lokace a Úseky -->
+        <div class="admin-card">
+            <h3>Lokace a Úseky</h3>
+            <div id="org-list" class="list-container">
+                <p class="loading-text">Načítání struktury...</p>
+            </div>
+        </div>
+
+        <!-- Oddělení a Skupiny (bude doplněno příště) -->
+        <div class="admin-card">
+            <h3>Detaily struktury</h3>
+            <div id="org-details" class="list-container">
+                <p class="info-text">Vyberte úsek pro zobrazení oddělení.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modální okna pro přidání -->
+    <div id="admin-modal" class="modal-overlay step-hidden">
+        <div class="modal-content">
+            <span class="close-modal" onclick="admin.closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+</div>

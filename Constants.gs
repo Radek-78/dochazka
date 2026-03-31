@@ -1,0 +1,94 @@
+/**
+ * Globální konstanty a konfigurace aplikace.
+ */
+
+var CONFIG = {
+  APP_NAME: "Docházkový systém + Planner",
+  FOLDER_NAME: "Docházkový systém + Planner",
+  // Script Properties Keys
+  PROP_INITIALIZED: "APP_INITIALIZED",
+  PROP_SAFE_MODE: "SAFE_MODE",
+  PROP_SUPERADMIN_EMAIL: "SUPERADMIN_EMAIL",
+  PROP_SS_CORE_ID: "SPREADSHEET_CORE_ID",
+  PROP_SS_TRANSACTION_ID: "SPREADSHEET_TRANSACTION_ID",
+  PROP_SS_SYSTEM_ID: "SPREADSHEET_SYSTEM_ID",
+  PROP_DEFAULT_LOCS_SEEDED: "DEFAULT_LOCS_SEEDED"
+};
+
+var DB_SHEETS = {
+  CORE: {
+    LOCATIONS: "LOCATIONS",
+    SECTIONS: "SECTIONS",
+    DEPARTMENTS: "DEPARTMENTS",
+    GROUPS: "GROUPS",
+    POSITIONS: "POSITIONS",
+    USERS: "USERS",
+    ATTENDANCE_STATUSES: "ATTENDANCE_STATUSES",
+    VACATION_CONFIG: "VACATION_CONFIG",
+    PLANNER_GROUPS: "PLANNER_GROUPS",
+    PLANNER_GROUP_MEMBERS: "PLANNER_GROUP_MEMBERS",
+    SECTION_VIEW_CONFIG: "SECTION_VIEW_CONFIG",
+    OFFICE_MAPS: "OFFICE_MAPS",
+    NAMED_DAYS: "NAMED_DAYS",
+    RBAC_CONFIG: "RBAC_CONFIG"
+  },
+  TRANSACTION: {
+    ATTENDANCE: "ATTENDANCE",
+    PLANNER_EVENTS: "PLANNER_EVENTS",
+    MAP_RESERVATIONS: "MAP_RESERVATIONS"
+  },
+  SYSTEM: {
+    NOTIFICATIONS: "NOTIFICATIONS",
+    AUDIT_LOG: "AUDIT_LOG"
+  }
+};
+
+var ROLES = {
+  SYSTEM: {
+    SUPERADMIN: "SUPERADMIN",
+    ADMIN: "ADMIN",
+    LEADER: "LEADER",
+    USER: "USER"
+  },
+  ORG: {
+    SECTION_LEADER: "SECTION_LEADER",
+    SECTION_DEPUTY: "SECTION_DEPUTY",
+    DEPT_LEADER: "DEPT_LEADER",
+    DEPT_DEPUTY: "DEPT_DEPUTY",
+    MEMBER: "MEMBER"
+  }
+};
+
+const ATTENDANCE_SLOTS = {
+  AM: "AM",
+  PM: "PM",
+  ALL_DAY: "ALL_DAY"
+};
+
+/** Stav autorizace uživatele (pole users.auth_status) */
+const AUTH_STATUS = {
+  PENDING:  "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED"
+};
+
+/** Stav schválení docházkového záznamu (pole attendance.approved) */
+const APPROVAL_STATUS = {
+  PENDING:      "pending",  // čeká na schválení
+  APPROVED:     "true",     // schváleno
+  NOT_REQUIRED: "false"     // schválení není třeba
+};
+
+/** Typy notifikací (pole notifications.type) */
+const NOTIFICATION_TYPES = {
+  REGISTRATION_REQUEST:      "REGISTRATION_REQUEST",
+  VACATION_APPROVAL_REQUEST: "VACATION_APPROVAL_REQUEST",
+  VACATION_APPROVED:         "VACATION_APPROVED",
+  VACATION_REJECTED:         "VACATION_REJECTED"
+};
+
+/** Typy systému dovolených (pole vacation_config.system_type) */
+const VACATION_SYSTEM_TYPE = {
+  GLOBAL:     "GLOBAL",
+  INDIVIDUAL: "INDIVIDUAL"
+};

@@ -1,0 +1,147 @@
+<script>
+    const wizard = {
+        currentStep: 0,
+        totalSteps: 4,
+        state: {
+            locationId: null,
+            sectionId: null
+        },
+        locations: [],
+
+        showLoading: function (show, msg = "Zpracovávám...") {
+            const overlay = document.getElementById('loading-overlay');
+            const msgEl = document.getElementById('loading-msg');
+            if (msgEl) msgEl.innerText = msg;
+            if (overlay) overlay.classList.toggle('step-hidden', !show);
+        },
+
+        updateProgress: function (step) {
+            // Výpočet progresu: pro 4 body (0,1,2,3) jsou mezery (4-1) = 3
+            // Pokud jsme v kroku 4 (vše hotovo), je progres 100%
+            const displayStep = Math.min(step, this.totalSteps - 1);
+            const progress = (displayStep / (this.totalSteps - 1)) * 100;
+
+            const bar = document.getElementById('progress-bar');
+            if (bar) bar.style.width = progress + '%';
+
+            // Správa tříd na prvcích stepperu
+            for (let i = 0; i < this.totalSteps; i++) {
+                const ind = document.getElementById('step-ind-' + i);
+                if (!ind) continue;
+
+                ind.classList.toggle('active', i === step);
+                ind.classList.toggle('completed', i < step);
+            }
+        },
+
+        nextStep: function (targetStep) {
+            const currentEl = document.getElementById('step-' + this.currentStep);
+            const targetEl = document.getElementById('step-' + targetStep);
+
+            if (currentEl) currentEl.classList.add('step-hidden');
+            if (targetEl) targetEl.classList.remove('step-hidden');
+
+            this.currentStep = targetStep;
+            this.updateProgress(targetStep);
+        },
+
+        loadLocations: async function () {
+            try {
+                const result = await callServer('getAdminOrgData');
+                if (result.success) {
+                    this.locations = result.data.locations;
+                    const select = document.getElementById('wiz-loc-select');
+                    // Reset except first option
+                    while (select.options.length > 1) select.remove(1);
+
+                    this.locations.forEach(loc => {
+                        const opt = document.createElement('option');
+                        opt.value = loc.location_id;
+                        opt.text = loc.name + ' (' + loc.type + ')';
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (e) { console.error('Nelze načíst lokace', e); }
+        },
+
+        toggleLocationInput: function () {
+            const selectValue = document.getElementById('wiz-loc-select').value;
+            const newFields = document.getElementById('wiz-loc-new-fields');
+            if (newFields) {
+                newFields.style.display = (selectValue === 'NEW') ? 'block' : 'none';
+            }
+        },
+
+        runInit: async function () {
+            this.showLoading(true, "Vytvářím databázi a tabulky...");
+            try {
+                const result = await callServer('runInitialization');
+                if (result.success) {
+                    await this.loadLocations();
+                    this.nextStep(1);
+                } else {
+                    alert('Chyba při inicializaci: ' + result.error);
+                }
+            } catch (e) {
+                alert('Došlo k selhání komunikace se serverem.');
+            } finally {
+                this.showLoading(false);
+            }
+        },
+
+        saveLocation: async function () {
+            const selectValue = document.getElementById('wiz-loc-select').value;
+
+            if (selectValue !== 'NEW') {
+                this.state.locationId = selectValue;
+                this.nextStep(3);
+                return;
+            }
+
+            const name = document.getElementById('wiz-loc-name').value;
+            const type = document.getElementById('wiz-loc-type').value;
+            if (!name) return alert('Zadejte název lokace');
+
+            this.showLoading(true, "Ukládám lokaci...");
+            try {
+                const result = await callServer('addLocation', name, type);
+                if (result.success) {
+                    this.state.locationId = result.data.location_id;
+                    this.nextStep(3);
+                } else {
+                    alert('Chyba při ukládání lokace: ' + result.error);
+                }
+            } catch (e) { alert('Chyba serveru: ' + e.toString()); }
+            finally { this.showLoading(false); }
+        },
+
+        saveSection: async function () {
+            const name = document.getElementById('wiz-sec-name').value;
+            if (!name) return alert('Zadejte název úseku');
+
+            this.showLoading(true, "Ukládám a dokončuji nastavení...");
+            try {
+                const result = await callServer('wizardSaveAndComplete', name, this.state.locationId);
+                if (result.success) {
+                    this.state.finalUrl = result.data.url;
+                    this.nextStep(4);
+                } else {
+                    alert('Chyba: ' + result.error);
+                }
+            } catch (e) { alert('Chyba serveru'); }
+            finally { this.showLoading(false); }
+        },
+
+        finishWizard: function () {
+            // Vizuální zpětná vazba před přesměrováním
+            this.showLoading(true, "Spouštím aplikaci...");
+
+            // Přímé přesměrování (User Gesture)
+            if (this.state.finalUrl) {
+                window.top.location.href = this.state.finalUrl;
+            } else {
+                window.top.location.reload();
+            }
+        }
+    };
+</script>

@@ -1,0 +1,94 @@
+<div class="wizard-card" id="wizard-container">
+    <div class="wizard-stepper">
+        <div class="wizard-progress">
+            <div id="progress-bar" class="progress-fill" style="width: 0%;"></div>
+        </div>
+        <div class="step-item active" id="step-ind-0">
+            <div class="step-number">1</div>
+            <div class="step-label">Start</div>
+        </div>
+        <div class="step-item" id="step-ind-1">
+            <div class="step-number">2</div>
+            <div class="step-label">Admin</div>
+        </div>
+        <div class="step-item" id="step-ind-2">
+            <div class="step-number">3</div>
+            <div class="step-label">Lokace</div>
+        </div>
+        <div class="step-item" id="step-ind-3">
+            <div class="step-number">4</div>
+            <div class="step-label">Úsek</div>
+        </div>
+    </div>
+
+    <!-- Step 0: Inicializace DB -->
+    <div id="step-0" class="wizard-step">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Lidl-Logo.svg" alt="Lidl Logo" class="logo">
+        <h1>Vítejte v systému</h1>
+        <p>Aplikace potřebuje provést úvodní konfiguraci a vytvořit databázi ve vašem Google Drive.</p>
+        <button class="btn" onclick="wizard.runInit()">Spustit inicializaci</button>
+    </div>
+
+    <!-- Step 1: Potvrzení Superadmina -->
+    <div id="step-1" class="wizard-step step-hidden">
+        <h1>Nastavení Administrátora</h1>
+        <p>Váš účet byl detekován jako hlavní správce (SUPERADMIN).</p>
+        <div class="info-badge">
+            <?= getUserEmail() ?>
+        </div>
+        <button class="btn" onclick="wizard.nextStep(2)">Potvrdit a pokračovat</button>
+    </div>
+
+    <!-- Step 2: První Lokace -->
+    <div id="step-2" class="wizard-step step-hidden">
+        <h1>První Lokace</h1>
+        <p>Definujte, kde se vaše pracoviště nachází, nebo vyberte z přednastavených.</p>
+
+        <div class="wizard-input-group">
+            <label>Vyberte existující lokaci:</label>
+            <select id="wiz-loc-select" onchange="wizard.toggleLocationInput()">
+                <option value="NEW">-- Vytvořit novou lokaci --</option>
+            </select>
+        </div>
+
+        <div id="wiz-loc-new-fields">
+            <div class="wizard-input-group">
+                <label>Název nové lokace:</label>
+                <input type="text" id="wiz-loc-name" placeholder="Např. HQ Centrála Praha">
+            </div>
+            <div class="wizard-input-group">
+                <label>Typ:</label>
+                <select id="wiz-loc-type">
+                    <option value="HQ">Centrála (HQ)</option>
+                    <option value="LC">Logistické centrum (LC)</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="btn" onclick="wizard.saveLocation()">Pokračovat</button>
+    </div>
+
+    <!-- Step 3: První Úsek -->
+    <div id="step-3" class="wizard-step step-hidden">
+        <h1>První Úsek</h1>
+        <p>Úsek sdružuje několik oddělení (např. DL Warengeschäft).</p>
+        <input type="text" id="wiz-sec-name" placeholder="Název úseku">
+        <button class="btn" onclick="wizard.saveSection()">Pokračovat</button>
+    </div>
+
+    <!-- Step 4: Dokončení -->
+    <div id="step-4" class="wizard-step step-hidden">
+        <div class="success-icon">✓</div>
+        <h1>Konfigurace dokončena</h1>
+        <p>Základní organizační rámec byl nastaven. Nyní můžete vstoupit do administračního rozhraní a dozpracovat
+            detaily.</p>
+        <button class="btn" onclick="wizard.finishWizard()">Vstoupit do aplikace</button>
+    </div>
+
+    <div id="loading-overlay" class="modal-overlay step-hidden">
+        <div class="loader-card">
+            <div class="loader-spinner"></div>
+            <div id="loading-msg" class="loading-text-spinner">Zpracovávám...</div>
+        </div>
+    </div>
+</div>

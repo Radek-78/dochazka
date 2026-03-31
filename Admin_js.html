@@ -1,0 +1,3276 @@
+﻿<script>
+    /**
+     * Pomocné funkce pro bezpečné vkládání dat do HTML (ochrana proti XSS).
+     */
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+    // Validuje CSS barvu – povoluje pouze hex (#rrggbb, #rgb) a pojmenované barvy.
+    // Zabraňuje CSS injection přes hodnoty barev statusů.
+    function safeCssColor(val) {
+        if (!val) return '#94a3b8';
+        return /^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]+$/.test(String(val)) ? String(val) : '#94a3b8';
+    }
+
+    /**
+    * Logika pro Administraci - Nová architektura (OPRAVENÝ SCOPING A ROZŠÍŘENÉ SLOUPCE)
+    */
+    var admin = window.admin = {
+        data: null,
+        users: [],
+        statuses: [],
+        showInactiveUsers: true,
+        currentTab: 'users',
+        _expandedLocations: new Set(),
+        _locationsInitialized: false,
+        _sectionViewMode: {},       // { [sectionId]: 'structure' | 'config' }
+        _sectionConfigs: {},        // { [sectionId]: { section_id, show_leader_first, containers } }
+        _drag: null,                // drag&drop state
+        _addContainerData: null,    // temp data for add-container modal
+        namedDays: {},             // { "MM-DD": "Jméno" }
+        currentNamedDayMonth: new Date().getMonth() + 1,
+
+        /**
+        * Spustí se při přepnutí do Administrace
+        */
+        init: async function () {
+            console.log("Admin: Inicializace spuštěna...");
+            const overlay = document.getElementById('admin-init-overlay');
+            const statusEl = document.getElementById('admin-init-status');
+
+            if (overlay) overlay.style.display = 'flex';
+            if (statusEl) statusEl.textContent = "Načítám konfiguraci a data ze serveru...";
+            showAdminStatus("Načítám konfiguraci systému...");
+
+            try {
+                await this.refreshAllData();
+
+                if (statusEl) statusEl.textContent = "Aplikuji pravidla přístupu podle rolí...";
+
+                // Zobrazení/skrytí záložek dle definovaných RBAC oprávnění (z category 'Administrace')
+                const rbacMapping = {
+                    'users': 'manage_users',
+                    'depts': 'manage_org',
+                    'statuses': 'manage_statuses',
+                    'settings': 'settings',
+                    'maps': 'manage_maps',
+                    'namedays': 'manage_namedays',
+                    'rbac': 'manage_rbac'
+                };
+
+                let firstVisibleTab = null;
+                document.querySelectorAll('.admin-nav-item').forEach(navEl => {
+                    const view = navEl.getAttribute('data-view');
+                    if (view && rbacMapping[view]) {
+                        const permKey = rbacMapping[view];
+                        const hasPerm = (typeof window.hasPermission === 'function' || typeof hasPermission === 'function') ? hasPermission(permKey) : false;
+                        navEl.style.display = hasPerm ? 'flex' : 'none';
+                        if (hasPerm && !firstVisibleTab) firstVisibleTab = view;
+                    }
+                });
+
+                // Přepne tabulku, pokud k aktuální nemá uživatel oprávnění
+                if (this.currentTab && rbacMapping[this.currentTab]) {
+                    if (!((typeof window.hasPermission === 'function' || typeof hasPermission === 'function') && hasPermission(rbacMapping[this.currentTab]))) {
+                        this.currentTab = firstVisibleTab || 'users';
+                    }
+                }
+
+                this.renderCurrentTab();
+            } catch (e) {
+                console.error("Admin: Chyba inicializace:", e);
+                showAdminStatus("Chyba při načítání dat.");
+                if (statusEl) statusEl.textContent = "Kritická chyba spojení se serverem.";
+            } finally {
+                // Počkáme malý zlomek vteřiny, aby to neproblikávalo příliš rychle a nebylo to rušivé
+                setTimeout(() => {
+                    if (overlay) overlay.style.display = 'none';
+                }, 300);
+            }
+        },
+
+        refreshAllData: async function () {
+            try {
+                const [orgResult, usersResult, statusesResult, namedDaysResult] = await Promise.all([
+                    callServer('getAdminOrgData'),
+                    callServer('getAllUsers'),
+                    callServer('getAttendanceStatuses'),
+                    callServer('getNamedDays')
+                ]);
+                if (orgResult.success) {
+                    this.data = orgResult.data;
+                    this.vacationConfig = orgResult.data.vacationConfig;
+                }
+                if (usersResult.success) this.users = usersResult.data;
+                if (statusesResult.success) this.statuses = statusesResult.data || [];
+                if (namedDaysResult.success) this.namedDays = namedDaysResult.data || {};
+
+                console.log("Admin: Data načtena.", { org: this.data, users: this.users, statuses: this.statuses, namedDays: this.namedDays });
+            } catch (e) {
+                console.error("Admin: Refresh error:", e);
+                throw e;
+            }
+        },
+
+        renderCurrentTab: function () {
+            console.log("Admin: Přepínám na záložku:", this.currentTab);
+            const panels = document.querySelectorAll('.admin-view-panel');
+            panels.forEach(p => p.classList.remove('active'));
+            const activePanel = document.getElementById(`admin-panel-${this.currentTab}`);
+            if (activePanel) {
+                activePanel.classList.add('active');
+                switch (this.currentTab) {
+                    case 'users': this.renderUsers(); break;
+                    case 'depts': this.renderOrgStructure(); break;
+                    case 'statuses': this.renderStatuses(); break;
+                    case 'settings': this.renderSettings(); break;
+                    case 'maps': this.renderMapsPanel(); break;
+                    case 'namedays': this.renderNamedDays(); break;
+                    case 'rbac': this.renderRbac(); break;
+                }
+            }
+        },
+
+        renderUsers: function () {
+            const panel = document.getElementById('admin-panel-users');
+            if (!panel || !this.users) return;
+
+            // ── SCOPED PERMISSIONS PRO UŽIVATELE ──
+            let scope = typeof window.hasPermission === 'function' ? window.hasPermission('manage_users') : 'NONE';
+            if (scope === true) scope = 'ALL';
+            if (scope === false || !scope) scope = 'NONE';
+
+            if (scope === 'NONE') {
+                panel.innerHTML = '<div style="padding:40px; text-align:center; color:#ef4444; font-weight:800;">Nemáte oprávnění spravovat uživatele.</div>';
+                return;
+            }
+
+            const currentUser = (typeof plannerData !== 'undefined' && plannerData.user) ? plannerData.user : null;
+            let filteredUsers = this.users;
+
+            if (scope !== 'ALL' && currentUser) {
+                filteredUsers = this.users.filter(u => {
+                    if (scope === 'OWN_SECTION') return u.section_id === currentUser.section_id;
+                    if (scope === 'OWN_DEPARTMENT') return u.department_id === currentUser.department_id;
+                    if (scope === 'OWN_GROUP') return u.group_id === currentUser.group_id;
+                    return u.user_id === currentUser.user_id; // Fallback
+                });
+            }
+
+            const sectionMap = {}; if (this.data && this.data.sections) this.data.sections.forEach(s => sectionMap[s.section_id] = s.name);
+            const deptMap = {}; if (this.data && this.data.departments) this.data.departments.forEach(d => deptMap[d.department_id] = d.name);
+            const groupMap = {}; if (this.data && this.data.groups) this.data.groups.forEach(g => groupMap[g.group_id] = g.name);
+            const posMap = {}; if (this.data && this.data.positions) this.data.positions.forEach(p => posMap[p.position_id] = p.name);
+
+            let tableHtml = `
+<div class="admin-card" style="padding:0; overflow:hidden;">
+    <div class="admin-header-compact"
+        style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Správa uživatelů</h2>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
+                <input type="checkbox" ${this.showInactiveUsers ? 'checked' : ''}
+                    onchange="admin.toggleInactiveUsers(this.checked)"> Zobrazit neaktivní
+            </label>
+            <button class="btn-action" onclick="admin.showUserModal()"
+                style="background:var(--success); color:white; padding:8px 16px; border-radius:8px; border:none; font-weight:800; cursor:pointer;">+
+                PŘIDAT UŽIVATELE</button>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Uživatel (Účet)</th>
+                    <th>Org. Struktura</th>
+                    <th>Pozice</th>
+                    <th>Systémová Role</th>
+                    <th style="text-align:center">Status</th>
+                    <th style="text-align:center">Autorizace</th>
+                    <th>Nástup / Ukončení</th>
+                    <th style="text-align:center">Akce</th>
+                </tr>
+            </thead>
+            <tbody>
+                `;
+
+            filteredUsers.forEach(u => {
+                const isActiveInDB = u.active !== "false";
+                const isDerivedActive = u.is_derived_active !== false;
+                const isCurrentlyActive = isActiveInDB && isDerivedActive;
+                const isOptimistic = u._optimistic === true;
+
+                if (!isCurrentlyActive && !this.showInactiveUsers) return;
+
+                tableHtml += `
+                <tr class="${!isCurrentlyActive ? 'row-inactive' : ''}${isOptimistic ? ' row-optimistic' : ''}">
+                    <td>
+                        <div style="font-weight:800;">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</div>
+                        <div style="font-size:11px; color:#64748b;">${escapeHtml(u.email)}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:700; color:var(--primary); font-size:10px;">${escapeHtml(sectionMap[u.section_id] || '-')}</div>
+                        <div style="font-size:10px; color:#64748b;">${escapeHtml(deptMap[u.department_id] || '-')} /
+                            ${escapeHtml(groupMap[u.group_id] || '-')}</div>
+                    </td>
+                    <td style="font-size:12px; font-weight:600;">${escapeHtml(posMap[u.position_id] || '-')}</td>
+                    <td><span
+                            class="badge-role ${u.system_role === 'SUPERADMIN' ? 'badge-superadmin' : (u.system_role === 'ADMIN' ? 'badge-admin' : (u.system_role === 'LEADER' ? 'badge-leader' : ''))}">${u.system_role}</span>
+                    </td>
+                    <td style="text-align:center;">
+                        <span class="${isCurrentlyActive ? 'badge-status-active' : 'badge-status-inactive'}">
+                            ${isCurrentlyActive ? 'Aktivní' : 'Neaktivní'}
+                        </span>
+                    </td>
+                    <td style="text-align:center;">
+                        ${u.auth_status === 'APPROVED'
+                        ? '<span class="badge-auth-yes">Schváleno</span>'
+                        : u.auth_status === 'PENDING'
+                            ? '<span class="badge-auth-pending">Čeká</span>'
+                            : u.auth_status === 'REJECTED'
+                                ? '<span class="badge-auth-no">Zamítnuto</span>'
+                                : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}
+                    </td>
+                    <td style="font-size:11px;">
+                        N: <strong>${this.formatDateCompact(u.date_start)}</strong><br>
+                        U: <strong>${this.formatDateCompact(u.date_end)}</strong>
+                    </td>
+                    <td style="text-align:center">
+                        ${isOptimistic
+                        ? `<span class="badge-saving"><span class="saving-spinner"></span> Ukládám…</span>`
+                        : `<button onclick="admin.showUserModal('${u.user_id}')" class="btn-icon" title="Upravit">✏️</button>
+                               <button onclick="admin.confirmDeleteUser('${u.user_id}')" class="btn-icon btn-icon-danger" title="Smazat účet">🗑️</button>`
+                    }
+                    </td>
+                </tr>
+                `;
+            });
+            tableHtml += `
+            </tbody>
+        </table>
+    </div>
+</div>`;
+            panel.innerHTML = tableHtml;
+        },
+
+        /**
+        * Org. Struktura: Lokace (collapsible) → Úsek → Oddělení → Tým
+        */
+        renderOrgStructure: function () {
+            const panel = document.getElementById('admin-panel-depts');
+            if (!panel || !this.data) return;
+
+            panel.innerHTML = `
+<div style="display:grid; grid-template-columns: 1fr 360px; gap:20px; align-items: start;">
+    <div id="org-tree-container"></div>
+    <div id="org-positions-container"></div>
+</div>`;
+
+            this.renderOrgTree();
+            this.renderPositionsTable();
+        },
+
+        /**
+         * Vykreslí stromovou strukturu: Lokace (collapsible) → Úsek → Oddělení → Tým
+         */
+        renderOrgTree: function () {
+            const container = document.getElementById('org-tree-container');
+            if (!container) return;
+
+            // ── SCOPED PERMISSIONS PRO ORG. STRUKTURU ──
+            let scope = typeof window.hasPermission === 'function' ? window.hasPermission('manage_org') : 'NONE';
+            if (scope === true) scope = 'ALL';
+            if (scope === false || !scope) scope = 'NONE';
+
+            if (scope === 'NONE') {
+                container.innerHTML = '<div style="padding:40px; text-align:center; color:#ef4444; font-weight:800;">Nemáte oprávnění spravovat organizační strukturu.</div>';
+                return;
+            }
+
+            const currentUser = (typeof plannerData !== 'undefined' && plannerData.user) ? plannerData.user : null;
+            let sections = this.data.sections || [];
+            let departments = this.data.departments || [];
+            let groups = this.data.groups || [];
+
+            if (scope !== 'ALL' && currentUser) {
+                if (scope === 'OWN_SECTION') {
+                    sections = sections.filter(s => s.section_id === currentUser.section_id);
+                    departments = departments.filter(d => d.section_id === currentUser.section_id);
+                    const deptIds = new Set(departments.map(d => d.department_id));
+                    groups = groups.filter(g => deptIds.has(g.department_id));
+                } else if (scope === 'OWN_DEPARTMENT') {
+                    departments = departments.filter(d => d.department_id === currentUser.department_id);
+                    const secIds = new Set(departments.map(d => d.section_id));
+                    sections = sections.filter(s => secIds.has(s.section_id));
+                    groups = groups.filter(g => g.department_id === currentUser.department_id);
+                } else if (scope === 'OWN_GROUP') {
+                    groups = groups.filter(g => g.group_id === currentUser.group_id);
+                    const deptIds = new Set(groups.map(g => g.department_id));
+                    departments = departments.filter(d => deptIds.has(d.department_id));
+                    const secIds = new Set(departments.map(d => d.section_id));
+                    sections = sections.filter(s => secIds.has(s.section_id));
+                }
+            }
+
+            const locations = (this.data.locations || []).filter(l => {
+                if (l.active === 'false') return false;
+                if (scope === 'ALL') return true;
+                // Zobrazit lokaci, jen pokud v ní máme nějaký úsek po filtraci
+                return sections.some(s => s.location_id === l.location_id);
+            });
+
+            // Sort: HQ first, then LC alphabetically
+            const sorted = [...locations].sort((a, b) => {
+                if (a.type === 'HQ' && b.type !== 'HQ') return -1;
+                if (b.type === 'HQ' && a.type !== 'HQ') return 1;
+                return (a.name || '').localeCompare(b.name || '', 'cs');
+            });
+
+            // Auto-expand první lokaci jen při úplně prvním renderu
+            if (!this._locationsInitialized) {
+                this._locationsInitialized = true;
+                if (sorted.length > 0) {
+                    this._expandedLocations.add(sorted[0].location_id);
+                }
+            }
+
+            let html = `
+<div class="admin-card" style="padding:0; overflow:hidden;">
+  <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
+    <h2 style="margin:0; color:var(--primary); font-size:16px; font-weight:900;">Organizační struktura</h2>
+    <button class="org-add-loc-btn" onclick="admin.showLocationModal()">+ Lokace</button>
+  </div>
+  <div class="org-locations-list">`;
+
+            if (sorted.length === 0) {
+                html += `<div style="padding:40px; text-align:center; color:#94a3b8; font-size:13px;">Žádné lokace. Klikněte + Lokace pro přidání.</div>`;
+            } else {
+                sorted.forEach(loc => {
+                    const isExpanded = this._expandedLocations.has(loc.location_id);
+                    const locSections = sections.filter(s => s.location_id === loc.location_id && s.active !== 'false');
+                    const isHQ = loc.type === 'HQ';
+                    const secCount = locSections.length;
+                    const secLabel = secCount === 1 ? '1 úsek' : secCount > 1 && secCount < 5 ? `${secCount} úseky` : `${secCount} úseků`;
+
+                    html += `
+  <div class="org-loc-card" id="loc-card-${loc.location_id}">
+    <div class="org-loc-header" onclick="admin.toggleLocation('${loc.location_id}')">
+      <span class="org-loc-badge ${isHQ ? 'badge-hq' : 'badge-lc'}">${loc.type || 'LC'}</span>
+      <span class="org-loc-name">${escapeHtml(loc.name)}</span>
+      <span class="org-loc-count">${secLabel}</span>
+      <div class="org-loc-actions" onclick="event.stopPropagation()">
+        <button class="org-action-btn" onclick="admin.showLocationModal('${loc.location_id}')" title="Upravit lokaci">✏️</button>
+        <button class="org-action-btn btn-danger-sm" onclick="admin.confirmDeleteLocation('${loc.location_id}')" title="Smazat lokaci">🗑️</button>
+      </div>
+      <span class="org-loc-chevron${isExpanded ? ' expanded' : ''}">▶</span>
+    </div>
+    <div class="org-loc-body" id="loc-body-${loc.location_id}" style="display:${isExpanded ? 'block' : 'none'};">
+      <div class="org-sections-wrap">
+        <div class="org-sections-toolbar">
+          <span class="org-toolbar-label">Úseky</span>
+          <button class="org-add-btn" onclick="admin.showSectionModal(null,'${loc.location_id}')">+ Přidat úsek</button>
+        </div>`;
+
+                    if (locSections.length === 0) {
+                        html += `<div class="org-empty-msg">Žádné úseky — klikněte + Přidat úsek.</div>`;
+                    } else {
+                        locSections.forEach(s => {
+                            const depts = departments.filter(d => d.section_id === s.section_id && d.active !== 'false');
+                            const sectionMode = this._sectionViewMode[s.section_id] || 'structure';
+
+                            // Build dept list HTML for structure mode
+                            let deptListHtml = '';
+                            depts.forEach(d => {
+                                const grps = groups.filter(g => g.department_id === d.department_id && g.active !== 'false');
+                                deptListHtml += `
+          <div class="org-dept-item">
+            <div class="org-dept-row">
+              <span class="org-item-icon">📂</span>
+              <span class="org-item-name">${escapeHtml(d.name)}</span>
+              <div class="org-item-actions">
+                <button class="org-action-btn" onclick="admin.showDeptModal('${d.department_id}','${s.section_id}')" title="Upravit">✏️</button>
+                <button class="org-action-btn btn-add-success" onclick="admin.showGroupModal(null,'${d.department_id}')" title="Přidat tým">+ Tým</button>
+              </div>
+            </div>`;
+                                grps.forEach(g => {
+                                    deptListHtml += `
+            <div class="org-group-row">
+              <span class="org-item-icon">👥</span>
+              <span class="org-item-name">${escapeHtml(g.name)}</span>
+              <div class="org-item-actions">
+                <button class="org-action-btn" onclick="admin.showGroupModal('${g.group_id}','${d.department_id}')" title="Upravit">✏️</button>
+              </div>
+            </div>`;
+                                });
+                                deptListHtml += `</div>`; // .org-dept-item
+                            });
+
+                            html += `
+        <div class="org-section-item">
+          <div class="org-section-row">
+            <span class="org-item-icon">🏢</span>
+            <span class="org-item-name">${escapeHtml(s.name)}</span>
+            <div class="org-item-actions">
+              <div class="sec-view-tabs">
+                <button class="sec-tab-btn${sectionMode === 'structure' ? ' active' : ''}"
+                        onclick="admin.toggleSectionView('${s.section_id}', 'structure')" title="Struktura org.">Struktura</button>
+                <button class="sec-tab-btn${sectionMode === 'config' ? ' active' : ''}"
+                        onclick="admin.toggleSectionView('${s.section_id}', 'config')" title="Konfigurace zobrazení v kalendáři">📋 Zobrazení</button>
+              </div>
+              <button class="org-action-btn" onclick="admin.showSectionModal('${s.section_id}','${loc.location_id}')" title="Upravit úsek">✏️</button>
+              ${sectionMode === 'structure' ? `<button class="org-action-btn btn-add-primary" onclick="admin.showDeptModal(null,'${s.section_id}')" title="Přidat oddělení">+ Oddělení</button>` : ''}
+            </div>
+          </div>
+          ${sectionMode === 'structure'
+                                    ? deptListHtml
+                                    : `<div class="sec-config-panel" id="section-config-panel-${s.section_id}"><div class="sec-config-loading"><div class="sec-loading-spinner"></div><span>Načítám konfiguraci…</span></div></div>`
+                                }
+        </div>`;
+                        });
+                    }
+
+                    html += `
+      </div>
+    </div>
+  </div>`;
+                });
+            }
+
+            html += `</div></div>`; // .org-locations-list + .admin-card
+            container.innerHTML = html;
+        },
+
+        /**
+         * Přepne stav rozbalení lokace
+         */
+        toggleLocation: function (locationId) {
+            if (this._expandedLocations.has(locationId)) {
+                this._expandedLocations.delete(locationId);
+            } else {
+                this._expandedLocations.add(locationId);
+            }
+            this.renderOrgTree();
+        },
+
+        // ─── SECTION VIEW CONFIG ─────────────────────────────────────────────────
+
+        /**
+         * Přepne zobrazení sekce mezi Strukturou a Zobrazením (konfigurací).
+         */
+        toggleSectionView: function (sectionId, mode) {
+            this._sectionViewMode[sectionId] = mode;
+            this.renderOrgTree();
+            if (mode === 'config') {
+                this.loadSectionConfig(sectionId);
+            }
+        },
+
+        /**
+         * Načte konfiguraci zobrazení úseku ze serveru (s cache).
+         */
+        loadSectionConfig: async function (sectionId) {
+            if (this._sectionConfigs[sectionId]) {
+                this.renderSectionConfigPanel(sectionId);
+                return;
+            }
+            try {
+                const result = await callServer('getSectionViewConfig', sectionId);
+                this._sectionConfigs[sectionId] = (result && result.success && result.data)
+                    ? result.data
+                    : { section_id: sectionId, show_leader_first: false, containers: [] };
+            } catch (e) {
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, containers: [] };
+            }
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Vykreslí editor konfigurace do panelu konkrétního úseku.
+         */
+        renderSectionConfigPanel: function (sectionId) {
+            const panel = document.getElementById('section-config-panel-' + sectionId);
+            if (!panel) return;
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+
+            const typeLabel = { department: '📂 Oddělení', team: '👥 Tým', position: '🏷️ Prac. pozice', employee: '👤 Zaměstnanec' };
+
+            const containersHtml = cfg.containers.length === 0
+                ? '<div class="sec-empty-containers">Žádné kontejnery — klikněte <strong>+ Přidat kontejner</strong>.</div>'
+                : cfg.containers.map((c, idx) => {
+                    const itemsHtml = (c.items && c.items.length > 0) ? `
+                <div class="sec-items-list">
+                    ${c.items.map((item, iIdx) => `
+                    <div class="sec-item-row" draggable="true"
+                         ondragstart="admin.onDragStart(event,'item','${sectionId}',${iIdx},'${c.id}')"
+                         ondragend="admin.onDragEnd(event)"
+                         ondragover="admin.onDragOver(event)"
+                         ondragleave="admin.onDragLeave(event)"
+                         ondrop="admin.onDrop(event,'item','${sectionId}',${iIdx},'${c.id}')">
+                        <span class="sec-drag-handle" title="Přetáhněte pro změnu pořadí">⋮⋮</span>
+                        <span class="sec-item-name">${item.label}</span>
+                        <button class="sec-item-del" onclick="admin.deleteContainerItem('${sectionId}','${c.id}','${item.id}')" title="Odebrat">✕</button>
+                    </div>`).join('')}
+                </div>` : '';
+
+                    return `
+                <div class="sec-container-card" draggable="true"
+                     ondragstart="admin.onDragStart(event,'container','${sectionId}',${idx})"
+                     ondragend="admin.onDragEnd(event)"
+                     ondragover="admin.onDragOver(event)"
+                     ondragleave="admin.onDragLeave(event)"
+                     ondrop="admin.onDrop(event,'container','${sectionId}',${idx})">
+                    <div class="sec-container-header">
+                        <span class="sec-drag-handle" title="Přetáhněte pro změnu pořadí">⋮⋮</span>
+                        <span class="sec-container-type sec-type-${c.type}">${typeLabel[c.type] || c.type}</span>
+                        <span class="sec-container-name">${c.label}</span>
+                        <div class="sec-container-actions">
+                            ${c.type !== 'employee' ? `<button class="sec-btn-sm sec-btn-add-item" onclick="admin.showAddContainerItemModal('${sectionId}','${c.id}')" title="Přidat položku">+ Položka</button>` : ''}
+                            <button class="sec-btn-sm sec-btn-del-container" onclick="admin.deleteContainer('${sectionId}','${c.id}')" title="Smazat kontejner">🗑️</button>
+                        </div>
+                    </div>
+                    ${itemsHtml}
+                </div>`;
+                }).join('');
+
+            panel.innerHTML = `
+<div class="sec-config-editor">
+    <div class="sec-config-leader-toggle">
+        <label class="sec-toggle-label">
+            <span class="sec-toggle-icon">👑</span>
+            <span>Vedoucí úseku jako první v celém seznamu</span>
+        </label>
+        <label class="sec-toggle-switch">
+            <input type="checkbox" ${cfg.show_leader_first ? 'checked' : ''}
+                   onchange="admin._sectionConfigs['${sectionId}'].show_leader_first = this.checked">
+            <span class="sec-toggle-slider"></span>
+        </label>
+    </div>
+    <div class="sec-containers-wrap">
+        <div class="sec-containers-label">Pořadí zobrazení v kalendáři:</div>
+        <div class="sec-containers-list" id="sec-containers-${sectionId}">
+            ${containersHtml}
+        </div>
+    </div>
+    <div class="sec-config-footer">
+        <button class="sec-btn-add-container" onclick="admin.showAddContainerModal('${sectionId}')">＋ Přidat kontejner</button>
+        <button class="sec-btn-save" onclick="admin.saveSectionConfig('${sectionId}')">💾 Uložit konfiguraci</button>
+    </div>
+</div>`;
+        },
+
+        /**
+         * Přidá nový kontejner do konfigurace.
+         */
+        showAddContainerModal: function (sectionId) {
+            const section = (this.data.sections || []).find(s => s.section_id === sectionId);
+            const sectionName = section ? section.name : '';
+            const depts = (this.data.departments || []).filter(d => d.section_id === sectionId && d.active !== 'false');
+            const deptIds = depts.map(d => d.department_id);
+            const grps = (this.data.groups || []).filter(g => deptIds.includes(g.department_id) && g.active !== 'false');
+            const positions = (this.data.positions || []).filter(p => p.active !== 'false');
+            const sectionUsers = this.users.filter(u => u.section_id === sectionId && u.active !== 'false' && !u._optimistic);
+
+            this._addContainerData = { sectionId, depts, grps, positions, sectionUsers };
+
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+
+            modalBody.innerHTML = `
+<div class="modal-brand-header">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div class="modal-header-icon">📦</div>
+    <h2 class="modal-header-title">Přidat kontejner</h2>
+    <p class="modal-header-sub">Úsek: ${sectionName}</p>
+</div>
+<div style="padding:20px 24px 16px;">
+    <div class="form-field">
+        <label class="field-label" style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">Typ kontejneru</label>
+        <select id="add-container-type" class="modal-form-input" onchange="admin._onContainerTypeChange()">
+            <option value="">— Vyberte typ —</option>
+            <option value="department">📂 Oddělení</option>
+            <option value="team">👥 Tým</option>
+            <option value="position">🏷️ Pracovní pozice</option>
+            <option value="employee">👤 Zaměstnanec</option>
+        </select>
+    </div>
+    <div id="add-container-ref-wrap" class="form-field" style="display:none; margin-top:20px;">
+        <label class="field-label" id="add-container-ref-label" style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">Vyberte</label>
+        <select id="add-container-ref" class="modal-form-input"></select>
+    </div>
+</div>
+<div class="modal-footer-brand">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()">ZRUŠIT</button>
+    <button class="btn-modal-save" onclick="admin._doAddContainer()">PŘIDAT</button>
+</div>`;
+
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+        },
+
+        _onContainerTypeChange: function () {
+            const type = document.getElementById('add-container-type').value;
+            const refWrap = document.getElementById('add-container-ref-wrap');
+            const refLabel = document.getElementById('add-container-ref-label');
+            const refSel = document.getElementById('add-container-ref');
+            const d = this._addContainerData;
+            if (!type || !d) { refWrap.style.display = 'none'; return; }
+
+            const optMap = {
+                department: { label: 'Oddělení', items: d.depts.map(x => ({ value: x.department_id, text: x.name })) },
+                team: { label: 'Tým', items: d.grps.map(x => ({ value: x.group_id, text: x.name })) },
+                position: { label: 'Pracovní pozice', items: d.positions.map(x => ({ value: x.position_id, text: x.name })) },
+                employee: { label: 'Zaměstnanec', items: d.sectionUsers.map(x => ({ value: x.user_id, text: `${escapeHtml(x.first_name)} ${escapeHtml(x.last_name)}` })) }
+            };
+            const opt = optMap[type];
+            refLabel.textContent = opt.label;
+            refSel.innerHTML = '<option value="">— Vyberte —</option>' + opt.items.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(o.text)}</option>`).join('');
+            refWrap.style.display = 'block';
+        },
+
+        _doAddContainer: function () {
+            const type = (document.getElementById('add-container-type') || {}).value;
+            const refId = (document.getElementById('add-container-ref') || {}).value;
+            if (!type || !refId) { showAdminToast('Vyberte typ kontejneru a referenci.', 'warn'); return; }
+
+            const d = this._addContainerData;
+            if (!d) return;
+            const { sectionId } = d;
+            let label = refId;
+
+            if (type === 'department') { const x = d.depts.find(i => i.department_id === refId); label = x ? x.name : refId; }
+            else if (type === 'team') { const x = d.grps.find(i => i.group_id === refId); label = x ? x.name : refId; }
+            else if (type === 'position') { const x = d.positions.find(i => i.position_id === refId); label = x ? x.name : refId; }
+            else if (type === 'employee') { const x = d.sectionUsers.find(i => i.user_id === refId); label = x ? `${x.first_name} ${x.last_name}` : refId; }
+
+            if (!this._sectionConfigs[sectionId]) {
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, containers: [] };
+            }
+            this._sectionConfigs[sectionId].containers.push({
+                id: '_c_' + Date.now(),
+                type, ref_id: refId, label, items: []
+            });
+            this.closeModal();
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Přidá zaměstnance do kontejneru.
+         */
+        showAddContainerItemModal: function (sectionId, containerId) {
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+            const container = cfg.containers.find(c => c.id === containerId);
+            if (!container) return;
+
+            const sectionUsers = this.users.filter(u => u.section_id === sectionId && u.active !== 'false' && !u._optimistic);
+            const existingRefIds = new Set((container.items || []).map(i => i.ref_id));
+            let available = [];
+
+            if (container.type === 'department') available = sectionUsers.filter(u => u.department_id === container.ref_id);
+            else if (container.type === 'team') available = sectionUsers.filter(u => u.group_id === container.ref_id);
+            else if (container.type === 'position') available = sectionUsers.filter(u => u.position_id === container.ref_id);
+            else available = sectionUsers;
+
+            available = available.filter(u => !existingRefIds.has(u.user_id));
+
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+
+            const optionsHtml = available.length === 0
+                ? '<p style="color:#94a3b8; font-size:13px; text-align:center; padding:12px 0;">Všichni zaměstnanci jsou již přidáni.</p>'
+                : `<label class="field-label" style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">Zaměstnanec</label>
+                    <select id="add-item-sel" class="modal-form-input">
+                    <option value="">— Vyberte zaměstnance —</option>
+                    ${available.map(u => `<option value="${u.user_id}">${u.first_name} ${u.last_name}</option>`).join('')}
+                   </select>`;
+
+            modalBody.innerHTML = `
+<div class="modal-brand-header">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div class="modal-header-icon">👤</div>
+    <h2 class="modal-header-title">Přidat položku</h2>
+    <p class="modal-header-sub">${container.label}</p>
+</div>
+<div style="padding:20px 24px 16px;">
+    <div class="form-field">${optionsHtml}</div>
+</div>
+<div class="modal-footer-brand">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()">ZRUŠIT</button>
+    ${available.length > 0 ? `<button class="btn-modal-save" onclick="admin._doAddContainerItem('${sectionId}','${containerId}')">PŘIDAT</button>` : ''}
+</div>`;
+
+            this._addContainerData = { ...this._addContainerData, available };
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+        },
+
+        _doAddContainerItem: function (sectionId, containerId) {
+            const sel = document.getElementById('add-item-sel');
+            const userId = sel ? sel.value : '';
+            if (!userId) { showAdminToast('Vyberte zaměstnance.', 'warn'); return; }
+            const d = this._addContainerData;
+            const user = d && d.available ? d.available.find(u => u.user_id === userId) : null;
+            const label = user ? `${user.first_name} ${user.last_name}` : userId;
+
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+            const container = cfg.containers.find(c => c.id === containerId);
+            if (!container) return;
+            if (!container.items) container.items = [];
+            container.items.push({ id: '_i_' + Date.now(), ref_id: userId, label });
+
+            this.closeModal();
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Smaže kontejner ze sekce.
+         */
+        deleteContainer: function (sectionId, containerId) {
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+            cfg.containers = cfg.containers.filter(c => c.id !== containerId);
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Smaže položku z kontejneru.
+         */
+        deleteContainerItem: function (sectionId, containerId, itemId) {
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+            const container = cfg.containers.find(c => c.id === containerId);
+            if (!container) return;
+            container.items = (container.items || []).filter(i => i.id !== itemId);
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Uloží konfiguraci zobrazení úseku na server.
+         */
+        saveSectionConfig: async function (sectionId) {
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+            const panel = document.getElementById('section-config-panel-' + sectionId);
+            const saveBtn = panel ? panel.querySelector('.sec-btn-save') : null;
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Ukládám…'; }
+            try {
+                const result = await callServer('saveSectionViewConfig', cfg);
+                if (result && result.success) {
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✅ Uloženo!'; setTimeout(() => { if (saveBtn) saveBtn.textContent = '💾 Uložit konfiguraci'; }, 2000); }
+                    // Aktualizuj plannerData.sectionViewConfig a přerender kalendář okamžitě
+                    if (window.plannerData && window.plannerData.user &&
+                        window.plannerData.user.section_id === sectionId) {
+                        window.plannerData.sectionViewConfig = JSON.parse(JSON.stringify(cfg));
+                        if (typeof renderPlanner === 'function') renderPlanner();
+                    }
+                } else {
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Uložit konfiguraci'; }
+                    showAdminToast('Chyba při ukládání: ' + (result ? result.error : 'Neznámá chyba'));
+                }
+            } catch (e) {
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Uložit konfiguraci'; }
+                showAdminToast('Chyba komunikace: ' + e);
+            }
+        },
+
+        // ─── DRAG & DROP ─────────────────────────────────────────────────────────
+
+        onDragStart: function (ev, type, sectionId, idx, containerId) {
+            this._drag = { type, sectionId, idx, containerId };
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.currentTarget.classList.add('drag-ghost');
+        },
+
+        onDragEnd: function (ev) {
+            ev.currentTarget.classList.remove('drag-ghost');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            this._drag = null;
+        },
+
+        onDragOver: function (ev) {
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            ev.currentTarget.classList.add('drag-over');
+        },
+
+        onDragLeave: function (ev) {
+            ev.currentTarget.classList.remove('drag-over');
+        },
+
+        onDrop: function (ev, type, sectionId, targetIdx, containerId) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.currentTarget.classList.remove('drag-over');
+            const drag = this._drag;
+            if (!drag || drag.sectionId !== sectionId) return;
+            const cfg = this._sectionConfigs[sectionId];
+            if (!cfg) return;
+
+            if (type === 'container' && drag.type === 'container') {
+                const from = drag.idx;
+                if (from === targetIdx) return;
+                const [moved] = cfg.containers.splice(from, 1);
+                cfg.containers.splice(targetIdx, 0, moved);
+            } else if (type === 'item' && drag.type === 'item' && drag.containerId === containerId) {
+                const container = cfg.containers.find(c => c.id === containerId);
+                if (!container || !container.items) return;
+                const from = drag.idx;
+                if (from === targetIdx) return;
+                const [moved] = container.items.splice(from, 1);
+                container.items.splice(targetIdx, 0, moved);
+            }
+            this._drag = null;
+            this.renderSectionConfigPanel(sectionId);
+        },
+
+        /**
+         * Potvrzovací dialog pro smazání lokace – vlastní modal v designu aplikace
+         */
+        confirmDeleteLocation: function (locationId) {
+            const loc = (this.data.locations || []).find(l => l.location_id === locationId);
+            if (!loc) return;
+
+            const sections = (this.data.sections || []).filter(s => s.location_id === locationId && s.active !== 'false');
+            const sectionIds = sections.map(s => s.section_id);
+            const depts = (this.data.departments || []).filter(d => sectionIds.includes(d.section_id) && d.active !== 'false');
+            const deptIds = depts.map(d => d.department_id);
+            const groups = (this.data.groups || []).filter(g => deptIds.includes(g.department_id) && g.active !== 'false');
+
+            let warningHtml = '';
+            if (sections.length > 0) {
+                const sLabel = sections.length === 1 ? '1 úsek' : sections.length < 5 ? `${sections.length} úseky` : `${sections.length} úseků`;
+                const dLabel = depts.length > 0 ? (depts.length === 1 ? ', 1 oddělení' : `, ${depts.length} oddělení`) : '';
+                const gLabel = groups.length > 0 ? (groups.length === 1 ? ' a 1 tým' : ` a ${groups.length} týmů`) : '';
+                warningHtml = `
+<div class="delete-loc-warning-box">
+    <div class="delete-loc-warning-icon">⚠️</div>
+    <div class="delete-loc-warning-text">
+        <strong>Lokace obsahuje ${sLabel}${dLabel}${gLabel}.</strong>
+        Smazáním budou deaktivovány všechny úseky, oddělení a týmy, které lokace obsahuje.
+    </div>
+</div>`;
+            }
+
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+
+            modalBody.innerHTML = `
+<div class="modal-brand-header modal-brand-header--danger">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div class="modal-header-icon">🗑️</div>
+    <h2 class="modal-header-title">Smazat lokaci</h2>
+    <p class="modal-header-sub">„${loc.name}"</p>
+</div>
+<div class="delete-loc-modal-body">
+    ${warningHtml}
+    <p class="delete-loc-confirm-text">Tato akce je nevratná. Opravdu chcete smazat tuto lokaci?</p>
+</div>
+<div class="modal-footer-brand">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()">ZRUŠIT</button>
+    <button class="btn-modal-delete" onclick="admin.closeModal(); admin._doDeleteLocation('${locationId}')">SMAZAT</button>
+</div>`;
+
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+        },
+
+        _doDeleteLocation: async function (locationId) {
+            // Optimistický delete
+            const idx = this.data.locations.findIndex(l => l.location_id === locationId);
+            if (idx !== -1) {
+                this.data.locations.splice(idx, 1);
+                this._expandedLocations.delete(locationId);
+                this.renderCurrentTab();
+            }
+
+            try {
+                const result = await callServer('deleteLocation', locationId);
+                if (result && result.success) {
+                    await this.refreshAllData();
+                    this.renderCurrentTab();
+                    if (typeof refreshApp === 'function') refreshApp({ full: true });
+                } else {
+                    alert('Chyba při mazání lokace: ' + (result ? result.error : 'Neznámá chyba'));
+                    await this.refreshAllData();
+                    this.renderCurrentTab();
+                }
+            } catch (e) {
+                console.error("Delete location failed", e);
+                await this.refreshAllData();
+                this.renderCurrentTab();
+            }
+        },
+
+        /**
+         * Vykreslí tabulku pracovních pozic
+         */
+        renderPositionsTable: function () {
+            const container = document.getElementById('org-positions-container');
+            if (!container) return;
+
+            const orgRoleLabels = {
+                'MEMBER': '',
+                'DEPT_LEADER': 'Vedoucí oddělení',
+                'SECTION_LEADER': 'Vedoucí úseku'
+            };
+            let html = `
+<div class="admin-card" style="padding:0; overflow:hidden;">
+    <div class="admin-header-compact"
+        style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:#f0f9ff; border-bottom:1px solid #e0f2fe;">
+        <h2 style="margin:0; color:#0369a1; font-size:16px; font-weight:900;">Pracovní pozice</h2>
+        <button class="btn-action" onclick="admin.showPositionModal()"
+            style="background:#0369a1; color:white; padding:6px 12px; border-radius:6px; border:none; font-weight:800; cursor:pointer; font-size:11px;">+
+            POZICI</button>
+    </div>
+    <div class="table-container">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th style="width:55%;">Název pozice</th>
+                    <th style="width:35%;">Organizační role</th>
+                    <th style="width:10%; text-align:center;">Akce</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+            if (this.data.positions && this.data.positions.length > 0) {
+                this.data.positions.forEach(p => {
+                    const isActive = p.active !== "false";
+                    const roleKey = p.org_role || 'MEMBER';
+                    const roleLabel = orgRoleLabels[roleKey] || roleKey;
+                    const roleBadge = roleLabel
+                        ? `<span style="display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;
+                               background:${roleKey === 'SECTION_LEADER' || roleKey === 'SECTION_DEPUTY' ? '#fef3c7' : roleKey !== 'MEMBER' ? '#eff6ff' : '#f1f5f9'};
+                               color:${roleKey === 'SECTION_LEADER' || roleKey === 'SECTION_DEPUTY' ? '#92400e' : roleKey !== 'MEMBER' ? '#1d4ed8' : '#94a3b8'};">${roleLabel}</span>`
+                        : '<span style="color:#94a3b8; font-size:12px;">Člen</span>';
+                    html += `
+                <tr class="${!isActive ? 'row-inactive' : ''}">
+                    <td style="font-weight:700; color:#334155;">💼 ${escapeHtml(p.name)}</td>
+                    <td>${roleBadge}</td>
+                    <td style="text-align:center;">
+                        <button onclick="admin.showPositionModal('${p.position_id}')" class="btn-icon">✏️</button>
+                    </td>
+                </tr>`;
+                });
+            } else {
+                html += '<tr><td colspan="3" style="text-align:center; padding:40px; color:#94a3b8;">Zatím nejsou definovány žádné pozice.</td></tr>';
+            }
+
+            html += `</tbody></table></div></div>`;
+            container.innerHTML = html;
+        },
+
+        showPositionModal: function (id) {
+            const item = id ? this.data.positions.find(p => p.position_id === id) : null;
+            this.showGenericModal({
+                title: id ? 'Upravit pozici' : 'Nová pracovní pozice',
+                icon: '💼',
+                subtitle: id ? 'Změna názvu nebo stavu pracovní pozice' : 'Vytvoření nové pracovní pozice v systému',
+                fields: [
+                    { label: 'Název pozice', name: 'name', value: item ? item.name : '', required: true },
+                    {
+                        label: 'Organizační role',
+                        name: 'org_role',
+                        type: 'select',
+                        value: item ? (item.org_role || 'MEMBER') : 'MEMBER',
+                        options: [
+                            { value: 'MEMBER', label: 'MEMBER' },
+                            { value: 'GROUP_LEADER', label: 'GROUP_LEADER' },
+                            { value: 'DEPT_LEADER', label: 'DEPT_LEADER' },
+                            { value: 'SECTION_LEADER', label: 'SECTION_LEADER' }
+                        ]
+                    },
+                    {
+                        label: 'Stav',
+                        name: 'active',
+                        type: 'select',
+                        value: item ? item.active : 'true',
+                        options: [
+                            { value: 'true', label: 'Aktivní' },
+                            { value: 'false', label: 'Neaktivní' }
+                        ]
+                    }
+                ],
+                hiddenFields: { position_id: id || '' },
+                onSave: 'savePosition'
+            });
+        },
+
+        showSectionModal: function (id, locationId) {
+            const item = id ? this.data.sections.find(s => s.section_id === id) : null;
+            const locations = (this.data.locations || []).filter(l => l.active !== 'false');
+            const curLocId = item ? item.location_id : (locationId || '');
+            this.showGenericModal({
+                title: id ? 'Upravit úsek' : 'Nový úsek',
+                icon: '🏢',
+                subtitle: id ? 'Editace organizačního úseku' : 'Vytvoření nového organizačního úseku',
+                fields: [
+                    { label: 'Název úseku', name: 'name', value: item ? item.name : '', required: true },
+                    {
+                        label: 'Lokace',
+                        name: 'location_id',
+                        type: 'select',
+                        value: curLocId,
+                        options: locations.map(l => ({ value: l.location_id, label: (l.type || 'LC') + ' — ' + l.name }))
+                    },
+                    {
+                        label: 'Rezervační systém',
+                        name: 'desk_reservation_enabled',
+                        type: 'toggle',
+                        value: item ? item.desk_reservation_enabled : 'false',
+                        toggleLabel: 'Povolit rezervaci stolů pro tento úsek'
+                    }
+                ],
+                hiddenFields: { section_id: id || '', active: 'true' },
+                onSave: 'saveSection'
+            });
+        },
+
+        showLocationModal: function (id) {
+            const item = id ? (this.data.locations || []).find(l => l.location_id === id) : null;
+            this.showGenericModal({
+                title: id ? 'Upravit lokaci' : 'Nová lokace',
+                icon: '📍',
+                subtitle: id ? 'Editace lokace (pobočka / logistické centrum)' : 'Přidání nové lokace do organizace',
+                fields: [
+                    { label: 'Název lokace', name: 'name', value: item ? item.name : '', required: true },
+                    {
+                        label: 'Typ lokace',
+                        name: 'type',
+                        type: 'select',
+                        value: item ? item.type : 'LC',
+                        options: [
+                            { value: 'HQ', label: 'HQ — Ředitelství / Centrála' },
+                            { value: 'LC', label: 'LC — Logistické centrum / Pobočka' }
+                        ]
+                    }
+                ],
+                hiddenFields: { location_id: id || '', active: 'true' },
+                onSave: 'saveLocation'
+            });
+        },
+
+        showDeptModal: function (id, sectionId) {
+            const item = id ? this.data.departments.find(d => d.department_id === id) : null;
+            this.showGenericModal({
+                title: id ? 'Upravit oddělení' : 'Nové oddělení',
+                icon: '📂',
+                subtitle: id ? 'Editace oddělení organizační struktury' : 'Vytvoření nového oddělení',
+                fields: [
+                    { label: 'Název oddělení', name: 'name', value: item ? item.name : '', required: true },
+                    {
+                        label: 'Příslušný úsek',
+                        name: 'section_id',
+                        type: 'select',
+                        value: item ? item.section_id : (sectionId || ''),
+                        options: this.data.sections.map(s => ({ value: s.section_id, label: s.name }))
+                    }
+                ],
+                hiddenFields: { department_id: id || '', active: 'true' },
+                onSave: 'saveDept'
+            });
+        },
+
+        showGroupModal: function (id, deptId) {
+            const item = id ? this.data.groups.find(g => g.group_id === id) : null;
+            this.showGenericModal({
+                title: id ? 'Upravit tým' : 'Nový tým',
+                icon: '👥',
+                subtitle: id ? 'Editace pracovního týmu' : 'Vytvoření nového pracovního týmu',
+                fields: [
+                    { label: 'Název týmu', name: 'name', value: item ? item.name : '', required: true },
+                    {
+                        label: 'Příslušné oddělení',
+                        name: 'department_id',
+                        type: 'select',
+                        value: item ? item.department_id : (deptId || ''),
+                        options: this.data.departments.map(d => ({ value: d.department_id, label: d.name }))
+                    }
+                ],
+                hiddenFields: { group_id: id || '', active: 'true' },
+                onSave: 'saveGroup'
+            });
+        },
+
+        showGenericModal: function (cfg) {
+            console.log("Admin: Otevírám modal:", cfg.title);
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+
+            const icon = cfg.icon || '📋';
+            const subtitle = cfg.subtitle || '';
+
+            let html = `
+<div class="modal-brand-header">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div class="modal-header-icon">${icon}</div>
+    <h2 class="modal-header-title">${cfg.title}</h2>
+    ${subtitle ? `<p class="modal-header-sub">${subtitle}</p>` : ''}
+</div>
+<div class="modal-body-padded">
+    <form id="generic-form" autocomplete="off">
+        ${Object.keys(cfg.hiddenFields).map(k => `<input type="hidden" name="${k}" value="${cfg.hiddenFields[k]}">`).join('')}
+        ${cfg.fields.map((f, idx) => {
+                const fldId = `fld-${idx}`;
+                return `
+            <div class="modal-form-group">
+                <label for="${fldId}" class="modal-form-label">${f.label}</label>
+                ${f.type === 'select' ? `
+                <select id="${fldId}" name="${f.name}" class="modal-form-input" ${f.readonly ? 'disabled' : ''}>
+                    <option value="">-- Vyberte --</option>
+                    ${f.options.map(o => `<option value="${o.value}" ${o.value == f.value ? 'selected' : ''}>${o.label}</option>`).join('')}
+                </select>
+                ${f.readonly ? `<input type="hidden" name="${f.name}" value="${f.value}">` : ''}
+                ` : f.type === 'toggle' ? `
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; padding:8px 0;">
+                    <input id="${fldId}" type="checkbox" name="${f.name}" value="true" ${f.value === 'true' || f.value === true ? 'checked' : ''} style="width:18px; height:18px; accent-color:#004fac; cursor:pointer;">
+                    <span style="font-size:13px; color:#475569;">${f.toggleLabel || 'Aktivní'}</span>
+                </label>
+                ` : `
+                <input id="${fldId}" type="${f.type || 'text'}" name="${f.name}" value="${f.value || ''}" class="modal-form-input"
+                    autocomplete="off"
+                    ${f.readonly ? 'readonly style="background:#f1f5f9; cursor:not-allowed; opacity:0.7;"' : ''}
+                    ${f.required !== false ? 'required' : ''}>
+                `}
+            </div>
+            `;
+            }).join('')}
+    </form>
+</div>
+<div class="modal-footer-brand">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()">ZRUŠIT</button>
+    <button class="btn-modal-save" onclick="admin.${cfg.onSave}()">ULOŽIT</button>
+</div>
+`;
+            modalBody.innerHTML = html;
+        },
+
+        saveLocation: function () { this.saveGeneric('updateLocation', 'generic-form'); },
+        saveSection: function () { this.saveGeneric('updateSection', 'generic-form'); },
+        saveDept: function () { this.saveGeneric('updateDepartment', 'generic-form'); },
+        saveGroup: function () { this.saveGeneric('updateGroup', 'generic-form'); },
+
+        saveGeneric: async function (serverMethod, formId) {
+            const form = document.getElementById(formId);
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const formData = new FormData(form);
+            const data = {};
+            formData.forEach((v, k) => data[k] = v);
+            // Checkbox/toggle: pokud není zaškrtnutý, FormData ho neobsahuje → nastavit 'false'
+            form.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+                if (!data[cb.name]) data[cb.name] = 'false';
+            });
+
+            // Optimistický update - identifikovat kolekci
+            let collection = null;
+            let idKey = null;
+
+            if (serverMethod === 'updateLocation') { collection = this.data.locations; idKey = 'location_id'; }
+            else if (serverMethod === 'updateSection') { collection = this.data.sections; idKey = 'section_id'; }
+            else if (serverMethod === 'updateDepartment') { collection = this.data.departments; idKey = 'department_id'; }
+            else if (serverMethod === 'updateGroup') { collection = this.data.groups; idKey = 'group_id'; }
+            else if (serverMethod === 'updatePosition') { collection = this.data.positions; idKey = 'position_id'; }
+            else if (serverMethod === 'updateAttendanceStatus') { collection = this.statuses; idKey = 'status_id'; }
+
+            const isNew = !data[idKey];
+            let tempId = data[idKey] || ('temp-' + Date.now());
+
+            // 1. Zavřít modal okamžitě
+            this.closeModal();
+
+            // 2. Aktualizovat lokální cache pokud víme kam
+            if (collection && idKey) {
+                const optimisticData = { ...data };
+                if (isNew) {
+                    optimisticData[idKey] = tempId;
+                    collection.push(optimisticData);
+                } else {
+                    const idx = collection.findIndex(item => item[idKey] === tempId);
+                    if (idx !== -1) collection[idx] = { ...collection[idx], ...optimisticData };
+                }
+                // 3. Okamžitě překreslit tab
+                this.renderCurrentTab();
+            } else {
+                // Pro ostatní (uživatelé atd.) necháme zatím klasický loader, protože jsou komplexnější
+                showLoader("Ukládám...");
+            }
+
+            // 4. Server call na pozadí
+            try {
+                const result = await callServer(serverMethod, data);
+                if (result.success) {
+                    // Refresh dat v pozadí pro jistotu (bez blokování UI)
+                    await this.refreshAllData();
+                    this.renderCurrentTab();
+
+                    if (typeof showAdminToast === 'function') showAdminToast("Uloženo", "success");
+
+                    if (typeof refreshApp === 'function') {
+                        refreshApp({ full: true });
+                    }
+                } else {
+                    // V případě chyby nahlásit a refreshnout (pro "rollback")
+                    alert("Chyba při ukládání: " + result.error);
+                    await this.refreshAllData();
+                    this.renderCurrentTab();
+                }
+            } catch (e) {
+                console.error("Optimistic save failed", e);
+                await this.refreshAllData();
+                this.renderCurrentTab();
+            } finally {
+                hideLoader();
+            }
+        },
+
+        renderStatuses: function () {
+            const panel = document.getElementById('admin-panel-statuses');
+            if (!panel) return;
+
+            let html = `
+<div class="admin-card" style="padding:0; overflow:hidden;">
+    <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Docházkové statusy</h2>
+        <button class="btn-action" onclick="admin.showStatusModal()"
+            style="background:var(--success); color:white; padding:8px 16px; border-radius:8px; border:none; font-weight:800; cursor:pointer;">+
+            PŘIDAT STATUS</button>
+    </div>
+    <div class="table-container">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Náhled</th>
+                    <th>Název</th>
+                    <th style="text-align:center">Zkratka</th>
+                    <th style="text-align:center">Barva</th>
+                    <th style="text-align:center">Vyžaduje schválení</th>
+                    <th style="text-align:center">Rezervace stolu</th>
+                    <th style="text-align:center">Stav</th>
+                    <th style="text-align:center">Akce</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+            if (this.statuses && this.statuses.length > 0) {
+                this.statuses.forEach(s => {
+                    const isActive = s.active !== 'false';
+                    const reqApproval = s.requires_approval === 'true' || s.requires_approval === true;
+                    const deskRes = s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true;
+                    const bgColor = safeCssColor(s.color);
+                    const txtColor = safeCssColor(s.text_color || '#ffffff');
+                    html += `
+                <tr class="${!isActive ? 'row-inactive' : ''}">
+                    <td>
+                        <span style="display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:8px; background:${bgColor}; color:${txtColor}; font-weight:900; font-size:13px;">${escapeHtml(s.abbreviation || '?')}</span>
+                    </td>
+                    <td style="font-weight:700;">${escapeHtml(s.name || '')}</td>
+                    <td style="text-align:center; font-weight:800; color:#475569;">${escapeHtml(s.abbreviation || '')}</td>
+                    <td style="text-align:center;">
+                        <div style="display:inline-flex; gap:4px; align-items:center;">
+                            <span style="display:inline-block; width:22px; height:22px; border-radius:5px; background:${bgColor}; border:1px solid #e2e8f0;" title="Pozadí: ${escapeHtml(bgColor)}"></span>
+                            <span style="display:inline-block; width:22px; height:22px; border-radius:5px; background:${txtColor}; border:1px solid #e2e8f0;" title="Text: ${escapeHtml(txtColor)}"></span>
+                        </div>
+                    </td>
+                    <td style="text-align:center;">${reqApproval ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
+                    <td style="text-align:center;">${deskRes ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
+                    <td style="text-align:center;"><span class="${isActive ? 'badge-status-active' : 'badge-status-inactive'}">${isActive ? 'Aktivní' : 'Neaktivní'}</span></td>
+                    <td style="text-align:center;">
+                        <button onclick="admin.showStatusModal('${s.status_id}')" class="btn-icon" title="Upravit">✏️</button>
+                        <button onclick="admin.deleteStatus('${s.status_id}')" class="btn-icon btn-icon-danger" title="Smazat">🗑️</button>
+                    </td>
+                </tr>`;
+                });
+            } else {
+                html += '<tr><td colspan="8" style="text-align:center; padding:40px; color:#94a3b8;">Zatím nejsou definovány žádné statusy.</td></tr>';
+            }
+
+            html += `</tbody></table></div></div>`;
+            panel.innerHTML = html;
+        },
+
+        showStatusModal: function (id) {
+            const item = id ? this.statuses.find(s => s.status_id === id) : null;
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+
+            const bgColor = (item && item.color) ? item.color : '#4CAF50';
+            const txtColor = (item && item.text_color) ? item.text_color : '#ffffff';
+            const abbr = item ? (item.abbreviation || '') : '';
+
+            modalBody.innerHTML = `
+<div class="modal-brand-header">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div class="modal-header-icon">🏷️</div>
+    <h2 class="modal-header-title">${id ? 'Upravit status' : 'Nový docházkový status'}</h2>
+    <p class="modal-header-sub">${id ? 'Úprava stávajícího docházkového statusu' : 'Vytvoření nového docházkového statusu'}</p>
+</div>
+<div class="modal-body-padded" style="padding: 30px 40px;">
+    <form id="status-form" autocomplete="off">
+        <input type="hidden" name="status_id" value="${id || ''}">
+
+        <!-- Live náhled -->
+        <div style="display:flex; justify-content:center; margin-bottom:30px;">
+            <span id="status-chip-preview"
+                style="display:inline-flex; align-items:center; justify-content:center; min-width:80px; height:80px; border-radius:16px; padding:0 20px; background:${bgColor}; color:${txtColor}; font-weight:900; font-size:32px; letter-spacing:0.03em; box-shadow:0 8px 16px rgba(0,0,0,0.1); transition:background 0.1s, color 0.1s;">
+                ${abbr || '?'}
+            </span>
+        </div>
+
+        <!-- Název + Zkratka + Kategorie -->
+        <div style="display:grid; grid-template-columns:1fr 0.5fr 0.8fr; gap:16px;">
+            <div class="modal-form-group">
+                <label class="modal-form-label">NÁZEV</label>
+                <input type="text" name="name" value="${item ? item.name : ''}" class="modal-form-input" style="height:46px; border-radius:10px;" required>
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">ZKRATKA</label>
+                <input type="text" name="abbreviation" value="${abbr}" class="modal-form-input" style="height:46px; border-radius:10px;" maxlength="4" required
+                    oninput="var p=document.getElementById('status-chip-preview'); p.textContent=this.value||'?';">
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">KATEGORIE</label>
+                <select name="category" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="Práce" ${item && item.category === 'Práce' ? 'selected' : ''}>Práce</option>
+                    <option value="Volno / Absence" ${item && item.category === 'Volno / Absence' ? 'selected' : ''}>Volno / Absence</option>
+                    <option value="Zdraví" ${item && item.category === 'Zdraví' ? 'selected' : ''}>Zdraví</option>
+                    <option value="Ostatní" ${!item || (item.category !== 'Práce' && item.category !== 'Volno / Absence' && item.category !== 'Zdraví') ? 'selected' : ''}>Ostatní</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Barvy -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:25px;">
+            <div class="modal-form-group">
+                <label class="modal-form-label">BARVA BUŇKY (POZADÍ)</label>
+                <div style="display:flex; align-items:center; gap:12px; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                    <input type="color" name="color" value="${bgColor}"
+                        style="width:48px; height:32px; padding:0; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
+                        oninput="document.getElementById('status-chip-preview').style.background=this.value; document.getElementById('status-bg-val').textContent=this.value;">
+                    <span id="status-bg-val" style="font-size:13px; color:#475569; font-weight:600; font-family:monospace;">${bgColor}</span>
+                </div>
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">BARVA TEXTU</label>
+                <div style="display:flex; align-items:center; gap:12px; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                    <input type="color" name="text_color" value="${txtColor}"
+                        style="width:48px; height:32px; padding:0; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
+                        oninput="document.getElementById('status-chip-preview').style.color=this.value; document.getElementById('status-txt-val').textContent=this.value;">
+                    <span id="status-txt-val" style="font-size:13px; color:#475569; font-weight:600; font-family:monospace;">${txtColor}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Volby -->
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; margin-top:25px;">
+            <div class="modal-form-group">
+                <label class="modal-form-label">VYŽADUJE SCHVÁLENÍ</label>
+                <select name="requires_approval" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="false" ${!item || String(item.requires_approval) !== 'true' ? 'selected' : ''}>Ne</option>
+                    <option value="true" ${item && String(item.requires_approval) === 'true' ? 'selected' : ''}>Ano</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">REZERVACE STOLU</label>
+                <select name="allows_desk_reservation" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="false" ${!item || String(item.allows_desk_reservation) !== 'true' ? 'selected' : ''}>Ne</option>
+                    <option value="true" ${item && String(item.allows_desk_reservation) === 'true' ? 'selected' : ''}>Ano</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">POČÍTÁ SE DO DOVOLENÉ</label>
+                <select name="is_vacation" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="false" ${!item || String(item.is_vacation) !== 'true' ? 'selected' : ''}>Ne</option>
+                    <option value="true" ${item && String(item.is_vacation) === 'true' ? 'selected' : ''}>Ano</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
+                <label class="modal-form-label">STAV</label>
+                <select name="active" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="true" ${!item || String(item.active) !== 'false' ? 'selected' : ''}>Aktivní</option>
+                    <option value="false" ${item && String(item.active) === 'false' ? 'selected' : ''}>Neaktivní</option>
+                </select>
+            </div>
+        </div>
+    </form>
+</div>
+<div class="modal-footer-brand" style="padding: 20px 40px; background:#f8fafc; border-top:1px solid #eef2f6;">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()" style="height:44px; padding:0 24px;">ZRUŠIT</button>
+    <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:44px; padding:0 30px; background:var(--primary);">ULOŽIT</button>
+</div>`;
+        },
+
+        saveStatus: function () {
+            this.saveGeneric('updateAttendanceStatus', 'status-form');
+        },
+
+        deleteStatus: function (id) {
+            const item = this.statuses.find(s => s.status_id === id);
+            if (!item) return;
+            if (!confirm('Opravdu chcete trvale smazat status "' + item.name + '"?\n\nTato akce je nevratná.')) return;
+
+            // Optimistický delete
+            const originalIndex = this.statuses.findIndex(s => s.status_id === id);
+            const originalItem = { ...this.statuses[originalIndex] };
+
+            this.statuses.splice(originalIndex, 1);
+            this.renderCurrentTab();
+
+            callServer('deleteAttendanceStatus', id)
+                .then(result => {
+                    if (result.success) {
+                        showAdminToast("Status smazán", "success");
+                        // Tichý refresh
+                        this.refreshAllData().then(() => {
+                            this.renderCurrentTab();
+                            if (window.plannerData) {
+                                window.plannerData.statuses = this.statuses;
+                                if (typeof renderPlanner === 'function') renderPlanner();
+                            }
+                        });
+                    } else {
+                        alert("Chyba při mazání: " + result.error);
+                        // Rollback
+                        this.refreshAllData().then(() => this.renderCurrentTab());
+                    }
+                })
+                .catch(e => {
+                    console.error("Delete status failed", e);
+                    this.refreshAllData().then(() => this.renderCurrentTab());
+                });
+        },
+
+        renderSettings: function () {
+            const panel = document.getElementById('admin-panel-settings');
+            if (!panel) return;
+
+            const cfg = this.vacationConfig || { system_type: 'GLOBAL', global_days: 30, base_days: 25, max_extra_days: 5 };
+
+            panel.innerHTML = `
+<div class="admin-card" style="padding:0; overflow:hidden; max-width: 800px; margin: 0 auto;">
+    <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Globální nastavení</h2>
+        <button class="btn-action" onclick="admin.saveVacationSettings()"
+            style="background:var(--primary); color:white; padding:8px 20px; border-radius:8px; border:none; font-weight:800; cursor:pointer;">ULOŽIT NASTAVENÍ</button>
+    </div>
+    
+    <div style="padding:30px;">
+        <form id="settings-vacation-form">
+            <div style="margin-bottom:30px;">
+                <h3 style="margin:0 0 16px; font-size:16px; font-weight:800; color:#1e293b; display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:20px;">🏖️</span> Systém dovolených
+                </h3>
+                <p style="color:#64748b; font-size:13px; margin:0 0 20px;">Vyberte, jakým způsobem se vypočítává nárok na dovolenou u zaměstnanců.</p>
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                    <label class="setting-radio-card ${cfg.system_type === 'GLOBAL' ? 'active' : ''}">
+                        <input type="radio" name="system_type" value="GLOBAL" ${cfg.system_type === 'GLOBAL' ? 'checked' : ''} onchange="admin.updateSettingsUI()">
+                        <div class="card-content">
+                            <span class="card-title">Jednotný fond</span>
+                            <p class="card-desc">Všichni zaměstnanci mají stejný počet dní dovolené bez ohledu na délku praxe.</p>
+                        </div>
+                    </label>
+                    <label class="setting-radio-card ${cfg.system_type === 'INDIVIDUAL' ? 'active' : ''}">
+                        <input type="radio" name="system_type" value="INDIVIDUAL" ${cfg.system_type === 'INDIVIDUAL' ? 'checked' : ''} onchange="admin.updateSettingsUI()">
+                        <div class="card-content">
+                            <span class="card-title">Individuální (Seniorita)</span>
+                            <p class="card-desc">Základní fond + dny navíc za každý odpracovaný rok u společnosti.</p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div id="settings-vacation-details" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:24px;">
+                <!-- Dynamický obsah podle výběru -->
+            </div>
+        </form>
+
+        <div style="margin-top:40px; padding-top:25px; border-top:1px solid #f1f5f9;">
+            <h3 style="margin:0 0 20px; font-size:14px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">Schvalování dovolené</h3>
+
+            <div style="display:flex; align-items:flex-start; gap:20px; padding:20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                <div style="flex:1;">
+                    <div style="font-size:14px; font-weight:800; color:#1e293b; margin-bottom:4px;">Vedoucí oddělení potřebuje schválení od vedoucího úseku</div>
+                    <div style="font-size:12px; color:#64748b; line-height:1.5;">Pokud je zapnuto, dovolená zadaná vedoucím oddělení (Vedoucí oddělení / Zástupce) musí být schválena vedoucím úseku. Jinak si vedoucí oddělení dovolenou schvaluje sám.</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0; flex-shrink:0;">
+                    <button id="rdla-btn-no" type="button"
+                        onclick="admin.setDeptLeaderApproval(false)"
+                        style="padding:8px 18px; border:2px solid #cbd5e1; border-right:1px solid #cbd5e1; border-radius:8px 0 0 8px; font-size:12px; font-weight:800; cursor:pointer; transition:all .15s;
+                            background:${cfg.require_dept_leader_approval === 'true' ? '#f8fafc' : '#1e293b'};
+                            color:${cfg.require_dept_leader_approval === 'true' ? '#94a3b8' : '#fff'};">
+                        Ne
+                    </button>
+                    <button id="rdla-btn-yes" type="button"
+                        onclick="admin.setDeptLeaderApproval(true)"
+                        style="padding:8px 18px; border:2px solid #cbd5e1; border-left:1px solid #cbd5e1; border-radius:0 8px 8px 0; font-size:12px; font-weight:800; cursor:pointer; transition:all .15s;
+                            background:${cfg.require_dept_leader_approval === 'true' ? '#0ea5e9' : '#f8fafc'};
+                            color:${cfg.require_dept_leader_approval === 'true' ? '#fff' : '#94a3b8'};">
+                        Ano
+                    </button>
+                    <input type="hidden" id="require-dept-leader-approval-val" value="${cfg.require_dept_leader_approval === 'true' ? 'true' : 'false'}">
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top:40px; padding-top:25px; border-top:1px solid #f1f5f9;">
+            <h3 style="margin:0 0 20px; font-size:14px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">🎉 Výročí zaměstnanců</h3>
+
+            <div style="padding:20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                <div style="font-size:14px; font-weight:800; color:#1e293b; margin-bottom:4px;">Milníky výročí nástupu</div>
+                <div style="font-size:12px; color:#64748b; line-height:1.5; margin-bottom:16px;">Definujte počet let, při kterých se u jména zaměstnance zobrazí zelený badge výročí (30 dnů před výročím).</div>
+
+                <div id="anniversary-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="number" id="anniversary-new-input" min="1" max="99" placeholder="Roky"
+                        style="width:80px; padding:6px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit;">
+                    <button type="button" onclick="admin.addAnniversaryMilestone()"
+                        style="padding:6px 14px; background:var(--primary); color:white; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">+ Přidat</button>
+                </div>
+                <input type="hidden" id="anniversary-milestones-val" name="anniversary_milestones" value="${cfg.anniversary_milestones || '[10,15,20,40]'}">
+            </div>
+        </div>
+
+        <div style="margin-top:40px; padding-top:25px; border-top:1px solid #f1f5f9;">
+            <h3 style="margin:0 0 20px; font-size:14px; font-weight:800; color:#64748b; text-transform:uppercase; letter-spacing:0.05em;">📅 Údržba kalendářů</h3>
+
+            <div style="padding:20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                <div style="font-size:14px; font-weight:800; color:#1e293b; margin-bottom:4px;">Vyčistit osiřelé kalendáře</div>
+                <div style="font-size:12px; color:#64748b; line-height:1.5; margin-bottom:16px;">Najde a smaže Google kalendáře vytvořené aplikací, které nemají odpovídající záznam v databázi (např. po ručním smazání z DB).</div>
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <button type="button" id="cleanup-cal-btn" onclick="admin.cleanupOrphanedCalendars()"
+                        style="padding:8px 18px; background:#dc2626; color:white; border:none; border-radius:8px; font-size:12px; font-weight:800; cursor:pointer; transition:all .15s;">
+                        🗑️ Spustit čištění
+                    </button>
+                    <span id="cleanup-cal-result" style="font-size:12px; color:#64748b;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .anniversary-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        background: #dcfce7;
+        color: #166534;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+    }
+    .anniversary-chip-x {
+        width: 18px; height: 18px;
+        border-radius: 50%;
+        background: rgba(22, 101, 52, 0.15);
+        border: none;
+        color: #166534;
+        font-size: 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+    }
+    .anniversary-chip-x:hover { background: #dc2626; color: white; }
+    .setting-radio-card {
+        display: block;
+        position: relative;
+        padding: 20px;
+        background: #fff;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .setting-radio-card:hover { border-color: #cbd5e1; background: #f8fafc; }
+    .setting-radio-card.active { border-color: var(--primary); background: #f0f7ff; }
+    .setting-radio-card input { position: absolute; opacity: 0; }
+    .setting-radio-card .card-title { display: block; font-weight: 800; color: #1e293b; margin-bottom: 6px; }
+    .setting-radio-card .card-desc { margin: 0; font-size: 12px; color: #64748b; line-height: 1.4; }
+</style>
+`;
+            this.updateSettingsUI();
+            this.renderAnniversaryChips();
+        },
+
+        updateSettingsUI: function () {
+            const form = document.getElementById('settings-vacation-form');
+            if (!form) return;
+            const type = form.system_type.value;
+            const container = document.getElementById('settings-vacation-details');
+
+            // Update visual state of cards
+            document.querySelectorAll('.setting-radio-card').forEach(c => {
+                const input = c.querySelector('input');
+                if (input.value === type) c.classList.add('active');
+                else c.classList.remove('active');
+            });
+
+            const cfg = this.vacationConfig || { global_days: 30, base_days: 25, max_extra_days: 5 };
+
+            if (type === 'GLOBAL') {
+                container.innerHTML = `
+                    <div style="max-width:300px;">
+                        <label style="display:block; font-size:12px; font-weight:800; color:#475569; margin-bottom:8px; text-transform:uppercase;">Počet dnů pro všechny</label>
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <input type="number" name="global_days" value="${cfg.global_days || 30}" min="0" max="100" 
+                                style="width:100%; height:46px; padding:0 16px; border:2px solid #cbd5e1; border-radius:10px; font-weight:800; font-size:16px;">
+                            <span style="font-weight:700; color:#64748b;">dnů / rok</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:30px;">
+                        <div>
+                            <label style="display:block; font-size:11px; font-weight:800; color:#475569; margin-bottom:8px; text-transform:uppercase;">Základní výměra</label>
+                            <input type="number" name="base_days" value="${cfg.base_days || 25}" 
+                                style="width:100%; height:46px; padding:0 16px; border:2px solid #cbd5e1; border-radius:10px; font-weight:800;">
+                            <p style="margin:8px 0 0; font-size:11px; color:#94a3b8;">Základ pro každého zaměstnance.</p>
+                        </div>
+                        <div>
+                            <label style="display:block; font-size:11px; font-weight:800; color:#475569; margin-bottom:8px; text-transform:uppercase;">Max. bonusové dny</label>
+                            <input type="number" name="max_extra_days" value="${cfg.max_extra_days || 5}" 
+                                style="width:100%; height:46px; padding:0 16px; border:2px solid #cbd5e1; border-radius:10px; font-weight:800;">
+                            <p style="margin:8px 0 0; font-size:11px; color:#94a3b8;">Max. počet přidaných dní za odpracované roky.</p>
+                        </div>
+                    </div>
+                    <div style="margin-top:20px; padding-top:15px; border-top:1px dashed #cbd5e1;">
+                        <p style="margin:0; font-size:12px; color:#475569; display:flex; gap:8px;">
+                            <span style="font-size:16px;">ℹ️</span> 
+                            <span>Výpočet: <strong>Základ + 1 den za každý rok</strong> ve společnosti (až do limitu bonusu).</span>
+                        </p>
+                    </div>
+                `;
+            }
+        },
+
+        setDeptLeaderApproval: function (val) {
+            const hidden = document.getElementById('require-dept-leader-approval-val');
+            if (hidden) hidden.value = val ? 'true' : 'false';
+            const btnNo = document.getElementById('rdla-btn-no');
+            const btnYes = document.getElementById('rdla-btn-yes');
+            if (btnNo && btnYes) {
+                btnNo.style.background = val ? '#f8fafc' : '#1e293b';
+                btnNo.style.color = val ? '#94a3b8' : '#fff';
+                btnYes.style.background = val ? '#0ea5e9' : '#f8fafc';
+                btnYes.style.color = val ? '#fff' : '#94a3b8';
+            }
+        },
+
+        renderAnniversaryChips: function () {
+            const container = document.getElementById('anniversary-chips');
+            const hidden = document.getElementById('anniversary-milestones-val');
+            if (!container || !hidden) return;
+            let milestones = [];
+            try { milestones = JSON.parse(hidden.value); } catch (e) { milestones = [10, 15, 20, 40]; }
+            milestones.sort(function (a, b) { return a - b; });
+            container.innerHTML = milestones.map(function (m) {
+                return '<span class="anniversary-chip">' + m + ' let <button type="button" class="anniversary-chip-x" onclick="admin.removeAnniversaryMilestone(' + m + ')">×</button></span>';
+            }).join('');
+        },
+
+        addAnniversaryMilestone: function () {
+            const input = document.getElementById('anniversary-new-input');
+            const hidden = document.getElementById('anniversary-milestones-val');
+            if (!input || !hidden) return;
+            const val = parseInt(input.value, 10);
+            if (!val || val < 1 || val > 99) return;
+            let milestones = [];
+            try { milestones = JSON.parse(hidden.value); } catch (e) { milestones = []; }
+            if (milestones.includes(val)) { input.value = ''; return; }
+            milestones.push(val);
+            hidden.value = JSON.stringify(milestones);
+            input.value = '';
+            this.renderAnniversaryChips();
+        },
+
+        removeAnniversaryMilestone: function (val) {
+            const hidden = document.getElementById('anniversary-milestones-val');
+            if (!hidden) return;
+            let milestones = [];
+            try { milestones = JSON.parse(hidden.value); } catch (e) { milestones = []; }
+            milestones = milestones.filter(function (m) { return m !== val; });
+            hidden.value = JSON.stringify(milestones);
+            this.renderAnniversaryChips();
+        },
+
+        cleanupOrphanedCalendars: async function () {
+            var btn = document.getElementById('cleanup-cal-btn');
+            var result = document.getElementById('cleanup-cal-result');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ Probíhá...'; }
+            if (result) result.textContent = '';
+
+            try {
+                var res = await callServer('cleanupOrphanedCalendars');
+                if (res && res.success) {
+                    var count = (res.cleaned || []).length;
+                    if (count === 0) {
+                        if (result) result.innerHTML = '<span style="color:#16a34a; font-weight:600;">✓ Žádné osiřelé kalendáře nenalezeny</span>';
+                    } else {
+                        var names = res.cleaned.map(function(c) { return c.name; }).join(', ');
+                        if (result) result.innerHTML = '<span style="color:#dc2626; font-weight:600;">🗑️ Smazáno ' + count + ' kalendářů: ' + names + '</span>';
+                    }
+                    if (res.errors && res.errors.length > 0) {
+                        var errNames = res.errors.map(function(e) { return e.name; }).join(', ');
+                        if (result) result.innerHTML += '<br><span style="color:#f59e0b;">⚠️ Chyby: ' + errNames + '</span>';
+                    }
+                } else {
+                    if (result) result.innerHTML = '<span style="color:#dc2626;">Chyba: ' + ((res && res.error) || 'Neznámá') + '</span>';
+                }
+            } catch (e) {
+                if (result) result.innerHTML = '<span style="color:#dc2626;">Chyba: ' + e.toString() + '</span>';
+            }
+            if (btn) { btn.disabled = false; btn.textContent = '🗑️ Spustit čištění'; }
+        },
+
+        saveVacationSettings: async function () {
+            const form = document.getElementById('settings-vacation-form');
+            const formData = new FormData(form);
+            const data = {};
+            formData.forEach((v, k) => data[k] = v);
+            // Přidat hodnotu require_dept_leader_approval (mimo form)
+            const rdlaVal = document.getElementById('require-dept-leader-approval-val');
+            if (rdlaVal) data.require_dept_leader_approval = rdlaVal.value;
+            // Přidat anniversary milestones
+            const annVal = document.getElementById('anniversary-milestones-val');
+            if (annVal) data.anniversary_milestones = annVal.value;
+
+            showLoader("Ukládám nastavení...");
+            try {
+                const res = await callServer('saveVacationConfig', data);
+                if (res.success) {
+                    await this.refreshAllData();
+                    // Sync with main app
+                    if (typeof refreshApp === 'function') refreshApp({ full: true });
+                } else {
+                    showAdminToast("Chyba: " + res.error);
+                }
+            } catch (e) {
+                showAdminToast("Chyba: " + e);
+            } finally {
+                hideLoader();
+            }
+        },
+
+        formatDateCompact: function (dateStr) {
+            if (!dateStr || dateStr === '' || dateStr === '---') return '-';
+            try {
+                const d = new Date(dateStr);
+                return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('cs-CZ');
+            } catch (e) { return dateStr; }
+        },
+
+        toggleInactiveUsers: function (checked) {
+            this.showInactiveUsers = checked;
+            this.renderCurrentTab();
+        },
+
+        confirmDeleteUser: function (userId) {
+            const user = this.users.find(u => u.user_id === userId);
+            if (!user) return;
+            if (!confirm(`Opravdu chcete smazat účet uživatele ${user.first_name} ${user.last_name}?\n\nTato akce je nevratná.`)) return;
+
+            showLoader('Mažu uživatele...');
+            callServer('deleteUser', userId)
+                .then(result => {
+                    hideLoader();
+                    if (result && result.success) {
+                        this.refreshAllData().then(() => {
+                            this.renderCurrentTab();
+                            if (window.plannerData) {
+                                window.plannerData.employees = this.users;
+                                if (typeof renderPlanner === 'function') renderPlanner();
+                            }
+                        });
+                    } else {
+                        showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
+                    }
+                })
+                .catch(e => { hideLoader(); showAdminToast('Chyba komunikace: ' + e); });
+        },
+
+        /**
+         * MODÁL PRO SPRÁVU UŽIVATELE (PLNÁ VERZE)
+         */
+        showUserModal: function (userId) {
+            console.log("Admin: Otevírám modál uživatele:", userId || 'Nový');
+            const user = userId ? this.users.find(u => u.user_id === userId) : null;
+
+            // ── SCOPED PERMISSIONS & ROLE HIERARCHY ──
+            const currentUser = (typeof plannerData !== 'undefined' && plannerData.user) ? plannerData.user : null;
+            const myRole = currentUser?.system_role || 'USER';
+            const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
+            const myWeight = roleWeights[myRole] || 0;
+
+            let scope = typeof window.hasPermission === 'function' ? window.hasPermission('manage_users') : 'NONE';
+            if (scope === true) scope = 'ALL';
+            if (scope === false || !scope) scope = 'NONE';
+
+            // 1. Restriction: ADMIN can't edit another ADMIN, LEADER can't edit another LEADER
+            //    Výjimka: uživatel může vždy editovat sám sebe
+            if (user && myRole !== 'SUPERADMIN' && user.user_id !== currentUser?.user_id) {
+                const targetRole = user.system_role || 'USER';
+                const targetWeight = roleWeights[targetRole] || 0;
+                if (targetWeight >= myWeight) {
+                    showAdminToast('Nemáte oprávnění editovat uživatele se stejnou nebo vyšší rolí.', 'warning');
+                    return;
+                }
+            }
+
+            // 2. Filter Organizational units based on scope
+            let filteredSections = this.data.sections;
+            let filteredDepts = this.data.departments;
+            let filteredGroups = this.data.groups;
+
+            if (scope !== 'ALL' && currentUser) {
+                if (scope === 'OWN_SECTION') {
+                    filteredSections = filteredSections.filter(s => s.section_id === currentUser.section_id);
+                    filteredDepts = filteredDepts.filter(d => d.section_id === currentUser.section_id);
+                } else if (scope === 'OWN_DEPARTMENT') {
+                    filteredDepts = filteredDepts.filter(d => d.department_id === currentUser.department_id);
+                    const secIds = new Set(filteredDepts.map(d => d.section_id));
+                    filteredSections = filteredSections.filter(s => secIds.has(s.section_id));
+                }
+                const deptIds = new Set(filteredDepts.map(d => d.department_id));
+                filteredGroups = filteredGroups.filter(g => deptIds.has(g.department_id));
+            }
+
+            // 3. Filter available roles
+            const roleOptions = [
+                { val: 'USER', label: 'USER — Zaměstnanec' },
+                { val: 'LEADER', label: 'LEADER — Vedoucí' },
+                { val: 'ADMIN', label: 'ADMIN — Administrátor' },
+                { val: 'SUPERADMIN', label: 'SUPERADMIN' }
+            ].filter(r => {
+                if (myRole === 'SUPERADMIN') return true;
+                return roleWeights[r.val] < myWeight;
+            });
+
+            const modal = document.getElementById('admin-modal');
+            const modalBody = document.getElementById('modal-body');
+
+            modal.classList.remove('step-hidden');
+            modal.style.display = 'flex';
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-large';
+
+            let html = `
+<div class="modal-brand-header" style="padding:14px 20px;">
+    <div class="modal-deco-circle"></div>
+    <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
+    <div style="display:flex;align-items:center;gap:12px;position:relative;z-index:1;">
+        <div class="modal-header-icon" style="margin-bottom:0;flex-shrink:0;">👤</div>
+        <div>
+            <h2 class="modal-header-title">${user ? 'Upravit uživatele' : 'Nový uživatel'}</h2>
+            <p class="modal-header-sub">${user ? `${user.first_name} ${user.last_name} &middot; ${user.email}` : 'Vyplňte údaje nového zaměstnance'}</p>
+        </div>
+    </div>
+</div>
+<div class="admin-modal-body">
+    <form id="user-form" autocomplete="off">
+        <input type="hidden" name="user_id" value="${userId || ''}">
+
+        <div class="user-modal-2col">
+
+            <!-- ══ LEVÝ SLOUPEC: Osobní + Organizační ══ -->
+            <div class="user-modal-left-col">
+
+                <!-- Osobní údaje -->
+                <div class="modal-section" style="--ms-color:#3b82f6;--ms-bg:#eff6ff;--ms-border:#bfdbfe;">
+                    <div class="modal-section-title">👤 Osobní údaje</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-fname">Jméno</label>
+                            <input type="text" id="u-fname" name="first_name" value="${user?.first_name || ''}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-lname">Příjmení</label>
+                            <input type="text" id="u-lname" name="last_name" value="${user?.last_name || ''}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
+                        </div>
+                        <div class="form-group" style="margin:0;grid-column:span 2;">
+                            <label for="u-email">E-mail (Účet)</label>
+                            <input type="email" id="u-email" name="email" value="${user?.email || ''}" required>
+                            ${!user ? '<div class="autofill-hint">✦ Vyplní se automaticky z jména a příjmení</div>' : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Organizační zařazení -->
+                <div class="modal-section" style="--ms-color:#0ea5e9;--ms-bg:#f0f9ff;--ms-border:#bae6fd;">
+                    <div class="modal-section-title">🏢 Organizační zařazení</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-section">Úsek</label>
+                            <select id="u-section" name="section_id" onchange="admin.filterDeptsInModal(this.value)" required>
+                                <option value="">-- Vyberte úsek --</option>
+                                ${filteredSections.map(s => `<option value="${s.section_id}" ${user?.section_id === s.section_id ? 'selected' : ''}>${s.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-dept">Oddělení</label>
+                            <select id="u-dept" name="department_id" onchange="admin.filterGroupsInModal(this.value)">
+                                <option value="">-- Vyberte oddělení --</option>
+                                ${filteredDepts.map(d => `<option value="${d.department_id}" data-section="${d.section_id}" ${user?.department_id === d.department_id ? 'selected' : ''} style="${user && user.section_id !== d.section_id ? 'display:none;' : ''}">${d.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-group">Tým</label>
+                            <select id="u-group" name="group_id">
+                                <option value="">-- Vyberte tým --</option>
+                                ${filteredGroups.map(g => `<option value="${g.group_id}" data-dept="${g.department_id}" ${user?.group_id === g.group_id ? 'selected' : ''} style="${user && user.department_id !== g.department_id ? 'display:none;' : ''}">${g.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-pos">Pracovní pozice</label>
+                            <select id="u-pos" name="position_id">
+                                <option value="">-- Bez pozice --</option>
+                                ${(this.data.positions || []).map(p => `<option value="${p.position_id}" ${user?.position_id === p.position_id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;grid-column:span 2;">
+                            <label for="u-sysrole">Systémová role</label>
+                            <select id="u-sysrole" name="system_role" required>
+                                ${roleOptions.map(r => `<option value="${r.val}" ${user?.system_role === r.val ? 'selected' : ''}>${r.label}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ══ PRAVÝ SLOUPEC: Termíny + Dovolená ══ -->
+            <div class="user-modal-right-col">
+
+                <!-- Termíny a Stav -->
+                <div class="modal-section" style="--ms-color:#f59e0b;--ms-bg:#fffbeb;--ms-border:#fde68a;">
+                    <div class="modal-section-title">📅 Termíny a Stav</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-start">Datum nástupu</label>
+                            <input type="date" id="u-start" name="date_start" value="${user?.date_start ? new Date(user.date_start).toISOString().split('T')[0] : ''}" oninput="admin.updateVacationFundPreview()">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-end">Datum ukončení</label>
+                            <input type="date" id="u-end" name="date_end" value="${user?.date_end && user.date_end !== '---' ? new Date(user.date_end).toISOString().split('T')[0] : ''}">
+                        </div>
+                        <div class="form-group" style="margin:0;grid-column:span 2;">
+                            <label for="u-active">Stav účtu</label>
+                            <select id="u-active" name="active" required>
+                                <option value="true" ${user?.active !== 'false' ? 'selected' : ''}>Aktivní</option>
+                                <option value="false" ${user?.active === 'false' ? 'selected' : ''}>Neaktivní</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dovolená -->
+                <div class="modal-section" style="--ms-color:#10b981;--ms-bg:#ecfdf5;--ms-border:#a7f3d0;">
+                    <div class="modal-section-title">🏖️ Dovolená</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div class="form-group" style="margin:0;">
+                            <label for="u-carried-over">Stará dovolená (dny z min. roku)</label>
+                            <input type="number" id="u-carried-over" name="vacation_days_carried_over" min="0" max="365" step="0.5" value="${Number(user?.vacation_days_carried_over || 0)}" oninput="admin.updateVacationFundPreview()">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label>Individuální fond (aktuální rok)</label>
+                            <div id="u-vacation-fund-preview" style="padding:8px 12px;background:white;border-radius:8px;font-size:14px;font-weight:700;color:#059669;min-height:38px;display:flex;align-items:center;border:1.5px solid #a7f3d0;flex-wrap:wrap;gap:4px;">—</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </form>
+</div>
+<div class="modal-footer-brand">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()">ZRUŠIT</button>
+    <button class="btn-modal-save" onclick="admin.saveUser()">ULOŽIT UŽIVATELE</button>
+</div>
+`;
+            modalBody.innerHTML = html;
+
+            // Inicializovat filtrování pokud je vybraný úsek
+            if (user?.section_id) this.filterDeptsInModal(user.section_id);
+            if (user?.department_id) this.filterGroupsInModal(user.department_id);
+            // Zobrazit preview fondu dovolené
+            this.updateVacationFundPreview();
+        },
+
+        filterDeptsInModal: function (sectionId) {
+            const deptSelect = document.getElementById('u-dept');
+            const options = deptSelect.querySelectorAll('option');
+            options.forEach(opt => {
+                const sId = opt.getAttribute('data-section');
+                if (!sId) return; // Skip default
+                opt.style.display = (sId === sectionId) ? 'block' : 'none';
+            });
+            // Reset selection if current hidden
+            const current = deptSelect.options[deptSelect.selectedIndex];
+            if (current && current.style.display === 'none') deptSelect.value = "";
+        },
+
+        filterGroupsInModal: function (deptId) {
+            const groupSelect = document.getElementById('u-group');
+            if (!groupSelect) return;
+            const options = groupSelect.querySelectorAll('option');
+            options.forEach(opt => {
+                const dId = opt.getAttribute('data-dept');
+                if (!dId) return; // Skip default
+                opt.style.display = (dId === deptId) ? 'block' : 'none';
+            });
+            const current = groupSelect.options[groupSelect.selectedIndex];
+            if (current && current.style.display === 'none') groupSelect.value = "";
+        },
+
+        /**
+         * Auto-vyplní e-mail z jména a příjmení ve formátu jmeno.prijmeni@lidl.cz
+         * Spouští se při psaní – přepíše pole jen pokud je prázdné nebo stále odpovídá
+         * automaticky generovanému vzoru (@lidl.cz)
+         */
+        autoFillEmail: function () {
+            const emailInput = document.getElementById('u-email');
+            if (!emailInput) return;
+
+            // Nepřepisuj, pokud uživatel už zadal jinou adresu (mimo @lidl.cz)
+            const current = emailInput.value;
+            if (current && !current.endsWith('@lidl.cz')) return;
+
+            const fname = (document.getElementById('u-fname')?.value || '').trim();
+            const lname = (document.getElementById('u-lname')?.value || '').trim();
+            if (!fname || !lname) return;
+
+            // Odstraň diakritiku, lowercase, nechej jen a-z
+            const norm = s => s.normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z]/g, '');
+
+            emailInput.value = norm(fname) + '.' + norm(lname) + '@lidl.cz';
+        },
+
+        /**
+         * Přepočítá a zobrazí individuální fond dovolené v modalu uživatele.
+         * Reaguje na změny datumu nástupu a staré dovolené.
+         */
+        updateVacationFundPreview: function () {
+            const preview = document.getElementById('u-vacation-fund-preview');
+            if (!preview) return;
+
+            const dateStartInput = document.getElementById('u-start');
+            const carriedOverInput = document.getElementById('u-carried-over');
+            const carriedOver = parseFloat(carriedOverInput?.value || 0) || 0;
+
+            const vacConfig = this.vacationConfig || { system_type: 'GLOBAL', global_days: 30, base_days: 25, max_extra_days: 5 };
+            const currYear = new Date().getFullYear();
+
+            // Základní roční nárok dle systému
+            let baseEntitlement;
+            if ((vacConfig.system_type || 'GLOBAL') === 'INDIVIDUAL') {
+                let years = 0;
+                const dateStartVal = dateStartInput?.value;
+                if (dateStartVal) {
+                    const sd = new Date(dateStartVal);
+                    if (!isNaN(sd.getTime())) {
+                        years = currYear - sd.getFullYear();
+                        if (years < 0) years = 0;
+                    }
+                }
+                baseEntitlement = Number(vacConfig.base_days || 25) + Math.min(years, Number(vacConfig.max_extra_days || 5));
+            } else {
+                baseEntitlement = Number(vacConfig.global_days || 30);
+            }
+
+            // Poměrové krácení při nástupu v aktuálním roce
+            let proportional = baseEntitlement;
+            let monthsNotWorked = 0;
+            const dateStartVal = dateStartInput?.value;
+            if (dateStartVal) {
+                const sd = new Date(dateStartVal);
+                if (!isNaN(sd.getTime()) && sd.getFullYear() === currYear) {
+                    monthsNotWorked = sd.getMonth();
+                    if (monthsNotWorked > 0) {
+                        proportional = baseEntitlement - (baseEntitlement / 12) * monthsNotWorked;
+                        proportional = Math.round(proportional * 2) / 2;
+                    }
+                }
+            }
+
+            const total = proportional + carriedOver;
+
+            // Sestavit popisný text
+            let detail = '';
+            if (monthsNotWorked > 0 && carriedOver > 0) {
+                detail = ` (${proportional} poměrově z ${baseEntitlement} + ${carriedOver} přeneseno)`;
+            } else if (monthsNotWorked > 0) {
+                detail = ` (poměrně z ${baseEntitlement} dnů, ${monthsNotWorked} ${monthsNotWorked === 1 ? 'měsíc' : monthsNotWorked < 5 ? 'měsíce' : 'měsíců'} nekráceno)`;
+            } else if (carriedOver > 0) {
+                detail = ` (${baseEntitlement} + ${carriedOver} přeneseno)`;
+            }
+
+            preview.textContent = total + ' dní' + detail;
+        },
+
+        saveUser: function () {
+            const form = document.getElementById('user-form');
+            if (!form || !form.checkValidity()) { form && form.reportValidity(); return; }
+
+            const formData = new FormData(form);
+            const data = {};
+            formData.forEach((v, k) => data[k] = v);
+
+            const isNew = !data.user_id;
+
+            if (isNew) {
+                // ── OPTIMISTIC CREATE ──────────────────────────────────────
+                // 1. Sestav dočasný objekt uživatele a přidej ho do lokálního pole
+                const tempId = '_tmp_' + Date.now();
+                const optimisticUser = {
+                    user_id: tempId,
+                    email: data.email || '',
+                    first_name: data.first_name || '',
+                    last_name: data.last_name || '',
+                    section_id: data.section_id || '',
+                    department_id: data.department_id || '',
+                    group_id: data.group_id || '',
+                    position_id: data.position_id || '',
+                    system_role: data.system_role || 'USER',
+                    org_role: 'MEMBER',
+                    active: data.active || 'true',
+                    date_start: data.date_start || '',
+                    date_end: data.date_end || '',
+                    auth_status: '',
+                    vacation_days_carried_over: data.vacation_days_carried_over || '',
+                    is_derived_active: true,
+                    _optimistic: true
+                };
+
+                // 2. Ihned zobraz v UI (modal se zavře, tabulka se přerenduje)
+                this.users.push(optimisticUser);
+                this.closeModal();
+                this.renderCurrentTab();
+
+                // 3. Na pozadí ulož na server
+                callServer('updateUser', data)
+                    .then(result => {
+                        if (result && result.success) {
+                            // Nahraď dočasný záznam skutečnými daty ze serveru
+                            return this.refreshAllData().then(() => {
+                                // Jistota: smažeme dočasný záznam, pokud se náhodou nenačetl (např. ztráta admin práv)
+                                if (result.data && result.data.id) {
+                                    const idx = this.users.findIndex(u => u.user_id === tempId);
+                                    if (idx !== -1) {
+                                        this.users[idx].user_id = result.data.id;
+                                        delete this.users[idx]._optimistic;
+                                    }
+                                }
+                                this.renderCurrentTab();
+                                if (typeof refreshApp === 'function') refreshApp({ full: true });
+                            });
+                        } else {
+                            // Rollback: smaž dočasný záznam a ukaž chybu
+                            this.users = this.users.filter(u => u.user_id !== tempId);
+                            this.renderCurrentTab();
+                            showAdminToast('Chyba při ukládání: ' + (result ? result.error : 'Neznámá chyba'));
+                        }
+                    })
+                    .catch(e => {
+                        this.users = this.users.filter(u => u.user_id !== tempId);
+                        this.renderCurrentTab();
+                        showAdminToast('Chyba komunikace: ' + e);
+                    });
+
+            } else {
+                // ── OPTIMISTIC UPDATE ──────────────────────────────────────
+                // 1. Zapamatuj si originál pro případný rollback
+                const existingIdx = this.users.findIndex(u => u.user_id === data.user_id);
+                const originalUser = existingIdx !== -1 ? { ...this.users[existingIdx] } : null;
+
+                // 2. Ihned aktualizuj lokální stav
+                if (existingIdx !== -1) {
+                    this.users[existingIdx] = { ...this.users[existingIdx], ...data, _optimistic: true };
+                }
+                this.closeModal();
+                this.renderCurrentTab();
+
+                // 3. Na pozadí ulož na server
+                callServer('updateUser', data)
+                    .then(result => {
+                        if (result && result.success) {
+                            return this.refreshAllData().then(() => {
+                                // Jistota: i kdyby se refreshAllData nezdařil načíst nové uživatele (např. ztráta admin práv),
+                                // smažeme optimistický příznak lokálně, ať nezůstane točící se kolečko navždy.
+                                const idx = this.users.findIndex(u => u.user_id === data.user_id);
+                                if (idx !== -1) delete this.users[idx]._optimistic;
+
+                                this.renderCurrentTab();
+                                if (typeof refreshApp === 'function') refreshApp({ full: true });
+                                if (plannerData && plannerData.user && data.user_id === plannerData.user.user_id) {
+                                    if (typeof updateUserProfile === 'function') updateUserProfile(plannerData.user);
+                                }
+                            });
+                        } else {
+                            // Rollback
+                            if (existingIdx !== -1 && originalUser) this.users[existingIdx] = originalUser;
+                            this.renderCurrentTab();
+                            showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
+                        }
+                    })
+                    .catch(e => {
+                        if (existingIdx !== -1 && originalUser) this.users[existingIdx] = originalUser;
+                        this.renderCurrentTab();
+                        showAdminToast('Chyba: ' + e);
+                    });
+            }
+        },
+
+        saveGroup: function () {
+            this.saveGeneric('updateGroup', 'generic-form');
+        },
+
+        savePosition: function () {
+            this.saveGeneric('updatePosition', 'generic-form');
+        },
+
+        closeModal: function () {
+            const modal = document.getElementById('admin-modal');
+            modal.style.display = 'none';
+            modal.classList.add('step-hidden');
+        },
+
+        defaultRbac: [
+            // Kategorie: UŽIVATELSKÝ PROFIL (Co si uživatel může sám měnit v nastavení)
+            { label: 'Změna vlastního jména a příjmení', key: 'edit_profile_name', category: 'Uživatelský profil', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Změna vlastního emailu', key: 'edit_profile_email', category: 'Uživatelský profil', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
+            { label: 'Změna vlastního oddělení / úseku', key: 'edit_profile_org', category: 'Uživatelský profil', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
+            { label: 'Změna vlastní pozice', key: 'edit_profile_pos', category: 'Uživatelský profil', USER: false, LEADER: false, ADMIN: false, SUPERADMIN: true },
+            { label: 'Nastavení synchronizace kalendářů', key: 'edit_profile_sync', category: 'Uživatelský profil', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+
+            // Kategorie: ADMINISTRACE SYSTÉMU
+            { label: 'Přístup do administrace', key: 'access_admin', category: 'Administrace', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Správa Uživatelů', key: 'manage_users', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+            { label: 'Správa Org.struktury', key: 'manage_org', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+            { label: 'Správa Statusů', key: 'manage_statuses', category: 'Administrace', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
+            { label: 'Správa Glob.nastavení', key: 'settings', category: 'Administrace', USER: false, LEADER: false, ADMIN: false, SUPERADMIN: true },
+            { label: 'Správa Map kanceláří', key: 'manage_maps', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+            { label: 'Správa Jmenin', key: 'manage_namedays', category: 'Administrace', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
+            { label: 'Správa Oprávnění', key: 'manage_rbac', category: 'Administrace', USER: false, LEADER: false, ADMIN: false, SUPERADMIN: true },
+
+            // Kategorie: DOCHÁZKA A DOVOLENÉ
+            { label: 'Vidět vlastní docházku a statistiky', key: 'view_own_attendance', category: 'Docházka & Dovolené', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Vidět docházku a statistiku ostatních', key: 'view_attendance_scope', category: 'Docházka & Dovolené', type: 'attendance_scope', USER: 'OWN_SECTION', LEADER: 'OWN_SECTION', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+            { label: 'Upravovat docházku ostatních', key: 'edit_attendance_scope', category: 'Docházka & Dovolené', type: 'edit_scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+            { label: 'Schvalovat / zamítat dovolené kolegům', key: 'approve_vacation_scope', category: 'Docházka & Dovolené', type: 'approval_scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
+
+            // Kategorie: PLÁNOVACÍ KALENDÁŘ (PLANNER)
+            { label: 'Přístup k modulu Plánovač', key: 'view_planner', category: 'Plánovač (Planner)', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Vytvářet nové plánovací skupiny', key: 'create_planner_group', category: 'Plánovač (Planner)', USER: false, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Správa všech plannerů v systému', key: 'manage_all_planners', category: 'Plánovač (Planner)', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
+
+            // Kategorie: MAPY A REZERVACE
+            { label: 'Vidět mapy a rezervovat si místo', key: 'view_maps', category: 'Mapy & Rezervace', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Hromadné rezervace pro tým', key: 'batch_booking', category: 'Mapy & Rezervace', USER: false, LEADER: true, ADMIN: true, SUPERADMIN: true },
+        ],
+
+        // Pomocná pro sbalování (ID kategorií)
+        _expandedRbac: new Set(),
+
+        renderRbac: async function () {
+            const panel = document.getElementById('admin-panel-rbac');
+            if (!panel) return;
+
+            // 1. Načtení konfigurace
+            let config = this.defaultRbac.map(r => ({ ...r }));
+            try {
+                const res = await callServer('getRbacConfig');
+                if (res && res.success && res.data) {
+                    config = config.map(row => {
+                        const saved = res.data[row.key];
+                        if (saved) {
+                            ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'].forEach(role => {
+                                if (saved[role] !== undefined) row[role] = saved[role];
+                            });
+                        }
+                        return row;
+                    });
+                }
+            } catch (e) {
+                console.warn("RBAC: Nepodařilo se načíst config ze serveru.");
+            }
+
+            const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'];
+            const roleColors = { USER: '#64748b', LEADER: '#16a34a', ADMIN: '#004fac', SUPERADMIN: '#e7030c' };
+
+            // 2. Seskupení podle kategorií
+            const categories = {};
+            config.forEach(row => {
+                const cat = row.category || 'Ostatní';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(row);
+            });
+
+            // 3. Generování HTML pro každou kategorii
+            let categoriesHtml = '';
+            for (const catName in categories) {
+                const isExpanded = this._expandedRbac.has(catName);
+                const rows = categories[catName].map((row, i) => {
+                    const cells = roles.map(role => {
+                        const isSuper = role === 'SUPERADMIN';
+                        if (row.type === 'scope') {
+                            const val = row[role] !== undefined ? row[role] : 'NONE';
+                            return `<td style="text-align:center; padding:10px;">
+                                <select class="rbac-scope-select" data-key="${row.key}" data-role="${role}" ${isSuper ? 'disabled' : ''} style="padding:4px; border-radius:4px; border:1px solid #cbd5e1; font-size:11px; font-weight:700; background:${isSuper ? '#f1f5f9' : '#fff'}; width:100%; color:#475569; outline:none;">
+                                    <option value="NONE" ${val === 'NONE' || val === false ? 'selected' : ''}>❌ Žádný</option>
+                                    <option value="OWN_GROUP" ${val === 'OWN_GROUP' ? 'selected' : ''}>Tým</option>
+                                    <option value="OWN_DEPARTMENT" ${val === 'OWN_DEPARTMENT' ? 'selected' : ''}>Oddělení</option>
+                                    <option value="OWN_SECTION" ${val === 'OWN_SECTION' ? 'selected' : ''}>Úsek</option>
+                                    <option value="ALL" ${val === 'ALL' || val === true ? 'selected' : ''}>✅ Všechny</option>
+                                </select>
+                            </td>`;
+                        } else if (row.type === 'attendance_scope') {
+                            const val = row[role] !== undefined ? row[role] : 'NONE';
+                            return `<td style="text-align:center; padding:10px;">
+                                <select class="rbac-scope-select" data-key="${row.key}" data-role="${role}" ${isSuper ? 'disabled' : ''} style="padding:4px; border-radius:4px; border:1px solid #cbd5e1; font-size:11px; font-weight:700; background:${isSuper ? '#f1f5f9' : '#fff'}; width:100%; color:#475569; outline:none;">
+                                    <option value="NONE" ${val === 'NONE' || val === false ? 'selected' : ''}>Nic</option>
+                                    <option value="OWN_SECTION" ${val === 'OWN_SECTION' ? 'selected' : ''}>Svůj Úsek</option>
+                                    <option value="ALL" ${val === 'ALL' || val === true ? 'selected' : ''}>Vše</option>
+                                </select>
+                            </td>`;
+                        } else if (row.type === 'approval_scope') {
+                            const val = row[role] !== undefined ? row[role] : 'NONE';
+                            return `<td style="text-align:center; padding:10px;">
+                                <select class="rbac-scope-select" data-key="${row.key}" data-role="${role}" ${isSuper ? 'disabled' : ''} style="padding:4px; border-radius:4px; border:1px solid #cbd5e1; font-size:11px; font-weight:700; background:${isSuper ? '#f1f5f9' : '#fff'}; width:100%; color:#475569; outline:none;">
+                                    <option value="NONE" ${val === 'NONE' || val === false ? 'selected' : ''}>Neschvaluje</option>
+                                    <option value="OWN_DEPARTMENT" ${val === 'OWN_DEPARTMENT' ? 'selected' : ''}>Oddělení</option>
+                                    <option value="LEADERS_ONLY" ${val === 'LEADERS_ONLY' ? 'selected' : ''}>Jen Vedoucím</option>
+                                    <option value="ALL" ${val === 'ALL' || val === true ? 'selected' : ''}>Vše</option>
+                                </select>
+                            </td>`;
+                        } else if (row.type === 'edit_scope') {
+                            const val = row[role] !== undefined ? row[role] : 'NONE';
+                            return `<td style="text-align:center; padding:10px;">
+                                <select class="rbac-scope-select" data-key="${row.key}" data-role="${role}" ${isSuper ? 'disabled' : ''} style="padding:4px; border-radius:4px; border:1px solid #cbd5e1; font-size:11px; font-weight:700; background:${isSuper ? '#f1f5f9' : '#fff'}; width:100%; color:#475569; outline:none;">
+                                    <option value="NONE" ${val === 'NONE' || val === false ? 'selected' : ''}>Jen sobě</option>
+                                    <option value="OWN_DEPARTMENT" ${val === 'OWN_DEPARTMENT' ? 'selected' : ''}>Oddělení</option>
+                                    <option value="OWN_SECTION" ${val === 'OWN_SECTION' ? 'selected' : ''}>Úsek</option>
+                                    <option value="ALL" ${val === 'ALL' || val === true ? 'selected' : ''}>Vše</option>
+                                </select>
+                            </td>`;
+                        } else {
+                            return `<td style="text-align:center; padding:10px;">
+                                <label class="rbac-switch">
+                                    <input type="checkbox"
+                                        data-key="${row.key}" data-role="${role}"
+                                        ${(row[role] === true || row[role] === 'true') ? 'checked' : ''}
+                                        ${isSuper ? 'disabled checked' : ''}>
+                                    <span class="rbac-slider"></span>
+                                </label>
+                            </td>`;
+                        }
+                    }).join('');
+
+                    return `
+                    <tr style="border-bottom:1px solid #f1f5f9; background:${i % 2 === 0 ? '#fff' : 'rgba(248,250,252,0.4)'};">
+                        <td style="padding:12px 16px;">
+                            <div style="font-weight:600; color:#334155; font-size:13px;">${row.label}</div>
+                            <div style="font-size:11px; color:#94a3b8; font-family:monospace;">${row.key}</div>
+                        </td>
+                        ${cells}
+                    </tr>`;
+                }).join('');
+
+                categoriesHtml += `
+                <div class="rbac-section-v2 ${!isExpanded ? 'is-collapsed' : ''}" style="margin-bottom:16px;">
+                    <button class="rbac-section-header" onclick="admin.toggleRbacSection(this, '${catName}')">
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <div class="rbac-section-accent"></div>
+                            <span class="rbac-section-title">${catName}</span>
+                            <span class="rbac-section-count">${categories[catName].length} položek</span>
+                        </div>
+                        <span class="rbac-section-arrow">▼</span>
+                    </button>
+                    <div class="rbac-section-content">
+                        <div class="admin-card" style="padding:0; overflow:hidden; border:1px solid #e2e8f0; border-top:none; border-radius:0 0 12px 12px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                            <table style="width:100%; border-collapse:collapse;">
+                                <thead>
+                                    <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                                        <th style="text-align:left; padding:12px 16px; color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:1px; width:40%;">Právo / Akce</th>
+                                        ${roles.map(r => `<th style="text-align:center; padding:12px 10px; color:${roleColors[r]}; font-size:10px; font-weight:900; letter-spacing:1px;">${r}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>${rows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            panel.innerHTML = `
+            <div style="max-width:1100px; margin:0 auto; padding-bottom:60px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:32px; padding:0 4px;">
+                    <div>
+                        <h1 style="margin:0; font-size:26px; font-weight:900; color:var(--primary); letter-spacing:-0.5px;">Oprávnění & Role</h1>
+                        <p style="margin:6px 0 0; color:#64748b; font-size:14px; display:flex; align-items:center; gap:8px;">
+                            <span>Definujte rozsah pravomocí pro systémové role.</span>
+                            <span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700;">Konfigurace RBAC</span>
+                        </p>
+                    </div>
+                    <button onclick="admin.saveRbac()" class="btn-modal-save" style="padding:12px 28px; font-size:13px; letter-spacing:1px; box-shadow:0 4px 14px rgba(0, 79, 172, 0.25);">ULOŽIT NASTAVENÍ</button>
+                </div>
+                ${categoriesHtml}
+                <div class="rbac-info-box">
+                    <div style="font-size:24px; filter:grayscale(0.5);">💡</div>
+                    <div style="font-size:12px; color:#92400e; line-height:1.6;">
+                        <strong>Logika oprávnění:</strong> Superadmin má práva vždy aktivní. Leader (vedoucí) má funkční oprávnění (zápis, smazání) omezena pouze na <strong>svoje oddělení</strong> nebo <strong>podřízené</strong> podle organizační struktury. Nastavení zde určuje pouze, zda má tuto funkci v aplikaci vůbec přístupnou.
+                    </div>
+                </div>
+            </div>`;
+        },
+
+        toggleRbacSection: function (btn, catName) {
+            const section = btn.closest('.rbac-section-v2');
+            if (!section) return;
+
+            const isExpanding = section.classList.contains('is-collapsed');
+            section.classList.toggle('is-collapsed');
+
+            // Synchronizace stavu v paměti
+            if (isExpanding) {
+                this._expandedRbac.add(catName);
+            } else {
+                this._expandedRbac.delete(catName);
+            }
+        },
+
+        saveRbac: async function () {
+            const inputs = document.querySelectorAll('#admin-panel-rbac input[type="checkbox"], #admin-panel-rbac select.rbac-scope-select');
+            const config = {};
+            inputs.forEach(el => {
+                const key = el.getAttribute('data-key');
+                const role = el.getAttribute('data-role');
+                if (!config[key]) config[key] = {};
+
+                if (el.tagName === 'SELECT') {
+                    config[key][role] = el.value;
+                } else {
+                    config[key][role] = el.checked;
+                }
+            });
+
+            showLoader('Ukládám oprávnění...');
+            try {
+                const result = await callServer('saveRbacConfig', config);
+                if (result && result.success) {
+                    showAdminToast('Oprávnění byla úspěšně uložena.', 'success');
+                } else {
+                    showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
+                }
+            } catch (e) {
+                showAdminToast('Chyba komunikace: ' + e);
+            } finally {
+                hideLoader();
+            }
+        },
+
+        // ═══════════════════════════════════════════════════════════════════
+        // MAPY KANCELÁŘÍ
+        // ═══════════════════════════════════════════════════════════════════
+
+        _mapsState: {
+            sectionId: null,
+            maps: [],
+            editingMap: null,   // kopie mapy právě editované
+            brush: 'desk',
+            selectedCell: null, // { row, col } vybraný stůl pro konfiguraci
+            isDragging: false
+        },
+
+        /**
+         * Renderuje hlavní panel "Mapy kanceláří".
+         */
+        renderMapsPanel: function () {
+            const panel = document.getElementById('admin-panel-maps');
+            if (!panel) return;
+
+            // ── SCOPED PERMISSIONS PRO MAPY ──
+            let scope = typeof window.hasPermission === 'function' ? window.hasPermission('manage_maps') : 'NONE';
+            if (scope === true) scope = 'ALL';
+            if (scope === false || !scope) scope = 'NONE';
+
+            if (scope === 'NONE') {
+                panel.innerHTML = '<div style="padding:40px; text-align:center; color:#ef4444; font-weight:800;">Nemáte oprávnění spravovat mapy kanceláří.</div>';
+                return;
+            }
+
+            const currentUser = (typeof plannerData !== 'undefined' && plannerData.user) ? plannerData.user : null;
+            let sections = (this.data && this.data.sections || []).filter(s => s.active !== 'false');
+
+            if (scope !== 'ALL' && currentUser) {
+                if (scope === 'OWN_SECTION') {
+                    sections = sections.filter(s => s.section_id === currentUser.section_id);
+                } else if (scope === 'OWN_DEPARTMENT') {
+                    const depts = (this.data && this.data.departments || []).filter(d => d.department_id === currentUser.department_id);
+                    const secIds = new Set(depts.map(d => d.section_id));
+                    sections = sections.filter(s => secIds.has(s.section_id));
+                }
+            }
+
+            const sectionOptions = sections.map(s =>
+                `<option value="${s.section_id}" ${this._mapsState.sectionId === s.section_id ? 'selected' : ''}>${s.name}</option>`
+            ).join('');
+
+            panel.innerHTML = `
+<div class="maps-panel">
+  <div class="maps-header">
+    <h2>🗺️ Mapy kanceláří</h2>
+    <div class="maps-section-select">
+      <span>Úsek:</span>
+      <select id="maps-section-sel" onchange="admin.onMapsSectionChange(this.value)">
+        <option value="">— Vyberte úsek —</option>
+        ${sectionOptions}
+      </select>
+    </div>
+  </div>
+  <div id="maps-content"></div>
+</div>`;
+
+            if (this._mapsState.sectionId) {
+                this.loadMaps(this._mapsState.sectionId);
+            } else if (sections.length === 1) {
+                // Automaticky vybrat pokud je jen jeden úsek
+                this._mapsState.sectionId = sections[0].section_id;
+                document.getElementById('maps-section-sel').value = sections[0].section_id;
+                this.loadMaps(sections[0].section_id);
+            } else {
+                document.getElementById('maps-content').innerHTML =
+                    `<div class="maps-no-section"><div style="font-size:32px;margin-bottom:10px;">🗺️</div>Vyberte úsek pro zobrazení map kanceláří.</div>`;
+            }
+        },
+
+        onMapsSectionChange: function (sectionId) {
+            this._mapsState.sectionId = sectionId || null;
+            this._mapsState.editingMap = null;
+            this._mapsState.selectedCell = null;
+            if (sectionId) {
+                this.loadMaps(sectionId);
+            } else {
+                document.getElementById('maps-content').innerHTML =
+                    `<div class="maps-no-section"><div style="font-size:32px;margin-bottom:10px;">🗺️</div>Vyberte úsek pro zobrazení map kanceláří.</div>`;
+            }
+        },
+
+        loadMaps: async function (sectionId) {
+            const content = document.getElementById('maps-content');
+            if (!content) return;
+            content.innerHTML = `<div style="padding:30px;text-align:center;color:#94a3b8;">Načítám mapy…</div>`;
+            try {
+                const result = await callServer('getOfficeMaps', sectionId);
+                if (result && result.success) {
+                    this._mapsState.maps = result.data || [];
+                } else {
+                    this._mapsState.maps = [];
+                }
+            } catch (e) {
+                this._mapsState.maps = [];
+            }
+            this.renderMapsContent();
+        },
+
+        renderMapsContent: function () {
+            const content = document.getElementById('maps-content');
+            if (!content) return;
+
+            if (this._mapsState.editingMap) {
+                this.renderMapEditor();
+                return;
+            }
+
+            const maps = this._mapsState.maps;
+            const sectionId = this._mapsState.sectionId;
+
+            let html = '<div class="maps-list">';
+
+            if (maps.length === 0) {
+                html += `<div class="maps-empty-msg">
+                    <div class="empty-icon">🗺️</div>
+                    <div>Žádné mapy kanceláří. Vytvořte první mapu kliknutím níže.</div>
+                  </div>`;
+            } else {
+                maps.forEach(m => {
+                    const deskCount = (m.cells || []).filter(c => c.type === 'desk').length;
+                    const assignedCount = (m.cells || []).filter(c => c.type === 'desk' && c.permanent_user_id).length;
+                    html += `
+            <div class="map-list-item" onclick="admin.openMapEditor('${m.map_id}')">
+              <div class="map-list-icon">🗺️</div>
+              <div class="map-list-info">
+                <div class="map-list-name">${escapeHtml(m.name)}</div>
+                <div class="map-list-meta">
+                  ${m.rows} × ${m.cols} &nbsp;·&nbsp;
+                  ${deskCount} stol${deskCount === 1 ? '' : deskCount > 1 && deskCount < 5 ? 'y' : 'ů'}
+                  ${assignedCount > 0 ? ` &nbsp;·&nbsp; ${assignedCount} předrezervováno` : ''}
+                </div>
+              </div>
+              <div class="map-list-actions" onclick="event.stopPropagation()">
+                <button class="map-btn-edit" onclick="admin.openMapEditor('${m.map_id}')">✏️ Editovat</button>
+                <button class="map-btn-delete" onclick="admin.deleteMap('${m.map_id}')">🗑️</button>
+              </div>
+            </div>`;
+                });
+            }
+
+            html += `</div>
+            <button class="maps-add-btn" style="margin-top:8px;" onclick="admin.openMapEditor(null)">
+              ＋ Vytvořit novou mapu
+            </button>`;
+
+            content.innerHTML = html;
+        },
+
+        /**
+         * Otevře editor mapy (existující nebo novou).
+         */
+        openMapEditor: function (mapId) {
+            let map;
+            if (mapId) {
+                const existing = this._mapsState.maps.find(m => m.map_id === mapId);
+                if (!existing) return;
+                // Hluboká kopie
+                map = JSON.parse(JSON.stringify(existing));
+            } else {
+                // Nová mapa — inicializuj prázdné buňky
+                const rows = 6, cols = 10;
+                map = {
+                    map_id: '',
+                    section_id: this._mapsState.sectionId,
+                    name: 'Nová mapa kanceláře',
+                    rows, cols,
+                    cells: this._initCells(rows, cols)
+                };
+            }
+            this._mapsState.editingMap = map;
+            this._mapsState.selectedCell = null;
+            this._mapsState.brush = 'desk';
+            this.renderMapsContent();
+        },
+
+        /**
+         * Inicializuje prázdné buňky pro grid rows×cols.
+         */
+        _initCells: function (rows, cols) {
+            const cells = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    cells.push({ id: `r${r}c${c}`, row: r, col: c, type: 'empty', label: '', permanent_user_id: '' });
+                }
+            }
+            return cells;
+        },
+
+        /**
+         * Synchronizuje pole cells na nový rows×cols rozměr (zachová existující buňky).
+         */
+        _resizeCells: function (map, newRows, newCols) {
+            const oldCells = {};
+            (map.cells || []).forEach(c => { oldCells[`r${c.row}c${c.col}`] = c; });
+            const cells = [];
+            for (let r = 0; r < newRows; r++) {
+                for (let c = 0; c < newCols; c++) {
+                    const key = `r${r}c${c}`;
+                    cells.push(oldCells[key] || { id: key, row: r, col: c, type: 'empty', label: '', permanent_user_id: '' });
+                }
+            }
+            map.cells = cells;
+            map.rows = newRows;
+            map.cols = newCols;
+        },
+
+        /**
+         * Renderuje editor mapy (grid + toolbar + footer).
+         */
+        renderMapEditor: function () {
+            const content = document.getElementById('maps-content');
+            if (!content) return;
+            const map = this._mapsState.editingMap;
+            if (!map) return;
+
+            const users = (this.users || []).filter(u => u.active !== 'false' && !u._optimistic);
+
+            const brushBtns = [
+                { type: 'desk', icon: '🪑', label: 'Stůl' },
+                { type: 'wall', icon: '🧱', label: 'Zeď' },
+                { type: 'empty', icon: '⬜', label: 'Vymazat' }
+            ].map(b => `
+                <button class="map-brush-btn brush-${b.type}${this._mapsState.brush === b.type ? ' active' : ''}"
+                    onclick="admin.setBrush('${b.type}')">
+                    ${b.icon} ${b.label}
+                </button>`).join('');
+
+            // Grid HTML
+            const gridHtml = this._buildGridHtml(map);
+
+            // Seznam uživatelů u stolů
+            const userListHtml = this._buildMapUserListHtml(map);
+
+            // Konfigurace vybraného stolu
+            const deskConfigHtml = this._buildDeskConfigHtml(map, users);
+
+            content.innerHTML = `
+<div class="map-editor-wrap">
+  <div class="map-editor-topbar">
+    <div class="map-editor-topbar-title">✏️ Editor mapy</div>
+    <input class="map-name-input" id="map-name-input" type="text" value="${map.name}"
+        onchange="admin._mapsState.editingMap.name = this.value" placeholder="Název mapy">
+    <div class="map-size-controls">
+      Řádky:
+      <input class="map-size-input" id="map-rows-input" type="number" min="2" max="20"
+          value="${map.rows}" onchange="admin.onMapResize()">
+      Sloupce:
+      <input class="map-size-input" id="map-cols-input" type="number" min="2" max="30"
+          value="${map.cols}" onchange="admin.onMapResize()">
+    </div>
+  </div>
+  <div class="map-brush-bar">
+    <span class="map-brush-label">Štětec:</span>
+    ${brushBtns}
+  </div>
+  
+  <div class="map-editor-body">
+    <div class="map-editor-main-area">
+      <div class="map-grid-scroll" id="map-grid-scroll"
+           onmousedown="admin._startDrag(event)"
+           onmousemove="admin._dragMove(event)"
+           onmouseup="admin._endDrag()"
+           onmouseleave="admin._endDrag()">
+        ${gridHtml}
+      </div>
+      ${deskConfigHtml}
+    </div>
+    <div class="map-editor-sidebar">
+      ${userListHtml}
+    </div>
+  </div>
+
+  <div class="map-editor-footer">
+    <div class="map-editor-legend">
+      <div class="map-legend-item"><div class="map-legend-dot empty"></div> Prázdné</div>
+      <div class="map-legend-item"><div class="map-legend-dot desk"></div> Stůl (volný)</div>
+      <div class="map-legend-item"><div class="map-legend-dot desk-user"></div> Stůl (přiřazený)</div>
+      <div class="map-legend-item"><div class="map-legend-dot wall"></div> Zeď</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="map-cancel-btn" onclick="admin.cancelMapEdit()">← Zpět</button>
+      <button class="map-save-btn" id="map-save-btn" onclick="admin.saveCurrentMap()">💾 Uložit mapu</button>
+    </div>
+  </div>
+</div>`;
+        },
+
+        _buildMapUserListHtml: function (map) {
+            const desksWithUsers = (map.cells || [])
+                .filter(c => c.type === 'desk' && c.permanent_user_id)
+                .sort((a, b) => (a.label || '').localeCompare(b.label || '', undefined, { numeric: true }));
+
+            if (desksWithUsers.length === 0) {
+                return `
+                    <div class="map-sidebar-empty">
+                        <div style="font-size: 24px; margin-bottom: 8px;">ℹ️</div>
+                        Žádné stoly nejsou<br>zatím obsazeny.
+                    </div>`;
+            }
+
+            const listItems = desksWithUsers.map(c => {
+                const u = (this.users || []).find(x => x.user_id === c.permanent_user_id);
+                const name = u ? `${u.first_name} ${u.last_name}` : 'Neznámý uživatel';
+                return `
+                    <div class="map-sidebar-user-item">
+                        <div class="map-sidebar-desk-badge">${c.label || '?'}</div>
+                        <div class="map-sidebar-user-info">
+                            <div class="map-sidebar-user-name">${name}</div>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            return `
+                <div class="map-sidebar-title">👥 Obsazené stoly (${desksWithUsers.length})</div>
+                <div class="map-sidebar-list">
+                    ${listItems}
+                </div>`;
+        },
+
+        _buildGridHtml: function (map) {
+            const cellSize = 40, gap = 3;
+            const gridStyle = `grid-template-columns: repeat(${map.cols}, ${cellSize}px); grid-template-rows: repeat(${map.rows}, ${cellSize}px);`;
+            let cells = '';
+            for (let r = 0; r < map.rows; r++) {
+                for (let c = 0; c < map.cols; c++) {
+                    const cell = (map.cells || []).find(x => x.row === r && x.col === c)
+                        || { id: `r${r}c${c}`, row: r, col: c, type: 'empty', label: '', permanent_user_id: '' };
+                    const sel = this._mapsState.selectedCell;
+                    const isSelected = sel && sel.row === r && sel.col === c;
+                    const hasUser = cell.type === 'desk' && cell.permanent_user_id;
+                    let inner = '';
+                    if (cell.type === 'desk') {
+                        inner = `<span class="map-cell-label">${cell.label || '?'}</span>`;
+                        if (hasUser) {
+                            const u = (this.users || []).find(x => x.user_id === cell.permanent_user_id);
+                            const initials = u ? (u.first_name || '').charAt(0) + (u.last_name || '').charAt(0) : '?';
+                            inner += `<span class="map-cell-user">${initials}</span>`;
+                        }
+                    }
+                    cells += `<div class="map-cell type-${cell.type}${hasUser ? ' has-user' : ''}${isSelected ? ' selected-desk' : ''}"
+                        data-row="${r}" data-col="${c}"
+                        onclick="admin.handleCellClick(${r},${c})"
+                        ondblclick="admin.handleCellDblClick(${r},${c})"
+                        title="${cell.type === 'desk' ? (cell.label || '') + (hasUser ? ' (přiřazen)' : '') : ''}"
+                    >${inner}</div>`;
+                }
+            }
+            return `<div class="map-grid" id="map-grid" style="${gridStyle}">${cells}</div>`;
+        },
+
+        _buildDeskConfigHtml: function (map, users) {
+            const sel = this._mapsState.selectedCell;
+            if (!sel) return '';
+            const cell = (map.cells || []).find(c => c.row === sel.row && c.col === sel.col);
+            if (!cell || cell.type !== 'desk') return '';
+
+            const userOpts = `<option value="">— Žádný (volný stůl) —</option>` +
+                users.map(u => `<option value="${u.user_id}" ${cell.permanent_user_id === u.user_id ? 'selected' : ''}>${u.first_name} ${u.last_name}</option>`).join('');
+
+            return `<div class="map-desk-config" id="desk-config-panel">
+  <div style="flex: 0 0 100%; margin-bottom: 4px;">
+    <div class="map-desk-config-title">⚙️ Konfigurace stolu ${cell.label || ''}</div>
+  </div>
+  <div class="map-desk-config-field">
+    <label>Označení stolu</label>
+    <input type="text" id="desk-label-input" value="${cell.label || ''}" maxlength="6"
+        placeholder="např. A1"
+        oninput="admin.updateDeskLabel(this.value)">
+  </div>
+  <div class="map-desk-config-field">
+    <label>Přiřazený uživatel (předrezervace)</label>
+    <select id="desk-user-select" onchange="admin.updateDeskUser(this.value)">
+      ${userOpts}
+    </select>
+  </div>
+  <button class="map-desk-config-close" onclick="admin.closeDeskConfig()" title="Zavřít konfiguraci">✕</button>
+</div>`;
+        },
+
+        setBrush: function (type) {
+            this._mapsState.brush = type;
+            // Re-render jen toolbar buttons
+            document.querySelectorAll('.map-brush-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.querySelector(`.map-brush-btn.brush-${type}`);
+            if (activeBtn) activeBtn.classList.add('active');
+        },
+
+        handleCellClick: function (row, col) {
+            const map = this._mapsState.editingMap;
+            if (!map) return;
+            let cell = map.cells.find(c => c.row === row && c.col === col);
+            if (!cell) {
+                cell = { id: `r${row}c${col}`, row, col, type: 'empty', label: '', permanent_user_id: '' };
+                map.cells.push(cell);
+            }
+            const brush = this._mapsState.brush;
+
+            if (brush === 'desk' && cell.type !== 'desk') {
+                cell.type = 'desk';
+                // Auto-label: najdi max existující číslo a přiřaď další
+                if (!cell.label) cell.label = this._nextDeskLabel(map);
+                // Otevři konfiguraci
+                this._mapsState.selectedCell = { row, col };
+            } else if (brush === 'wall') {
+                cell.type = 'wall';
+                cell.label = '';
+                cell.permanent_user_id = '';
+                if (this._mapsState.selectedCell && this._mapsState.selectedCell.row === row && this._mapsState.selectedCell.col === col) {
+                    this._mapsState.selectedCell = null;
+                }
+            } else if (brush === 'empty') {
+                cell.type = 'empty';
+                cell.label = '';
+                cell.permanent_user_id = '';
+                if (this._mapsState.selectedCell && this._mapsState.selectedCell.row === row && this._mapsState.selectedCell.col === col) {
+                    this._mapsState.selectedCell = null;
+                }
+            }
+            this.renderMapEditor();
+        },
+
+        handleCellDblClick: function (row, col) {
+            const map = this._mapsState.editingMap;
+            if (!map) return;
+            const cell = map.cells.find(c => c.row === row && c.col === col);
+            if (cell && cell.type === 'desk') {
+                this._mapsState.selectedCell = { row, col };
+                this.renderMapEditor();
+            }
+        },
+
+        _startDrag: function (ev) {
+            if (ev.button !== 0) return;
+            this._mapsState.isDragging = true;
+        },
+
+        _dragMove: function (ev) {
+            if (!this._mapsState.isDragging) return;
+            const el = document.elementFromPoint(ev.clientX, ev.clientY);
+            if (el && el.classList.contains('map-cell')) {
+                const row = parseInt(el.getAttribute('data-row'));
+                const col = parseInt(el.getAttribute('data-col'));
+                if (!isNaN(row) && !isNaN(col)) {
+                    const map = this._mapsState.editingMap;
+                    if (!map) return;
+                    let cell = map.cells.find(c => c.row === row && c.col === col);
+                    if (!cell) {
+                        cell = { id: `r${row}c${col}`, row, col, type: 'empty', label: '', permanent_user_id: '' };
+                        map.cells.push(cell);
+                    }
+                    const brush = this._mapsState.brush;
+                    const prevType = cell.type;
+                    if (brush === 'desk' && cell.type !== 'desk') {
+                        cell.type = 'desk';
+                        if (!cell.label) cell.label = this._nextDeskLabel(map);
+                    } else if (brush === 'wall') {
+                        cell.type = 'wall'; cell.label = ''; cell.permanent_user_id = '';
+                    } else if (brush === 'empty') {
+                        cell.type = 'empty'; cell.label = ''; cell.permanent_user_id = '';
+                    }
+                    if (cell.type !== prevType) this._updateCellDom(cell, map);
+                }
+            }
+        },
+
+        _endDrag: function () {
+            this._mapsState.isDragging = false;
+        },
+
+        /**
+         * Aktualizuje DOM jedné buňky bez full re-renderu (pro plynulé malování).
+         */
+        _updateCellDom: function (cell, map) {
+            const el = document.querySelector(`.map-cell[data-row="${cell.row}"][data-col="${cell.col}"]`);
+            if (!el) return;
+            el.className = `map-cell type-${cell.type}${cell.permanent_user_id ? ' has-user' : ''}`;
+            if (cell.type === 'desk') {
+                el.innerHTML = `<span class="map-cell-label">${escapeHtml(cell.label || '?')}</span>`;
+            } else {
+                el.innerHTML = '';
+            }
+        },
+
+        _nextDeskLabel: function (map) {
+            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const desks = (map.cells || []).filter(c => c.type === 'desk' && c.label);
+            let maxNum = 0;
+            let letter = 'A';
+            desks.forEach(d => {
+                const m = (d.label || '').match(/^([A-Z]+)(\d+)$/);
+                if (m) {
+                    const num = parseInt(m[2]);
+                    if (num > maxNum) { maxNum = num; letter = m[1]; }
+                }
+            });
+            if (maxNum === 0) return 'A1';
+            // Pokud jsme v daném písmenu, pokračuj číslováním
+            return `${letter}${maxNum + 1}`;
+        },
+
+        onMapResize: function () {
+            const newRows = Math.max(2, Math.min(20, parseInt(document.getElementById('map-rows-input').value) || 6));
+            const newCols = Math.max(2, Math.min(30, parseInt(document.getElementById('map-cols-input').value) || 10));
+            const map = this._mapsState.editingMap;
+            if (!map) return;
+            this._resizeCells(map, newRows, newCols);
+            this._mapsState.selectedCell = null;
+            this.renderMapEditor();
+        },
+
+        updateDeskLabel: function (val) {
+            const sel = this._mapsState.selectedCell;
+            const map = this._mapsState.editingMap;
+            if (!sel || !map) return;
+            const cell = map.cells.find(c => c.row === sel.row && c.col === sel.col);
+            if (cell) {
+                cell.label = val.toUpperCase();
+                // Aktualizuj label v grid bez full re-renderu
+                const labelEl = document.querySelector(`.map-cell[data-row="${sel.row}"][data-col="${sel.col}"] .map-cell-label`);
+                if (labelEl) labelEl.textContent = cell.label || '?';
+                this._updateSidebar();
+            }
+        },
+
+        updateDeskUser: function (userId) {
+            const sel = this._mapsState.selectedCell;
+            const map = this._mapsState.editingMap;
+            if (!sel || !map) return;
+            const cell = map.cells.find(c => c.row === sel.row && c.col === sel.col);
+            if (cell) {
+                cell.permanent_user_id = userId || '';
+                const el = document.querySelector(`.map-cell[data-row="${sel.row}"][data-col="${sel.col}"]`);
+                if (el) {
+                    el.classList.toggle('has-user', !!userId);
+                    // Aktualizuj inicály
+                    let userEl = el.querySelector('.map-cell-user');
+                    if (userId) {
+                        const u = (this.users || []).find(x => x.user_id === userId);
+                        const initials = u ? (u.first_name || '').charAt(0) + (u.last_name || '').charAt(0) : '?';
+                        if (!userEl) {
+                            userEl = document.createElement('span');
+                            userEl.className = 'map-cell-user';
+                            el.appendChild(userEl);
+                        }
+                        userEl.textContent = initials;
+                    } else if (userEl) {
+                        userEl.remove();
+                    }
+                }
+                this._updateSidebar();
+            }
+        },
+
+        _updateSidebar: function () {
+            const sidebar = document.querySelector('.map-editor-sidebar');
+            if (sidebar && this._mapsState.editingMap) {
+                sidebar.innerHTML = this._buildMapUserListHtml(this._mapsState.editingMap);
+            }
+        },
+
+        closeDeskConfig: function () {
+            this._mapsState.selectedCell = null;
+            const panel = document.getElementById('desk-config-panel');
+            if (panel) panel.remove();
+        },
+
+        cancelMapEdit: function () {
+            this._mapsState.editingMap = null;
+            this._mapsState.selectedCell = null;
+            this.renderMapsContent();
+        },
+
+        saveCurrentMap: async function () {
+            const map = this._mapsState.editingMap;
+            if (!map) return;
+            // Sync název z inputu
+            const nameInput = document.getElementById('map-name-input');
+            if (nameInput) map.name = nameInput.value.trim() || map.name;
+
+            const saveBtn = document.getElementById('map-save-btn');
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Ukládám…'; }
+
+            try {
+                const result = await callServer('saveOfficeMap', map);
+                if (result && result.success) {
+                    if (!map.map_id) map.map_id = result.id;
+                    // Aktualizuj lokální cache map
+                    const idx = this._mapsState.maps.findIndex(m => m.map_id === map.map_id);
+                    const saved = JSON.parse(JSON.stringify(map));
+                    if (idx >= 0) this._mapsState.maps[idx] = saved;
+                    else this._mapsState.maps.push(saved);
+
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✅ Uloženo!'; setTimeout(() => { if (saveBtn) saveBtn.textContent = '💾 Uložit mapu'; }, 2000); }
+                } else {
+                    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Uložit mapu'; }
+                    showAdminToast('Chyba při ukládání: ' + (result ? result.error : 'Neznámá chyba'));
+                }
+            } catch (e) {
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Uložit mapu'; }
+                showAdminToast('Chyba komunikace: ' + e);
+            }
+        },
+
+        deleteMap: async function (mapId) {
+            if (!confirm('Opravdu smazat tuto mapu? Akce je nevratná.')) return;
+            try {
+                const result = await callServer('deleteOfficeMap', mapId);
+                if (result && result.success) {
+                    this._mapsState.maps = this._mapsState.maps.filter(m => m.map_id !== mapId);
+                    this.renderMapsContent();
+                } else {
+                    showAdminToast('Chyba při mazání: ' + (result ? result.error : 'Neznámá chyba'));
+                }
+            } catch (e) {
+                showAdminToast('Chyba komunikace: ' + e);
+            }
+        },
+
+        renderNamedDays: function () {
+            const panel = document.getElementById('admin-panel-namedays');
+            if (!panel) return;
+
+            let html = `
+<div class="admin-card" style="padding:0; overflow:hidden;">
+    <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Správa jmenin</h2>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <span style="font-size:13px; color:#64748b; font-weight:700;">Měsíc:</span>
+            <select onchange="admin.currentNamedDayMonth = parseInt(this.value); admin.renderNamedDays()" style="padding:4px 8px; border-radius:6px; border:1px solid #cbd5e1; font-weight:600; font-size:13px;">
+                ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => `<option value="${m}" ${this.currentNamedDayMonth === m ? 'selected' : ''}>${new Date(2024, m - 1, 1).toLocaleDateString('cs-CZ', { month: 'long' })}</option>`).join('')}
+            </select>
+        </div>
+    </div>
+    <p style="margin:10px 20px; color:#64748b; font-size:12px; font-style:italic;">Změny se uloží do databáze po kliknutí na ULOŽIT.</p>
+    <div class="table-container" style="max-height:600px; overflow-y:auto; padding:0 20px 20px;">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th style="width:100px;">Datum</th>
+                    <th>Jména</th>
+                    <th style="width:120px; text-align:center;">Akce</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+            const month = this.currentNamedDayMonth;
+            const daysInMonth = new Date(2024, month, 0).getDate();
+
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateKey = String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+                const val = this.namedDays[dateKey] || "";
+                html += `
+                <tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="font-weight:700; color:#1e293b; padding:12px 8px;">${d}. ${month}.</td>
+                    <td>
+                        <input type="text" id="nd-${dateKey}" value="${val}" class="modal-form-input" 
+                            style="height:36px; padding:0 12px; font-weight:600; width:100%;" 
+                            placeholder="Zadejte jména (oddělená čárkou)...">
+                    </td>
+                    <td style="text-align:center;">
+                        <button onclick="admin.saveOneNamedDay('${dateKey}')" class="btn btn-sm" style="background:var(--primary); color:white; border-radius:6px; padding:6px 10px; font-size:11px; font-weight:800;" title="Uložit">💾 ULOŽIT</button>
+                    </td>
+                </tr>`;
+            }
+
+            html += `</tbody></table></div></div>`;
+            panel.innerHTML = html;
+        },
+
+        saveOneNamedDay: async function (dateKey) {
+            const val = document.getElementById('nd-' + dateKey).value;
+            try {
+                const res = await callServer('saveNamedDay', dateKey, val) || { success: false, error: 'Nepodařilo se volat server' };
+                if (res.success) {
+                    this.namedDays[dateKey] = val;
+                    const input = document.getElementById('nd-' + dateKey);
+                    if (input) {
+                        const originalBg = '#f8fafc';
+                        input.style.background = '#dcfce7';
+                        setTimeout(() => { if (input) input.style.background = originalBg; }, 1000);
+                    }
+
+                    if (window.plannerData) {
+                        if (!window.plannerData.namedDays) window.plannerData.namedDays = {};
+                        window.plannerData.namedDays[dateKey] = val;
+                    }
+                } else {
+                    showAdminToast('Chyba: ' + res.error);
+                }
+            } catch (e) {
+                showAdminToast('Chyba komunikace: ' + e);
+            }
+        }
+    };
+
+    // Inicializace kliknutí na položky admin navigace
+    document.addEventListener('click', function (e) {
+        const navItem = e.target.closest('.admin-nav-item');
+        if (navItem && navItem.hasAttribute('data-view')) {
+            const view = navItem.getAttribute('data-view');
+            document.querySelectorAll('.admin-nav-item').forEach(el => el.classList.remove('active'));
+            navItem.classList.add('active');
+            admin.currentTab = view;
+            admin.renderCurrentTab();
+        }
+    });
+
+    // Globální funkce pro loader (pokud nejsou definovány jinde)
+    window.showLoader = function (msg) {
+        let overlay = document.getElementById('loading-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'loading-overlay';
+            overlay.style = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.7); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:9999; font-family:sans-serif;';
+            overlay.innerHTML = `
+                <div style="background:white; padding:30px; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.1); text-align:center;">
+                    <div class="spinner" style="width:40px; height:40px; border:4px solid #f3f3f3; border-top:4px solid var(--primary, #004fac); border-radius:50%; animation: spin-loader 1s linear infinite; margin: 0 auto 15px;"></div>
+                    <div id="loading-msg" style="font-weight:700; color:#1a202c;">${msg || 'Zpracovávám...'}</div>
+                </div>
+                <style>
+                    @keyframes spin-loader { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                </style>
+            `;
+            document.body.appendChild(overlay);
+        } else {
+            overlay.style.display = 'flex';
+            const msgEl = overlay.querySelector('#loading-msg');
+            if (msgEl) msgEl.innerText = msg || 'Zpracovávám...';
+        }
+    };
+
+    window.hideLoader = function () {
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) overlay.style.display = 'none';
+    };
+
+    function showAdminStatus(msg) {
+        document.querySelectorAll('.admin-view-panel').forEach(p => p.innerHTML = `<div
+    style="padding:40px; text-align:center; color:#64748b;">${escapeHtml(msg)}</div>`);
+    }
+
+    /**
+     * Zobrazí nepřerušující toast notifikaci místo showAdminToast().
+     * @param {string} msg - Zpráva k zobrazení.
+     * @param {'error'|'success'|'warn'|'info'} type - Typ (výchozí: 'error').
+     */
+    function showAdminToast(msg, type) {
+        type = type || 'error';
+        const colors = {
+            error: { bg: '#fee2e2', border: '#f87171', text: '#991b1b' },
+            success: { bg: '#dcfce7', border: '#4ade80', text: '#166534' },
+            warn: { bg: '#fef9c3', border: '#facc15', text: '#854d0e' },
+            info: { bg: '#dbeafe', border: '#60a5fa', text: '#1e40af' }
+        };
+        const c = colors[type] || colors.error;
+        const toast = document.createElement('div');
+        toast.textContent = msg;
+        Object.assign(toast.style, {
+            position: 'fixed', bottom: '24px', right: '24px', zIndex: '99999',
+            padding: '12px 20px', borderRadius: '8px', maxWidth: '420px',
+            background: c.bg, border: '1px solid ' + c.border, color: c.text,
+            fontSize: '14px', boxShadow: '0 4px 12px rgba(0,0,0,.15)',
+            transition: 'opacity .3s', opacity: '1'
+        });
+        document.body.appendChild(toast);
+        setTimeout(function () {
+            toast.style.opacity = '0';
+            setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+        }, 4000);
+    }
+</script>

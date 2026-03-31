@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>
+    <?= CONFIG.APP_NAME ?>
+  </title>
+  <?!= include('Styles_css') ?>
+</head>
+
+<body class="<?= !isInitialized ? 'is-wizard' : '' ?>">
+  <!-- SPLASH SCREEN - Pouze pokud je aplikace již nastavena -->
+  <? if (isInitialized) { ?>
+  <div id="splash-screen">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Lidl-Logo.svg" alt="Lidl Logo" class="splash-logo">
+    <div class="splash-title">
+      <span class="splash-title-main">Docházka</span>
+      <span class="splash-title-sub">Planner</span>
+    </div>
+    <div class="splash-loader-box">
+      <div id="splash-msg" class="splash-msg">Inicializace systému...</div>
+      <div class="dots-container">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+    </div>
+  </div>
+  <? } ?>
+
+  <!-- AUTH SCREEN — Registrace / Čekání na schválení / Zamítnutí -->
+  <? if (isInitialized) { ?>
+  <div id="auth-screen">
+    <div class="auth-card">
+      <div class="auth-header">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Lidl-Logo.svg" alt="Lidl" class="auth-logo">
+        <h1 class="auth-header-title">Docházka Planner</h1>
+        <p class="auth-header-sub">Systém pro správu docházky a plánování</p>
+      </div>
+      <div class="auth-body">
+
+        <!-- STAV: Registrace -->
+        <div id="auth-state-register" class="auth-state">
+          <p class="auth-divider">Žádost o přístup</p>
+
+          <!-- Varování při prázdném emailu (osobní Gmail účty) -->
+          <div id="reg-no-email-warning"
+            style="display:none; background:#fff7ed; border:1.5px solid #fed7aa; border-radius:10px; padding:14px 16px; margin-bottom:16px;">
+            <div style="font-weight:700; color:#c2410c; font-size:13px; margin-bottom:4px;">⚠️ Nelze ověřit přihlášení
+            </div>
+            <div style="font-size:12px; color:#9a3412; line-height:1.5;">
+              Aplikace nemohla načíst váš e-mail. Toto nastane u osobních Google účtů (<code>@gmail.com</code>).<br>
+              Pro přístup použijte <strong>firemní Google účet</strong> (např. <code>@lidl.cz</code>).
+            </div>
+          </div>
+
+          <div id="reg-form-body">
+            <p class="auth-state-text" style="text-align:left; margin-bottom:20px;">
+              Váš Google účet nebyl nalezen v systému. Vyplňte níže uvedený formulář — žádost o přístup bude odeslána
+              administrátorovi.
+            </p>
+            <div class="auth-form-group">
+              <label class="auth-form-label">E-mail (Google účet)</label>
+              <input id="reg-email" class="auth-form-input" type="text" readonly>
+            </div>
+            <div class="auth-form-row">
+              <div class="auth-form-group">
+                <label class="auth-form-label">Jméno <span>*</span></label>
+                <input id="reg-firstname" class="auth-form-input" type="text" placeholder="Jan" required>
+              </div>
+              <div class="auth-form-group">
+                <label class="auth-form-label">Příjmení <span>*</span></label>
+                <input id="reg-lastname" class="auth-form-input" type="text" placeholder="Novák" required>
+              </div>
+            </div>
+            <div class="auth-form-group">
+              <label class="auth-form-label">Oddělení <span>*</span></label>
+              <select id="reg-dept" class="auth-form-input">
+                <option value="">-- Vyberte oddělení --</option>
+              </select>
+            </div>
+            <button id="reg-submit-btn" class="auth-submit-btn" onclick="submitRegistration()">
+              Odeslat žádost o přístup
+            </button>
+            <p class="auth-footer-note">Po odeslání bude žádost zkontrolována administrátorem.<br>Přístup bude udělen po
+              schválení.</p>
+          </div><!-- /#reg-form-body -->
+        </div>
+
+        <!-- STAV: Čeká na schválení -->
+        <div id="auth-state-pending" class="auth-state">
+          <div class="auth-state-icon pending">⏳</div>
+          <h2 class="auth-state-title">Žádost čeká na schválení</h2>
+          <p class="auth-state-text">
+            Vaše žádost o přístup byla odeslána a čeká na schválení administrátorem nebo vedoucím oddělení.
+          </p>
+          <span id="pending-email" class="auth-email-chip"></span>
+          <p class="auth-state-text" style="margin:0;">
+            Jakmile bude váš účet schválen, budete moci aplikaci plně využívat. V případě dotazů kontaktujte svého
+            nadřízeného.
+          </p>
+        </div>
+
+        <!-- STAV: Zamítnutí -->
+        <div id="auth-state-rejected" class="auth-state">
+          <div class="auth-state-icon rejected">🚫</div>
+          <h2 class="auth-state-title">Přístup zamítnut</h2>
+          <p class="auth-state-text">
+            Vaše žádost o přístup do systému byla zamítnuta.
+          </p>
+          <span id="rejected-email" class="auth-email-chip"></span>
+          <p class="auth-state-text" style="margin:0;">
+            Pro více informací nebo opětovné podání žádosti kontaktujte administrátora systému.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <? } ?>
+
+  <div id="app">
+    <? if (!isInitialized) { ?>
+    <?!= include('Wizard_html') ?>
+    <? } else { ?>
+    <div class="app-shell">
+      <!-- Overlay Spinner pro načítání měsíčních dat -->
+      <div id="calendar-loading-overlay" style="display:none; position:absolute; top:60px; left:0; width:100%; height:calc(100% - 85px); background:rgba(255,255,255,0.7); z-index:1500; align-items:center; justify-content:center; flex-direction:column; backdrop-filter: blur(2px);">
+        <div class="spinner" style="width:40px;height:40px;border:4px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite;"></div>
+        <div style="margin-top:16px;font-weight:600;color:#0f172a;">Načítám data kalendáře...</div>
+      </div>
+      <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+
+      <!-- Prefetch Toast Banner -->
+      <div id="prefetch-toast" class="prefetch-toast">
+        <div style="display: flex; align-items: center; width: 100%;">
+          <div class="spinner" style="width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite; margin-right: 12px; flex-shrink: 0;"></div>
+          <div style="display: flex; flex-direction: column; min-width: 150px;">
+            <div id="prefetch-toast-title" style="font-weight:700; font-size: 11px; color: #1e293b; line-height: 1.2;">Optimalizace kalendáře</div>
+            <div id="prefetch-toast-text" style="font-weight:400; font-size: 10px; color: #64748b; line-height: 1.2;">Příprava dat na pozadí...</div>
+          </div>
+        </div>
+        <div class="prefetch-progress-container" style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 8px; overflow: hidden;">
+          <div id="prefetch-progress-bar" style="width: 0%; height: 100%; background: #0ea5e9; transition: width 0.3s ease;"></div>
+        </div>
+      </div>
+
+      <header class="app-topbar">
+        <div class="app-logo-container">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Lidl-Logo.svg" alt="Lidl Logo" class="app-logo">
+          <div class="app-title-box">
+            <span class="app-title-main">Docházka</span>
+            <span class="app-title-sub">Planner</span>
+          </div>
+        </div>
+
+        <div class="topbar-center">
+          <div class="topbar-stats-module" id="topbar-stats-module" style="display: none;">
+            <div class="stats-nav">
+              <button class="stats-nav-btn" onclick="changeStatsDate(-1)">◀</button>
+              <div class="stats-date-box">
+                <div class="stats-day-date" id="stats-display-date">PO 03.03.2026</div>
+                <div class="stats-named-row">
+                  <span class="named-cake">🎂</span>
+                  <span id="stats-display-named-day"></span>
+                </div>
+              </div>
+              <button class="stats-nav-btn" onclick="changeStatsDate(1)">▶</button>
+            </div>
+
+            <div class="stats-divider"></div>
+
+            <div class="stats-grid">
+              <!-- ONLINE -->
+              <div class="stat-item" id="stat-online">
+                <div class="stat-head">
+                  <div class="stat-dot dot-online"></div>
+                  <span class="stat-label">ONLINE</span>
+                </div>
+                <span id="val-online" class="stat-val">0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">Právě online (váš úsek)</div>
+                  <div id="list-online" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+
+              <!-- CELKEM -->
+              <div class="stat-item" id="stat-total">
+                <div class="stat-head">
+                  <div class="stat-dot dot-total"></div>
+                  <span class="stat-label">CELKEM</span>
+                </div>
+                <span id="val-total" class="stat-val">0 / 0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">Přehled vyplnění (váš úsek)</div>
+                  <div class="stat-tooltip-subheading">Nevyplněno:</div>
+                  <div id="list-unfilled" class="stat-tooltip-list"></div>
+                  <div class="stat-tooltip-subheading">Vyplněno:</div>
+                  <div id="list-filled" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+
+              <!-- KANCELÁŘ -->
+              <div class="stat-item" id="stat-kancelar">
+                <div class="stat-head">
+                  <div class="stat-dot dot-kancelar"></div>
+                  <span class="stat-label">KANCELÁŘ</span>
+                </div>
+                <span id="val-kancelar" class="stat-val">0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">V kanceláři</div>
+                  <div id="list-kancelar" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+
+              <!-- HO -->
+              <div class="stat-item" id="stat-ho">
+                <div class="stat-head">
+                  <div class="stat-dot dot-ho"></div>
+                  <span class="stat-label">HO</span>
+                </div>
+                <span id="val-ho" class="stat-val">0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">Home Office</div>
+                  <div id="list-ho" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+
+              <!-- DOVOLENÁ -->
+              <div class="stat-item" id="stat-dovolena">
+                <div class="stat-head">
+                  <div class="stat-dot dot-dovolena"></div>
+                  <span class="stat-label">DOVOLENÁ</span>
+                </div>
+                <span id="val-dovolena" class="stat-val">0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">Dovolená / Volno</div>
+                  <div id="list-dovolena" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+
+              <!-- OSTATNÍ -->
+              <div class="stat-item" id="stat-ostatni">
+                <div class="stat-head">
+                  <div class="stat-dot dot-ostatni"></div>
+                  <span class="stat-label">OSTATNÍ</span>
+                </div>
+                <span id="val-ostatni" class="stat-val">0</span>
+                <div class="stat-tooltip">
+                  <div class="stat-tooltip-header">Ostatní statusy</div>
+                  <div id="list-ostatni" class="stat-tooltip-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- MODUL: PŘEPÍNAČ ZOBRAZENÍ -->
+          <div class="topbar-module view-switcher-module">
+            <button class="switcher-btn active" id="btn-nav-dashboard" onclick="switchView('dashboard')"
+              title="Výchozí kalendář statusů">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+              </svg>
+            </button>
+            <button class="switcher-btn" id="btn-nav-vacation" onclick="switchView('vacation')"
+              title="Dovolené a volna">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="8" width="18" height="13" rx="2"></rect>
+                <path d="M9 8V6a3 3 0 0 1 6 0v2"></path>
+                <line x1="3" y1="14" x2="21" y2="14"></line>
+              </svg>
+            </button>
+            <button class="switcher-btn" id="btn-nav-planner" onclick="switchView('planner')"
+              title="Plánovací kalendář">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"></path>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+                <line x1="17" y1="17" x2="17" y2="23"></line>
+                <line x1="14" y1="20" x2="20" y2="20"></line>
+              </svg>
+            </button>
+            <button class="switcher-btn" id="admin-icon-btn" title="Administrace" style="display: none;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                </path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- MODUL: NOTIFIKACE -->
+          <div class="topbar-module notif-module">
+            <button class="notif-bell-btn" id="notif-bell-btn" onclick="toggleNotifPanel()" title="Oznámení">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span id="notif-badge"></span>
+            </button>
+          </div>
+
+          <!-- MODUL: PROFIL -->
+          <div class="topbar-module user-profile-module" id="profile-trigger">
+            <div class="user-info-text">
+              <span class="u-name">
+                <?= getUserEmail().split('@')[0] ?>
+              </span>
+              <span class="u-account">
+                <?= getUserEmail() ?>
+              </span>
+              <span class="u-pos">Vedoucí Oddělení</span>
+            </div>
+            <div class="user-avatar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="planner-wrapper" id="planner-view">
+        <div class="planner-grid" id="planner-grid">
+          <!-- HLAVIČKA KT -->
+          <div class="cell sticky-label sticky-header row-kt"
+            style="display: flex; justify-content: center; align-items: center; gap: 8px;">
+            <button class="nav-btn" id="prev-month"
+              style="color: var(--primary); padding: 4px; font-size: 14px;">◀</button>
+            <span class="curr-period" id="display-period"
+              style="color: var(--primary); font-size: 13px; font-weight: 900; letter-spacing: 0.5px; white-space: nowrap;">BŘEZEN
+              2026</span>
+            <div
+              style="position: relative; display: flex; align-items: center; cursor: pointer; color: var(--primary);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <input type="month" id="month-picker-input"
+                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"
+                title="Vyberte měsíc">
+            </div>
+            <button class="nav-btn" id="next-month"
+              style="color: var(--primary); padding: 4px; font-size: 14px;">▶</button>
+          </div>
+          <div id="kt-row-cells" style="display: contents;"></div>
+
+          <!-- HLAVIČKA DNŮ -->
+          <div class="cell sticky-label sticky-header row-days" id="section-name-inline"></div>
+          <div id="day-row-cells" style="display: contents;"></div>
+
+          <!-- OBSAH ZAMĚSTNANCŮ -->
+          <div id="grid-content" style="display: contents;"></div>
+        </div>
+      </main>
+
+      <main class="planner-wrapper" id="monthly-planner-view" style="display: none;">
+        <div class="monthly-layout">
+          <!-- SIDEBAR -->
+          <aside class="monthly-sidebar">
+            <div class="monthly-sidebar-header">
+              <h3>Plánovač</h3>
+            </div>
+
+            <div class="monthly-month-nav">
+              <button class="m-nav-btn" id="planner-prev-month">◀</button>
+              <div class="m-current-month" id="monthly-display-period">BŘEZEN 2026</div>
+              <div class="m-nav-picker-wrapper">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                  stroke-linecap="round" stroke-linejoin="round" style="pointer-events: none;">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <input type="month" id="monthly-month-picker-input"
+                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;"
+                  title="Vyberte měsíc">
+              </div>
+              <button class="m-nav-btn" id="planner-next-month">▶</button>
+            </div>
+
+            <div class="monthly-groups-section">
+              <div class="sidebar-label">MOJE SKUPINY</div>
+              <div id="monthly-groups-list" class="monthly-groups-list">
+                <!-- JS -->
+              </div>
+            </div>
+
+            <div class="monthly-sidebar-footer">
+              <button class="create-group-btn" id="btn-create-planner-group">
+                <span>+</span> Nový planner
+              </button>
+            </div>
+          </aside>
+
+          <!-- MAIN GRID -->
+          <div class="monthly-main">
+            <div class="monthly-grid-wrapper">
+              <div class="monthly-grid" id="monthly-grid">
+                <!-- JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ADMIN VIEW -->
+      <div class="admin-wrapper" id="admin-view" style="position:relative;">
+        <!-- OVERLAY BĚHEM NAČÍTÁNÍ ADMINISTRACE -->
+        <div id="admin-init-overlay"
+          style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; z-index:9000; background:rgba(255,255,255,0.7); backdrop-filter:blur(8px); flex-direction:column; justify-content:center; align-items:center; color:var(--primary); text-align:center;">
+          <div class="loader-spinner"
+            style="border-top-color:var(--primary); width:40px; height:40px; border-width:4px; margin-bottom:16px;">
+          </div>
+          <div style="font-size:20px; font-weight:900; letter-spacing:-0.5px; margin-bottom:6px;">Administrace</div>
+          <div id="admin-init-status" style="font-size:13px; font-weight:600; color:#64748b; margin-top:0;">Připravuji
+            prostředí...</div>
+        </div>
+        <div class="admin-nav">
+          <div class="admin-nav-item active" data-view="users"><span>👥</span> Uživatelé</div>
+          <div class="admin-nav-item" data-view="depts"><span>🏢</span> Org. struktura</div>
+          <div class="admin-nav-item" data-view="statuses"><span>🏷️</span> Statusy</div>
+          <div class="admin-nav-item" data-view="settings"><span>⚙️</span> Globální nastavení</div>
+          <div class="admin-nav-item" data-view="maps"><span>🗺️</span> Mapy kanceláří</div>
+          <div class="admin-nav-item" data-view="namedays"><span>🎂</span> Jmeniny</div>
+          <div class="admin-nav-item" id="nav-rbac" data-view="rbac" style="display:none;"><span>🔐</span> Oprávnění
+          </div>
+        </div>
+        <div class="admin-content" id="admin-content">
+          <!-- Zde se bude měnit obsah admin sekcí -->
+          <div id="admin-panel-users" class="admin-view-panel active">Načítám správu uživatelů...</div>
+          <div id="admin-panel-depts" class="admin-view-panel">Správa organizační struktury...</div>
+          <div id="admin-panel-statuses" class="admin-view-panel">Načítám statusy...</div>
+          <div id="admin-panel-settings" class="admin-view-panel">Globální nastavení systému...</div>
+          <div id="admin-panel-maps" class="admin-view-panel">
+            <div id="maps-container"></div>
+          </div>
+          <div id="admin-panel-namedays" class="admin-view-panel">Správa jmenin...</div>
+          <div id="admin-panel-rbac" class="admin-view-panel">Načítám oprávnění...</div>
+        </div>
+      </div>
+
+      <footer class="app-footer">
+        <div>&copy;
+          <?= new Date().getFullYear() ?> Lidl - Docházkový systém + Planner
+        </div>
+        <div class="footer-actions">
+          <button id="footer-map-btn" class="footer-action-btn" onclick="openOfficeMapModal()" title="Mapa kanceláře">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>Mapa</span>
+          </button>
+          <button class="footer-action-btn" onclick="openActivityLogModal()" title="Log statusů">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+            <span>Log</span>
+          </button>
+          <button id="footer-activity-btn" class="footer-action-btn" onclick="openUserActivityLogModal()" title="Aktivita uživatelů" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Aktivita</span>
+          </button>
+        </div>
+        <div id="deploy-time-footer">v2.4.0 | RBAC Scoped Engine Ready | Aktualizace: 28.03.2026 09:40</div>
+      </footer>
+    </div>
+    <? } ?>
+  </div>
+
+  <!-- OFFICE MAP MODAL -->
+  <div id="office-map-modal" class="footer-modal-backdrop" style="display:none;">
+    <div class="footer-modal-card" style="width:720px;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <div class="modal-header-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </div>
+        <h2 class="modal-header-title">Mapa kanceláře</h2>
+        <p class="modal-header-sub">Přehled obsazenosti a rezervace míst</p>
+        <button class="modal-close-btn" onclick="closeOfficeMapModal()">&times;</button>
+      </div>
+      <div class="footer-modal-body">
+        <div class="map-modal-controls">
+          <label class="map-modal-date-label">Datum:</label>
+          <input type="date" id="map-modal-date" class="map-modal-date-input" onchange="onMapModalDateChange(this.value)">
+          <div class="map-modal-nav">
+            <button class="map-nav-btn" onclick="mapModalPrevDay()" title="Předchozí den">&larr;</button>
+            <button class="map-nav-btn map-nav-today" onclick="mapModalToday()">Dnes</button>
+            <button class="map-nav-btn" onclick="mapModalNextDay()" title="Následující den">&rarr;</button>
+          </div>
+        </div>
+        <div id="map-modal-missing-alert" class="map-missing-alert" style="display:none;"></div>
+        <div id="map-modal-grid-wrapper" class="map-modal-grid-wrapper">
+          <div id="map-modal-grid"></div>
+        </div>
+        <div class="map-modal-legend">
+          <span class="map-legend-item"><span class="map-legend-dot desk-free"></span> Volné</span>
+          <span class="map-legend-item"><span class="map-legend-dot desk-mine"></span> Moje místo</span>
+          <span class="map-legend-item"><span class="map-legend-dot desk-occupied"></span> Obsazené</span>
+          <span class="map-legend-item"><span class="map-legend-dot desk-pre-no-status"></span> Bez statusu</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVITY LOG MODAL -->
+  <div id="activity-log-modal" class="footer-modal-backdrop" style="display:none;">
+    <div class="footer-modal-card" style="width:860px;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <div class="modal-header-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+        </div>
+        <h2 class="modal-header-title">Log docházky</h2>
+        <p class="modal-header-sub">Historie všech změn docházky v úseku</p>
+        <button class="modal-close-btn" onclick="closeActivityLogModal()">&times;</button>
+      </div>
+      <div class="footer-modal-body">
+        <div class="log-filters">
+          <select id="log-filter-user" class="log-filter-select" onchange="filterActivityLog()">
+            <option value="">Všichni uživatelé</option>
+          </select>
+          <select id="log-filter-status" class="log-filter-select" onchange="filterActivityLog()">
+            <option value="">Všechny statusy</option>
+          </select>
+          <input type="date" id="log-filter-from" class="log-filter-date" onchange="filterActivityLog()" placeholder="Od">
+          <input type="date" id="log-filter-to" class="log-filter-date" onchange="filterActivityLog()" placeholder="Do">
+          <button class="log-filter-reset" onclick="resetActivityLogFilters()" title="Resetovat filtry">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+        <div class="log-table-wrapper">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Čas uložení</th>
+                <th>Uživatel</th>
+                <th>Datum</th>
+                <th>Status</th>
+                <th>Slot</th>
+              </tr>
+            </thead>
+            <tbody id="log-table-body"></tbody>
+          </table>
+        </div>
+        <div id="log-load-more" class="log-load-more" style="display:none;">
+          <button class="log-load-more-btn" onclick="loadMoreLogEntries()">Načíst další záznamy</button>
+          <span id="log-count-info" class="log-count-info"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER ACTIVITY LOG MODAL (SUPERADMIN ONLY) -->
+  <div id="user-activity-log-modal" class="footer-modal-backdrop" style="display:none;">
+    <div class="footer-modal-card" style="width:860px;">
+      <div class="modal-brand-header" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
+        <div class="modal-deco-circle"></div>
+        <div class="modal-header-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><mask id="mask0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></mask><g mask="url(#mask0)"><path d="M0 0h24v24H0z"/></g></svg>
+        </div>
+        <h2 class="modal-header-title">Aktivita uživatelů</h2>
+        <p class="modal-header-sub">Přehled poslední online aktivity všech uživatelů systému</p>
+        <button class="modal-close-btn" onclick="closeUserActivityLogModal()">&times;</button>
+      </div>
+      <div class="footer-modal-body">
+        <div class="log-filters">
+          <input type="text" id="user-log-filter-q" class="log-filter-select" oninput="filterUserActivityLog()" placeholder="Hledat jméno nebo e-mail..." style="flex:1;">
+          <button class="log-filter-reset" onclick="resetUserActivityLogFilters()" title="Resetovat filtry">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+        <div class="log-table-wrapper">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Naposledy aktivní</th>
+                <th>Uživatel</th>
+                <th>Email</th>
+                <th>Oddělení</th>
+              </tr>
+            </thead>
+            <tbody id="user-log-table-body"></tbody>
+          </table>
+        </div>
+        <div id="user-log-load-more" class="log-load-more" style="display:none;">
+          <button class="log-load-more-btn" onclick="loadMoreUserActivityEntries()">Načíst další záznamy</button>
+          <span id="user-log-count-info" class="log-count-info"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PLANNER GROUP MODAL -->
+  <div id="planner-group-modal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,79,172,0.12); backdrop-filter:blur(4px); z-index:4000; align-items:center; justify-content:center;">
+    <div id="planner-group-modal-inner"
+      style="width:660px; max-width:95vw; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.2); overflow:hidden; position:relative; background:white;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <button class="modal-close-btn" onclick="closePlannerGroupModal()">&#x2715;</button>
+        <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
+          <div
+            style="width:50px; height:50px; border-radius:12px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:24px;">
+            🗂️</div>
+          <div>
+            <h2 class="modal-header-title">Nový plánovací kalendář</h2>
+            <p class="modal-header-sub">Vytvořte a nastavte novou skupinu</p>
+          </div>
+        </div>
+      </div>
+      <div class="admin-modal-body" style="padding:24px;">
+        <div class="modal-section">
+          <div class="modal-section-title">✏️ Základní nastavení</div>
+          <div style="display:flex; gap:12px;">
+            <div class="form-group" style="flex:2;">
+              <label>Název planneru *</label>
+              <input type="text" id="pg-name" name="name"
+                style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; width:100%; box-sizing:border-box;"
+                placeholder="Např. Tým Marketing" required>
+            </div>
+            <div class="form-group" style="flex:1;">
+              <label>Barva planneru</label>
+              <input type="color" id="pg-color"
+                style="padding:2px 4px; border:1.5px solid #e2e8f0; border-radius:6px; height:36px; width:100%; box-sizing:border-box; cursor:pointer;"
+                value="#0ea5e9">
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-section">
+          <div class="modal-section-title">👥 Přidat zaměstnance</div>
+          <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+            <select id="pg-add-filter-type"
+              style="padding:8px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:12px; width:140px;"
+              onchange="updatePlannerGroupUserSuggestions()">
+              <option value="NAME">Hledat dle jména...</option>
+              <option value="GROUP">Celý Tým</option>
+              <option value="DEPT">Celé Oddělení</option>
+              <option value="SECTION">Celý Úsek</option>
+            </select>
+            <input type="text" id="pg-add-filter-input" placeholder="Napište hledaný výraz..."
+              style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; flex:1; box-sizing:border-box;"
+              oninput="updatePlannerGroupUserSuggestions()">
+          </div>
+          <div id="pg-add-suggestions"
+            style="max-height: 120px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px; display: none; background: #f8fafc; padding: 5px; flex-direction: column; gap: 3px;">
+          </div>
+        </div>
+
+        <div class="modal-section" style="margin-bottom:0;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="modal-section-title">📋 Členové a oprávnění</div>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <span style="font-size:11px; color:#64748b;">Hromadně:</span>
+              <select id="pg-bulk-perm" onchange="setBulkPlannerPermissions(this.value); this.value='';"
+                style="padding:4px 6px; border:1.5px solid #e2e8f0; border-radius:4px; font-size:11px; background:#f8fafc;">
+                <option value="">- Vyberte -</option>
+                <option value="VIEW">Všem: NÁHLED</option>
+                <option value="WRITE">Všem: ZÁPIS</option>
+                <option value="ADMIN">Všem: SPRÁVCE</option>
+              </select>
+            </div>
+          </div>
+          <div id="pg-members-container"
+            style="max-height:200px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#f8fafc;">
+            <!-- JS render -->
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer-brand">
+        <button class="btn-modal-cancel" onclick="closePlannerGroupModal()">ZAVŘÍT</button>
+        <button class="btn-modal-save" id="pg-save-btn" onclick="savePlannerGroup()">VYTVOŘIT PLANNER</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PLANNER EVENT MODAL -->
+  <div id="planner-event-modal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,79,172,0.12); backdrop-filter:blur(4px); z-index:4000; align-items:center; justify-content:center;">
+    <div id="planner-event-modal-inner"
+      style="width:500px; max-width:95vw; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.2); overflow:hidden; position:relative; background:white;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <button class="modal-close-btn" onclick="closePlannerEventModal()">&#x2715;</button>
+        <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
+          <div
+            style="width:50px; height:50px; border-radius:12px; background:rgba(255,255,255,0.18); display:flex; align-items:center; justify-content:center; font-size:24px;">
+            📅</div>
+          <div>
+            <h2 class="modal-header-title">Nová událost v plánovači</h2>
+            <p class="modal-header-sub" id="planner-event-date-label">12. května 2026</p>
+          </div>
+        </div>
+      </div>
+      <div class="admin-modal-body" style="padding:24px;">
+        <div class="modal-section">
+          <div class="form-group" id="pg-event-group-container">
+            <label>Plánovací skupina *</label>
+            <select id="planner-event-group"
+              style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; width:100%; box-sizing:border-box;">
+            </select>
+          </div>
+        </div>
+        <div class="modal-section">
+          <div class="form-group">
+            <label>Popis události *</label>
+            <input type="text" id="planner-event-desc"
+              style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; width:100%; box-sizing:border-box;"
+              placeholder="Co se děje?">
+          </div>
+        </div>
+        <div class="modal-section" style="margin-bottom:0;">
+          <div class="form-group">
+            <label>Ikona události</label>
+            <select id="planner-event-type"
+              style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; width:100%; box-sizing:border-box;">
+              <option value="💬">💬 Běžné</option>
+              <option value="🤝">🤝 Schůzka</option>
+              <option value="💼">💼 Služební cesta</option>
+              <option value="⚠️">⚠️ Důležité</option>
+              <option value="🚨">🚨 Deadline</option>
+              <option value="🏠">🏠 Home Office</option>
+              <option value="🎉">🎉 Oslava / Teambuilding</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer-brand" style="justify-content:space-between;">
+        <button id="planner-event-delete-btn" class="btn-modal-cancel"
+          style="color:#ef4444; border-color:#fee2e2; background:#fef2f2; display:none;"
+          onclick="deletePlannerCurrentEvent()">SMAZAT</button>
+        <div style="display:flex; gap:10px; margin-left:auto;">
+          <button class="btn-modal-cancel" onclick="closePlannerEventModal()">ZAVŘÍT</button>
+          <button class="btn-modal-save" id="planner-event-save-btn" onclick="savePlannerCurrentEvent()">ULOŽIT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFIKAČNÍ BACKDROP + PANEL -->
+  <div id="notif-backdrop" onclick="toggleNotifPanel()"></div>
+  <div id="notif-panel">
+    <div class="notif-panel-header">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span class="notif-panel-title">🔔 Oznámení</span>
+        <button id="notif-mark-all-read" class="notif-mark-all-btn" onclick="markAllAsRead()"
+          title="Označit vše jako přečtené">Vše přečteno</button>
+      </div>
+      <button class="notif-panel-close" onclick="toggleNotifPanel()">&#x2715;</button>
+    </div>
+    <div class="notif-list" id="notif-list">
+      <div class="notif-empty">
+        <div class="notif-empty-icon">🔔</div>
+        <div class="notif-empty-text">Žádná oznámení</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFIL UŽIVATELE MODAL -->
+  <div id="profile-modal"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,79,172,0.12); backdrop-filter:blur(4px); z-index:4000; align-items:center; justify-content:center;">
+    <div id="profile-modal-inner"
+      style="width:920px; max-width:95vw; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.2); overflow:hidden; position:relative; background:white;">
+      <div style="text-align:center; padding:40px; color:#94a3b8;">Načítám...</div>
+    </div>
+  </div>
+
+  <!-- ADMIN MODAL -->
+  <div id="admin-modal" class="step-hidden"
+    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,79,172,0.1); backdrop-filter:blur(4px); z-index:4000; align-items:center; justify-content:center;">
+    <div class="modal-content admin-modal-large"
+      style="background:white; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.2); overflow:hidden; position:relative;">
+      <div id="modal-body">
+        <!-- Obsah se generuje dynamicky v Admin_js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- DOCHÁZKOVÝ MODAL -->
+  <div id="attendance-modal">
+    <div class="att-modal-backdrop" onclick="closeAttendanceModal()"></div>
+    <div class="att-modal-card">
+      <div class="att-modal-header">
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: baseline; gap: 10px;">
+            <div class="att-modal-date" id="att-modal-date"></div>
+            <div class="att-modal-user" id="att-modal-user" style="font-size: 14px; opacity: 0.7; font-weight: 400;">
+            </div>
+          </div>
+        </div>
+        <div class="att-mode-toggle" style="margin-right: 15px;">
+          <button class="att-mode-btn active" id="btn-mode-full" onclick="setAttendanceMode('FULL')">CELÝ DEN</button>
+          <button class="att-mode-btn" id="btn-mode-half" onclick="setAttendanceMode('HALF')">½ DEN</button>
+        </div>
+        <button class="att-modal-close" onclick="closeAttendanceModal()">&#x2715;</button>
+      </div>
+      <!-- Top Actions: Preview + Range Apply -->
+      <div class="att-modal-top-actions">
+        <div class="att-status-preview-container">
+          <div id="att-selected-status-preview" class="att-status-preview-content">
+            <span class="att-status-preview-msg">Vyberte status...</span>
+          </div>
+        </div>
+
+        <div class="att-apply-container">
+          <div class="att-apply-row" id="att-apply-row">
+            <span class="att-apply-label">Použít také na:</span>
+            <button class="att-apply-btn" id="btn-apply-week" onclick="toggleRangeAction('WEEK')">📅 Celý týden</button>
+            <button class="att-apply-btn" id="btn-apply-month" onclick="toggleRangeAction('MONTH')">🗓️ Celý měsíc</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="att-modal-body">
+        <!-- Zvětšené hromadné akce nad mřížkou -->
+        <div class="att-batch-group-top">
+          <button id="att-batch-btn" class="att-batch-btn-large" onclick="startBatchMode('ENTRY')">➕ HROMADNÉ ZADÁVÁNÍ</button>
+          <button id="att-batch-delete-btn" class="att-batch-btn-large delete-style" onclick="startBatchMode('DELETE')">🗑️ HROMADNÉ MAZÁNÍ</button>
+        </div>
+
+        <div class="att-status-grid" id="att-status-grid"></div>
+      </div>
+
+      <!-- MAPA KANCELÁŘE -->
+      <div id="att-map-section" class="att-map-section att-map-inactive">
+        <div class="att-map-header">
+          <div class="att-map-header-left">
+            <span class="att-map-title">🪑 Výběr místa</span>
+            <span class="att-map-subtitle" id="att-map-subtitle">Vyberte status pro aktivaci</span>
+          </div>
+          <button class="att-map-skip-btn" onclick="skipDeskSelection()" title="Pokračovat bez výběru místa">Přeskočit →</button>
+        </div>
+        <div class="att-map-grid-scroll">
+          <div id="att-map-grid"></div>
+        </div>
+        <div class="att-map-legend">
+          <div class="att-map-legend-item"><span class="att-map-dot mine"></span>Moje místo</div>
+          <div class="att-map-legend-item"><span class="att-map-dot occupied"></span>Obsazeno</div>
+          <div class="att-map-legend-item"><span class="att-map-dot pre-no-status"></span>Předrezervováno</div>
+          <div class="att-map-legend-item"><span class="att-map-dot pre-other"></span>Jiný status</div>
+          <div class="att-map-legend-item"><span class="att-map-dot free"></span>Volné</div>
+        </div>
+      </div>
+
+      <div class="att-modal-footer">
+        <div class="att-footer-actions">
+          <button id="att-clear-btn" class="att-clear-btn" onclick="clearAttendanceStatus()">🗑 Vymazat</button>
+        </div>
+        <button class="att-close-btn" id="att-close-btn" onclick="closeAttendanceModal()">Hotovo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUSTOM CONFIRMATION MODAL -->
+  <div id="custom-confirm-modal" class="custom-confirm-overlay">
+    <div class="custom-confirm-card">
+      <div class="confirm-icon">⚠️</div>
+      <h3 id="confirm-title" class="confirm-title">Potvrdit akci</h3>
+      <p id="confirm-msg" class="confirm-msg">Opravdu si přejete provést tuto akci?</p>
+      <div class="confirm-footer">
+        <button class="confirm-btn-cancel" onclick="hideCustomConfirm(false)">ZRUŠIT</button>
+        <button class="confirm-btn-success" id="confirm-ok-btn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BANNER PRO HROMADNÉ ZADÁVÁNÍ (Pill Design) -->
+  <div id="batch-mode-banner">
+    <div class="batch-pill">
+      <div class="batch-pill-section status-info">
+        <div id="batch-pill-icon" class="batch-pill-icon"></div>
+        <div class="batch-pill-text">
+          <span id="batch-pill-label" class="batch-pill-label">AKTIVNÍ STATUS</span>
+          <span id="batch-pill-name" class="batch-pill-name"></span>
+        </div>
+      </div>
+
+      <div class="batch-pill-divider"></div>
+
+      <div id="batch-pill-msg" class="batch-pill-msg">
+        Klikáním do kalendáře vkládejte status
+      </div>
+
+      <button id="batch-map-btn" class="batch-pill-map" onclick="openBatchMapModal()" style="display:none;">
+        &#128506; Mapa
+      </button>
+
+      <button class="batch-pill-done" onclick="stopBatchMode()">HOTOVO</button>
+    </div>
+  </div>
+  </div>
+
+  <!-- VACATION APPROVAL BANNER -->
+  <div id="vacation-approval-banner">
+    <div class="vab-pill">
+      <div class="vab-pill-section">
+        <div class="vab-pill-icon">⏳</div>
+        <div class="vab-pill-text">
+          <span class="vab-pill-label">SCHVALOVÁNÍ DOVOLENÉ</span>
+          <span id="vab-pill-name" class="vab-pill-name">—</span>
+        </div>
+      </div>
+      <div class="vab-pill-divider"></div>
+      <div id="vab-pill-msg" class="vab-pill-msg">Klikejte na čekající statusy v kalendáři</div>
+      <div class="vab-pill-divider"></div>
+      <button id="vab-mode-approve" class="vab-mode-btn vab-mode-approve vab-mode-active"
+        onclick="setVacationApprovalMode('approve')">✓ Schválit</button>
+      <button id="vab-mode-reject" class="vab-mode-btn vab-mode-reject" onclick="setVacationApprovalMode('reject')">✕
+        Zamítnout</button>
+      <div class="vab-pill-divider"></div>
+      <button class="vab-done-btn" onclick="finishVacationApproval()">HOTOVO</button>
+    </div>
+  </div>
+
+  <!-- BATCH MAP MODAL -->
+  <div id="batch-map-modal" class="batch-map-overlay" style="display:none;"
+    onclick="if(event.target===this)closeBatchMapModal()">
+    <div class="batch-map-dialog">
+      <div class="batch-map-header">
+        <button class="batch-map-nav-btn" onclick="batchMapPrevDay()" title="Předchozí den">&#8592;</button>
+        <div class="batch-map-date-info">
+          <span id="batch-map-date-label" class="batch-map-date-label"></span>
+          <span id="batch-map-res-status" class="batch-map-res-status"></span>
+        </div>
+        <button class="batch-map-nav-btn" onclick="batchMapNextDay()" title="Další den">&#8594;</button>
+        <button class="batch-map-close-btn" onclick="closeBatchMapModal()" title="Zavřít">&#10005;</button>
+      </div>
+
+      <div class="batch-map-days-strip" id="batch-map-days-strip"></div>
+
+      <div class="batch-map-grid-scroll">
+        <div id="batch-map-grid" class="batch-map-grid"></div>
+      </div>
+
+      <div class="batch-map-legend">
+        <span class="batch-map-dot bmd-mine"></span> Moje rezervace
+        <span class="batch-map-dot bmd-occupied"></span> Obsazeno
+        <span class="batch-map-dot bmd-prereserved-match"></span> Přiděleno (aktivní)
+        <span class="batch-map-dot bmd-prereserved-nomatch"></span> Přiděleno (jiný status)
+        <span class="batch-map-dot bmd-free"></span> Volno
+      </div>
+
+      <!-- Panel výběru stolu — vždy viditelný, idle/active stav přes CSS třídu -->
+      <div id="batch-map-selection-bar" class="batch-map-selection-bar bms-idle">
+        <div class="batch-map-selection-info">
+          <span class="batch-map-selection-desk" id="batch-map-selection-desk">Klikněte na volný stůl pro výběr</span>
+          <span class="batch-map-selection-sub" id="batch-map-selection-sub"></span>
+        </div>
+        <div class="batch-map-selection-btns">
+          <button class="batch-map-sel-one" id="batch-map-sel-one-btn" onclick="batchMapConfirmOne()"></button>
+          <button class="batch-map-sel-all" id="batch-map-sel-all-btn" onclick="batchMapConfirmAll()"></button>
+          <button class="batch-map-sel-cancel" onclick="batchMapCancelSelection()">✕</button>
+        </div>
+      </div>
+
+      <div class="batch-map-footer">
+        <button class="batch-map-done-btn" onclick="closeBatchMapModal()">Hotovo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Skryté parametry pro předávání stavu ze serveru do JS -->
+  <div id="app-config" data-initialized="<?= isInitialized ? 'true' : 'false' ?>" style="display:none;"></div>
+
+  <!-- OPERATION SPINNER OVERLAY -->
+  <div id="op-spinner-overlay" class="op-spinner-overlay" style="display:none;">
+    <div class="op-spinner-card">
+      <div class="op-spinner-ring"></div>
+      <div class="op-spinner-text" id="op-spinner-text">Zpracovávám...</div>
+      <div class="op-spinner-sub" id="op-spinner-sub"></div>
+    </div>
+  </div>
+
+  <!-- SYNC QUEUE TOAST -->
+  <div id="sync-toast" class="sync-toast">
+    <div class="sync-toast-icon" id="sync-toast-icon"></div>
+    <div id="sync-toast-text" class="sync-toast-text"></div>
+  </div>
+
+  <script>
+    /**
+     * Helper pro asynchronní volání serverových funkcí google.script.run
+     */
+    const callServer = (method, ...args) => {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)[method](...args);
+      });
+    };
+
+    /**
+     * Schová splashscreen s efektem rozplynutí (Fade-out)
+     */
+    function hideSplash() {
+      const splash = document.getElementById('splash-screen');
+      if (splash) {
+        splash.classList.add('is-dissolving');
+        setTimeout(() => {
+          splash.style.display = 'none';
+        }, 2300);
+      }
+    }
+
+    const setSplashMsg = (msg) => {
+      const el = document.getElementById('splash-msg');
+      if (el) el.textContent = msg;
+    };
+
+    /**
+     * Otevře modál s profilem přihlášeného uživatele
+     */
+    async function openProfileModal() {
+      const modal = document.getElementById('profile-modal');
+      const inner = document.getElementById('profile-modal-inner');
+      if (!modal || !inner) return;
+
+      modal.style.display = 'flex';
+
+      const user = plannerData && plannerData.user;
+      if (!user) {
+        inner.innerHTML = `
+          <div class="modal-brand-header">
+            <button class="modal-close-btn" onclick="document.getElementById('profile-modal').style.display='none'">&#x2715;</button>
+            <div class="modal-header-icon">👤</div>
+            <h2 class="modal-header-title">Můj profil</h2>
+          </div>
+          <div class="admin-modal-body">
+            <div style="text-align:center; padding:30px; color:#94a3b8;">Data profilu nejsou dostupná.</div>
+          </div>`;
+        return;
+      }
+
+      // Zobrazit loading stav
+      inner.innerHTML = `
+        <div class="modal-brand-header" style="min-height:90px;">
+          <button class="modal-close-btn" onclick="document.getElementById('profile-modal').style.display='none'">&#x2715;</button>
+          <div class="modal-header-icon">👤</div>
+          <h2 class="modal-header-title">Načítám profil...</h2>
+        </div>
+        <div style="padding:30px; text-align:center; color:#94a3b8;">Načítám data...</div>`;
+
+      // Načíst org data (z admin cache nebo ze serveru)
+      let orgData = (typeof admin !== 'undefined' && admin.data) ? admin.data : null;
+      if (!orgData) {
+        try {
+          const res = await callServer('getAdminOrgData');
+          if (res && res.success) orgData = res.data;
+        } catch (e) { /* silent fallback */ }
+      }
+
+      const positions = (orgData && orgData.positions) || plannerData.positions || [];
+      const sections = (orgData && orgData.sections) || [];
+      const departments = (orgData && orgData.departments) || plannerData.departments || [];
+      const groups = (orgData && orgData.groups) || [];
+
+      const isAdminPlus = ['ADMIN', 'SUPERADMIN'].includes(user.system_role);
+      const isSuperAdmin = user.system_role === 'SUPERADMIN';
+      const isManager = ['SECTION_LEADER', 'SECTION_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY'].includes(user.org_role);
+
+      const roleLabels = { USER: 'Zaměstnanec', LEADER: 'Vedoucí', ADMIN: 'Administrátor', SUPERADMIN: 'Superadministrátor' };
+      const roleBadgeClass = { USER: '', LEADER: 'badge-leader', ADMIN: 'badge-admin', SUPERADMIN: 'badge-superadmin' };
+
+      const posName = positions.find(p => p.position_id === user.position_id)?.name || null;
+      const sectionName = sections.find(s => s.section_id === user.section_id)?.name || '—';
+      const deptName = departments.find(d => d.department_id === user.department_id)?.name || '—';
+      const groupName = groups.find(g => g.group_id === user.group_id)?.name || '—';
+      const startIso = user.date_start && user.date_start !== '---' ? new Date(user.date_start).toISOString().split('T')[0] : '';
+      const endIso = user.date_end && user.date_end !== '---' ? new Date(user.date_end).toISOString().split('T')[0] : '';
+
+      // Helper: readonly display field
+      const roField = (val) => `<div style="padding:8px 12px; background:#f8fafc; border-radius:6px; border:1.5px solid #e2e8f0; font-size:13px; color:#334155; font-weight:600; min-height:37px; display:flex; align-items:center; box-sizing:border-box;">${val !== null && val !== undefined && val !== '' ? val : '<span style="color:#94a3b8; font-weight:400;">—</span>'}</div>`;
+      // Helper: readonly date field
+      const roDate = (isoStr) => roField(isoStr ? new Date(isoStr).toLocaleDateString('cs-CZ') : null);
+
+      // Helper: select or readonly
+      const selOrRo = (canEdit, name, opts, curVal, emptyLabel) => canEdit && opts.length
+        ? `<select name="${name}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;"><option value="">${emptyLabel || '—'}</option>${opts.map(o => `<option value="${o.v}" ${o.v === curVal ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`
+        : roField(opts.find(o => o.v === curVal)?.l || null);
+
+      const canEditName = hasPermission('edit_profile_name');
+      const canEditEmail = (user.system_role === 'SUPERADMIN'); // Email obvykle jen Superadmin
+      const canEditOrg = hasPermission('edit_profile_org');
+      const canEditPos = hasPermission('edit_profile_pos') || isSuperAdmin;
+      const canEditSync = hasPermission('edit_profile_sync');
+
+      inner.innerHTML = `
+<div class="modal-brand-header">
+  <div class="modal-deco-circle"></div>
+  <button class="modal-close-btn" onclick="document.getElementById('profile-modal').style.display='none'">&#x2715;</button>
+  <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
+    <div style="position:relative; cursor:default;" title="Změna ikony profilu (připravujeme)">
+      <div style="width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,0.18); border:3px solid rgba(255,255,255,0.35); display:flex; align-items:center; justify-content:center;">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      </div>
+      <div style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:var(--secondary); border-radius:50%; border:2px solid #004fac; display:flex; align-items:center; justify-content:center; font-size:9px;">✏️</div>
+    </div>
+    <div>
+      <h2 class="modal-header-title">${user.first_name || ''} ${user.last_name || ''}</h2>
+      <p class="modal-header-sub">${user.email}</p>
+      ${posName ? `<p style="margin:3px 0 0; font-size:11px; color:rgba(255,240,0,0.85); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">${posName}</p>` : ''}
+    </div>
+  </div>
+</div>
+
+<div class="admin-modal-body">
+  <form id="profile-form" autocomplete="off">
+    <input type="hidden" name="user_id" value="${user.user_id || ''}">
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
+
+      <!-- ── Levý sloupec ── -->
+      <div>
+
+        <!-- Osobní údaje -->
+        <div class="modal-section">
+          <div class="modal-section-title">👤 Osobní údaje</div>
+          <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-group">
+              <label for="p-fname">Jméno</label>
+              ${canEditName
+          ? `<input type="text" id="p-fname" name="first_name" value="${user.first_name || ''}" required>`
+          : roField(user.first_name)}
+            </div>
+            <div class="form-group">
+              <label for="p-lname">Příjmení</label>
+              ${canEditName
+          ? `<input type="text" id="p-lname" name="last_name" value="${user.last_name || ''}" required>`
+          : roField(user.last_name)}
+            </div>
+            <div class="form-group" style="grid-column: span 2; margin-top: 4px;">
+              <label>E-mail (účet)</label>
+              ${canEditEmail
+          ? `<input type="email" name="email" value="${user.email}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
+          : roField(user.email)}
+            </div>
+          </div>
+        </div>
+
+        <!-- Organizační zařazení -->
+        <div class="modal-section" style="margin-bottom:0;">
+          <div class="modal-section-title">🏢 Organizační zařazení</div>
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label>Úsek</label>
+              ${selOrRo(canEditOrg, 'section_id', sections.map(s => ({ v: s.section_id, l: s.name })), user.section_id, '— Úsek —')}
+            </div>
+            <div class="form-group">
+              <label>Oddělení</label>
+              ${selOrRo(canEditOrg, 'department_id', departments.map(d => ({ v: d.department_id, l: d.name })), user.department_id, '— Oddělení —')}
+            </div>
+            <div class="form-group">
+              <label>Tým</label>
+              ${selOrRo(canEditOrg, 'group_id', groups.map(g => ({ v: g.group_id, l: g.name })), user.group_id, '— Tým —')}
+            </div>
+          </div>
+          <div class="form-grid" style="margin-top:16px;">
+            <div class="form-group">
+              <label>Pracovní pozice</label>
+              ${selOrRo(canEditPos, 'position_id', positions.map(p => ({ v: p.position_id, l: p.name })), user.position_id, '— Bez pozice —')}
+            </div>
+            <div class="form-group">
+              <label>Systémová role</label>
+              ${roField(user.system_role || '—')}
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── Pravý sloupec ── -->
+      <div>
+
+        <!-- Pracovní období -->
+        <div class="modal-section">
+          <div class="modal-section-title">📋 Pracovní období</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Datum nástupu</label>
+              ${canEditOrg
+          ? `<input type="date" name="date_start" value="${startIso}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
+          : roDate(startIso)}
+            </div>
+            <div class="form-group">
+              <label>Datum ukončení</label>
+              ${canEditOrg
+          ? `<input type="date" name="date_end" value="${endIso}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
+          : roDate(endIso)}
+            </div>
+          </div>
+        </div>
+
+        <!-- Google Kalendář -->
+        <div class="modal-section" style="margin-bottom:0;">
+          <div class="modal-section-title" style="justify-content:space-between;">
+            <span>📅 Google Kalendář</span>
+            ${user.sync_own_attendance === 'true' && canEditSync ? `<button type="button" id="cal-rebuild-btn" onclick="rebuildCalendarSync()" style="font-size:10px; font-weight:700; padding:3px 8px; border:1.5px solid #e2e8f0; border-radius:5px; background:#f8fafc; color:#475569; cursor:pointer; font-family:inherit; text-transform:uppercase; letter-spacing:0.4px;">↻ Obnovit</button>` : ''}
+          </div>
+          <p style="font-size:12px; color:#64748b; margin:0 0 14px; line-height:1.6;">
+            Po zapnutí synchronizace se automaticky vytvoří sdílený kalendář ve vašem Google Kalendáři.
+          </p>
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+            <div class="sec-toggle-label">
+              <span class="sec-toggle-icon">🗓️</span>
+              <div>
+                <div>Vlastní docházka</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Synchronizovat mou docházku do Google Kalendáře</div>
+                <div id="cal-sync-status-personal" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_own_attendance === 'true' ? '#22c55e' : 'transparent'};">${user.sync_own_attendance === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+              </div>
+            </div>
+            <label class="sec-toggle-switch">
+              <input type="hidden" name="sync_own_attendance" value="${user.sync_own_attendance === 'true' ? 'true' : 'false'}">
+              <input type="checkbox" value="true" ${user.sync_own_attendance === 'true' ? 'checked' : ''} onchange="handleCalendarSyncToggle(this,'personal')" ${!canEditSync ? 'disabled' : ''}>
+              <span class="sec-toggle-slider"></span>
+            </label>
+          </div>
+          ${(isManager || isSuperAdmin) ? `
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+            <div class="sec-toggle-label">
+              <span class="sec-toggle-icon">👥</span>
+              <div>
+                <div>Docházka týmu</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Dovolené a HomeOffice Oddělení</div>
+                <div id="cal-sync-status-team" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_team_vacations === 'true' ? '#22c55e' : 'transparent'};">${user.sync_team_vacations === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+              </div>
+            </div>
+            <label class="sec-toggle-switch">
+              <input type="hidden" name="sync_team_vacations" value="${user.sync_team_vacations === 'true' ? 'true' : 'false'}">
+              <input type="checkbox" value="true" ${user.sync_team_vacations === 'true' ? 'checked' : ''} onchange="handleCalendarSyncToggle(this,'team')" ${!canEditSync ? 'disabled' : ''}>
+              <span class="sec-toggle-slider"></span>
+            </label>
+          </div>` : ''}
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+            <div class="sec-toggle-label">
+              <span class="sec-toggle-icon">🏗️</span>
+              <div>
+                <div>Plánovací kalendář</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Synchronizace Plánovacích skupin</div>
+                <div id="cal-sync-status-planner" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_planner === 'true' ? '#22c55e' : 'transparent'};">${user.sync_planner === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+              </div>
+            </div>
+            <label class="sec-toggle-switch">
+              <input type="hidden" name="sync_planner" value="${user.sync_planner === 'true' ? 'true' : 'false'}">
+              <input type="checkbox" value="true" ${user.sync_planner === 'true' ? 'checked' : ''} onchange="handleCalendarSyncToggle(this,'planner')" ${!canEditSync ? 'disabled' : ''}>
+              <span class="sec-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </form>
+
+  ${!isAdminPlus ? `
+  <div style="margin-top:16px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; font-size:11px; color:#1d4ed8;">
+    ℹ️ Jméno a příjmení si lze změnit. Pro změnu ostatních údajů (role, org. zařazení, data) kontaktujte administrátora.
+  </div>` : ''}
+</div>
+
+<div class="modal-footer-brand">
+  <button class="btn-modal-cancel" onclick="document.getElementById('profile-modal').style.display='none'">ZAVŘÍT</button>
+  <button class="btn-modal-save" onclick="saveProfile()">ULOŽIT ZMĚNY</button>
+</div>`;
+    }
+
+    /**
+     * Uloží změny profilu (jméno, příjmení) na server
+     */
+    function saveProfile() {
+      const form = document.getElementById('profile-form');
+      if (!form || !form.checkValidity()) { if (form) form.reportValidity(); return; }
+
+      const data = {};
+      new FormData(form).forEach((v, k) => data[k] = v);
+
+      showLoader('Ukládám profil...');
+      callServer('updateUser', data)
+        .then(result => {
+          hideLoader();
+          if (result && result.success) {
+            // Synchronizovat změny zpět do plannerData.user a seznamu zaměstnanců
+            if (plannerData && plannerData.user) {
+              // Aktualizovat data v objektu přihlášeného uživatele
+              Object.keys(data).forEach(k => { plannerData.user[k] = data[k]; });
+
+              // Aktualizovat data v seznamu zaměstnanců (aby se změna projevila v gridu)
+              if (plannerData.employees) {
+                const empIdx = plannerData.employees.findIndex(e => e.user_id === plannerData.user.user_id);
+                if (empIdx !== -1) {
+                  Object.keys(data).forEach(k => { plannerData.employees[empIdx][k] = data[k]; });
+                }
+              }
+
+              if (typeof updateUserProfile === 'function') updateUserProfile(plannerData.user);
+              if (typeof renderPlanner === 'function') renderPlanner();
+            }
+            document.getElementById('profile-modal').style.display = 'none';
+          } else {
+            alert('Chyba při ukládání: ' + (result ? result.error : 'Neznámá chyba'));
+          }
+        })
+        .catch(e => { hideLoader(); alert('Chyba komunikace: ' + e); });
+    }
+
+    /**
+     * Okamžitě zapne / vypne synchronizaci Google Kalendáře při přepnutí toggleu.
+     * Volá server toggleCalendarSync(type, enabled) – vytvoří nebo smaže kalendář.
+     * @param {HTMLInputElement} checkbox
+     * @param {'personal'|'team'} type
+     */
+    function handleCalendarSyncToggle(checkbox, type) {
+      const enabled = checkbox.checked;
+      const hiddenInput = checkbox.previousElementSibling;
+      const statusEl = document.getElementById('cal-sync-status-' + type);
+
+      // Okamžitě aktualizovat hidden input (pro případný saveProfile)
+      hiddenInput.value = enabled ? 'true' : 'false';
+
+      // Disable toggleu po dobu zpracování
+      checkbox.disabled = true;
+      if (statusEl) {
+        statusEl.style.color = '#f59e0b';
+        statusEl.textContent = enabled ? '⏳ Vytváří se kalendář…' : '⏳ Ruším synchronizaci…';
+      }
+
+      callServer('toggleCalendarSync', type, enabled)
+        .then(result => {
+          checkbox.disabled = false;
+          if (result && result.success) {
+            // Aktualizovat plannerData.user aby toggle správně odrážel stav při znovuotevření modalu
+            if (plannerData && plannerData.user) {
+              if (type === 'personal') plannerData.user.sync_own_attendance = enabled ? 'true' : 'false';
+              if (type === 'team') plannerData.user.sync_team_vacations = enabled ? 'true' : 'false';
+              if (type === 'planner') plannerData.user.sync_planner = enabled ? 'true' : 'false';
+            }
+            if (statusEl) {
+              if (enabled) {
+                statusEl.style.color = '#22c55e';
+                statusEl.textContent = '✅ Synchronizace aktivní';
+              } else {
+                statusEl.style.color = 'transparent';
+                statusEl.textContent = '\u00a0';
+              }
+            }
+          } else {
+            // Vrátit toggle do původního stavu
+            checkbox.checked = !enabled;
+            hiddenInput.value = !enabled ? 'true' : 'false';
+            if (statusEl) {
+              statusEl.style.color = '#ef4444';
+              statusEl.textContent = '❌ ' + (result && result.error ? result.error : 'Chyba synchronizace');
+            }
+          }
+        })
+        .catch(() => {
+          checkbox.disabled = false;
+          checkbox.checked = !enabled;
+          hiddenInput.value = !enabled ? 'true' : 'false';
+          if (statusEl) {
+            statusEl.style.color = '#ef4444';
+            statusEl.textContent = '❌ Chyba připojení';
+          }
+        });
+    }
+
+    /**
+     * Znovu sestaví události v osobním Google Kalendáři z aktuální docházky.
+     * Voláno tlačítkem "↻ Obnovit" v sekci Google Kalendář.
+     */
+    function rebuildCalendarSync() {
+      const btn = document.getElementById('cal-rebuild-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Obnovuji…'; }
+
+      callServer('rebuildPersonalCalendarSync')
+        .then(result => {
+          if (btn) { btn.disabled = false; btn.textContent = '↻ Obnovit'; }
+          if (result && result.success) {
+            alert('✅ ' + result.message);
+          } else {
+            alert('❌ ' + (result && result.error ? result.error : 'Neznámá chyba'));
+          }
+        })
+        .catch(e => {
+          if (btn) { btn.disabled = false; btn.textContent = '↻ Obnovit'; }
+          alert('❌ Chyba připojení: ' + e);
+        });
+    }
+
+    window.addEventListener('load', () => {
+      // Schování splashscreenu po načtení řeší initializeApp -> loadData
+
+      // Načtení stavu ze skrytého elementu (řeší chyby syntaxe v editoru)
+      const configEl = document.getElementById('app-config');
+      const isInit = configEl ? (configEl.getAttribute('data-initialized') === 'true') : false;
+
+      console.log("App state:", isInit ? "Initialized" : "New Install");
+
+      if (isInit) {
+        if (typeof initializeApp === 'function') {
+          // O schování splashscreenu se nyní postará initializeApp -> loadData -> renderPlanner
+          initializeApp();
+        } else {
+          console.error("initializeApp is not defined!");
+          hideSplash();
+        }
+      } else {
+        // V instalačním režimu (Wizard) skryjeme hned (zde není co načítat ze serveru)
+        setTimeout(hideSplash, 600);
+      }
+
+      // Trigger pro modál profilu
+      const profileTrigger = document.getElementById('profile-trigger');
+      if (profileTrigger) {
+        profileTrigger.onclick = () => openProfileModal();
+      }
+    });
+  </script>
+  <? if (!isInitialized) { ?>
+  <?!= include('Wizard_js') ?>
+  <? } else { ?>
+  <?!= include('App_js') ?>
+  <?!= include('Admin_js') ?>
+  <? } ?>
+</body>
+
+</html>
