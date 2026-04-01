@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.1";
+const APP_VERSION = "2.7.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.2",
+    "date": "2026-04-01",
+    "changes": [
+      "Wider status modal, fix default_work_start_time not persisting after reload"
+    ]
+  },
   {
     "version": "2.7.1",
     "date": "2026-04-01",

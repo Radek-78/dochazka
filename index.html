@@ -479,8 +479,8 @@
           </button>
         </div>
         <div id="deploy-time-footer">
-          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.7.1</a> 
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 09:01
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.7.2</a> 
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 09:19
         </div>
       </footer>
     </div>
@@ -1284,7 +1284,7 @@
           </div>
           <div class="form-group">
             <label>Výchozí čas příchodu</label>
-            <input type="time" name="default_work_start_time" value="${user.default_work_start_time || '08:00'}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
+            <input type="time" name="default_work_start_time" value="${_formatWorkTime(user.default_work_start_time) || '08:00'}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
           </div>
         </div>
 
@@ -1314,6 +1314,9 @@
 
       const data = {};
       new FormData(form).forEach((v, k) => data[k] = v);
+
+      // Čas v Google Sheets musí mít apostrofu prefix, jinak ho Sheets auto-konvertuje na datum
+      if (data.default_work_start_time) data.default_work_start_time = "'" + data.default_work_start_time;
 
       showLoader('Ukládám profil...');
       callServer('updateUser', data)
