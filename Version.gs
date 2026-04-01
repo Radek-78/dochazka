@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.4";
+const APP_VERSION = "2.8.5";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.5",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava marketingoveho modulu: pointer-events, design sjednocen se statistikami, click handler"
+    ]
+  },
   {
     "version": "2.8.4",
     "date": "2026-04-01",

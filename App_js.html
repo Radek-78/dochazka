@@ -654,20 +654,15 @@
             tooltip.innerHTML = html;
             module.style.display = 'flex';
 
-            // Aktivovat kliknutí pro administrátory (používáme standardní oprávnění)
-            if (typeof hasPermission === 'function' && hasPermission('access_admin')) {
-                module.onclick = (e) => {
-                    e.stopPropagation();
+            // Vždy připojit onclick — kontrola oprávnění probíhá uvnitř handleru
+            module.onclick = (e) => {
+                e.stopPropagation();
+                if (typeof hasPermission === 'function' && hasPermission('access_admin')) {
                     console.log("Marketing: Otevírám admin modal...");
-                    if (typeof openMarketingAdminModal === 'function') {
-                        openMarketingAdminModal();
-                    } else {
-                        console.error("Marketing: Funkce openMarketingAdminModal nenalezena.");
-                    }
-                };
-                module.title = "Klikněte pro správu kampaní";
-                module.style.cursor = 'pointer';
-            }
+                    openMarketingAdminModal();
+                }
+            };
+            module.style.cursor = typeof hasPermission === 'function' && hasPermission('access_admin') ? 'pointer' : 'default';
             console.log("Marketing: Renderování dokončeno.");
         } catch (err) {
             console.error("Marketing ERROR:", err);
