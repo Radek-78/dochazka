@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.7";
+const APP_VERSION = "2.8.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.0",
+    "date": "2026-04-01",
+    "changes": [
+      "Implementace komplexního zálohovacího systému Backup.gs - denní plné zálohy a hodinová ochrana docházky."
+    ]
+  },
   {
     "version": "2.7.7",
     "date": "2026-04-01",
