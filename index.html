@@ -479,8 +479,8 @@
           </button>
         </div>
         <div id="deploy-time-footer">
-          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.7.2</a> 
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 09:19
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.7.3</a> 
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 09:27
         </div>
       </footer>
     </div>
@@ -1468,16 +1468,26 @@
   <? } ?>
   <!-- CHANGELOG MODAL -->
   <div id="changelog-modal" class="footer-modal-backdrop" style="display:none;">
-    <div class="footer-modal-card" style="width:600px; max-height: 80vh;">
+    <div class="footer-modal-card" style="width:820px; max-height:85vh;">
       <div class="modal-brand-header">
         <div class="modal-deco-circle"></div>
-        <div class="modal-header-icon">🚀</div>
-        <h2 class="modal-header-title">Co je nového</h2>
-        <p class="modal-header-sub">Historie změn a aktualizací systému</p>
         <button class="modal-close-btn" onclick="document.getElementById('changelog-modal').style.display='none'">&times;</button>
+        <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
+          <div>
+            <div class="modal-header-icon" style="margin-bottom:4px;">🚀</div>
+            <h2 class="modal-header-title" style="margin:0 0 4px;">Co je nového</h2>
+            <p class="modal-header-sub" style="margin:0;">Historie změn a aktualizací systému</p>
+          </div>
+          <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#4ade80; display:inline-block; flex-shrink:0;"></span> Nová funkce</span>
+            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#c084fc; display:inline-block; flex-shrink:0;"></span> UI / Design</span>
+            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#f87171; display:inline-block; flex-shrink:0;"></span> Oprava</span>
+            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#94a3b8; display:inline-block; flex-shrink:0;"></span> Úprava</span>
+          </div>
+        </div>
       </div>
-      <div class="footer-modal-body" style="overflow-y: auto;">
-        <div id="changelog-content" class="changelog-list">
+      <div class="footer-modal-body" style="overflow-y:auto; padding:20px 28px;">
+        <div id="changelog-content">
           <!-- Dynamicky plněno z Version.gs -->
         </div>
       </div>
@@ -1494,27 +1504,60 @@
       if (!modal || !content) return;
 
       modal.style.display = 'flex';
-      content.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">Načítám seznam změn...</div>';
+      content.innerHTML = '<div style="text-align:center; padding:30px; color:#64748b;">Načítám seznam změn...</div>';
+
+      function classifyChange(text) {
+        const t = text.toLowerCase();
+        if (/\bfeat\b|nový|nové|přidat|přidá|\badd\b|implement|konfig|nastav|funkc|toggle|inline|per-status|nová/.test(t))
+          return { label: 'Nová funkce', color: '#16a34a', dot: '#4ade80', bg: '#f0fdf4', order: 0 };
+        if (/redesign|design|vylepš|improve|wider|šířk|modal|layout|přehled|vizuál|zobrazení|kompaktn|barevn|badge/.test(t))
+          return { label: 'UI / Design', color: '#7c3aed', dot: '#c084fc', bg: '#f5f3ff', order: 1 };
+        if (/fix|oprav|bug|chyb|selh|nesed|persist|auto-extend|auto-create|konverz|formát/.test(t))
+          return { label: 'Oprava', color: '#dc2626', dot: '#f87171', bg: '#fef2f2', order: 2 };
+        return { label: 'Úprava', color: '#475569', dot: '#94a3b8', bg: '#f8fafc', order: 3 };
+      }
 
       try {
         const info = await callServer('getAppVersionInfo');
         if (info && info.changelog) {
-          content.innerHTML = info.changelog.map(item => `
-            <div class="changelog-item" style="margin-bottom: 24px;">
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                <span style="font-weight: 800; font-size: 16px; color: var(--primary);">v${item.version}</span>
-                <span style="font-size: 12px; color: #94a3b8; font-weight: 600;">${new Date(item.date).toLocaleDateString('cs-CZ')}</span>
+          // Seskupit podle data
+          const byDate = new Map();
+          info.changelog.forEach(item => {
+            const date = item.date || '—';
+            if (!byDate.has(date)) byDate.set(date, []);
+            item.changes.forEach(change => byDate.get(date).push({ version: item.version, change }));
+          });
+
+          let html = '';
+          byDate.forEach((entries, date) => {
+            let dateLabel = date;
+            try { dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' }); } catch(e) {}
+
+            // Seřadit: Funkce → UI → Opravy → Ostatní
+            entries.sort((a, b) => classifyChange(a.change).order - classifyChange(b.change).order);
+
+            html += `
+            <div style="margin-bottom:28px;">
+              <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+                <div style="height:1px; flex:0 0 12px; background:#e2e8f0;"></div>
+                <span style="font-size:11px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.09em; white-space:nowrap; padding:3px 10px; background:#f1f5f9; border-radius:20px;">${dateLabel}</span>
+                <div style="height:1px; flex:1; background:#e2e8f0;"></div>
               </div>
-              <ul style="margin: 0; padding-left: 20px; list-style-type: none;">
-                ${item.changes.map(change => `
-                  <li style="position: relative; font-size: 13px; color: #334155; margin-bottom: 5px; line-height: 1.5;">
-                    <span style="position: absolute; left: -15px; color: var(--primary); font-weight: 900;">•</span>
-                    ${change}
-                  </li>
-                `).join('')}
-              </ul>
-            </div>
-          `).join('');
+              <div style="display:flex; flex-direction:column; gap:3px;">
+                ${entries.map(({ version, change }) => {
+                  const cls = classifyChange(change);
+                  return `<div style="display:flex; align-items:center; gap:10px; padding:9px 14px; background:#fafafa; border-radius:9px; border:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc';this.style.borderColor='#e2e8f0';" onmouseout="this.style.background='#fafafa';this.style.borderColor='#f1f5f9';">
+                    <span style="width:9px; height:9px; border-radius:50%; background:${cls.dot}; flex-shrink:0; box-shadow:0 0 0 3px ${cls.bg};"></span>
+                    <span style="font-size:10px; font-weight:800; color:#1e40af; background:#dbeafe; padding:2px 8px; border-radius:5px; flex-shrink:0; letter-spacing:0.02em; font-family:monospace;">v${version}</span>
+                    <span style="font-size:13px; color:#334155; flex:1; line-height:1.4;">${change}</span>
+                    <span style="font-size:10px; font-weight:700; color:${cls.color}; background:${cls.bg}; padding:2px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0; border:1px solid ${cls.dot}33;">${cls.label}</span>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>`;
+          });
+
+          content.innerHTML = html;
         } else {
           content.innerHTML = '<div style="text-align:center; padding:20px; color:#ef4444;">Nepodařilo se načíst data o změnách.</div>';
         }

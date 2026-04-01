@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.2";
+const APP_VERSION = "2.7.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.3",
+    "date": "2026-04-01",
+    "changes": [
+      "Redesign changelogu: seskupeni po dnech, klasifikace typu zmeny, barevne tečky"
+    ]
+  },
   {
     "version": "2.7.2",
     "date": "2026-04-01",
