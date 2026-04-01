@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.3";
+const APP_VERSION = "2.8.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.4",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava interaktivity marketingového modulu - hasPermission oprava a trigger tooltipu na celou plochu."
+    ]
+  },
   {
     "version": "2.8.3",
     "date": "2026-04-01",

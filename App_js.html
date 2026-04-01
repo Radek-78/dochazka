@@ -654,8 +654,8 @@
             tooltip.innerHTML = html;
             module.style.display = 'flex';
 
-            // Aktivovat kliknutí pro administrátory
-            if (plannerData && plannerData.isAdmin) {
+            // Aktivovat kliknutí pro administrátory (používáme standardní oprávnění)
+            if (typeof hasPermission === 'function' && hasPermission('access_admin')) {
                 module.onclick = (e) => {
                     e.stopPropagation();
                     console.log("Marketing: Otevírám admin modal...");
