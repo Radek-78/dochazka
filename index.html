@@ -127,23 +127,38 @@
     <? } else { ?>
     <div class="app-shell">
       <!-- Overlay Spinner pro načítání měsíčních dat -->
-      <div id="calendar-loading-overlay" style="display:none; position:absolute; top:60px; left:0; width:100%; height:calc(100% - 85px); background:rgba(255,255,255,0.7); z-index:1500; align-items:center; justify-content:center; flex-direction:column; backdrop-filter: blur(2px);">
-        <div class="spinner" style="width:40px;height:40px;border:4px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite;"></div>
+      <div id="calendar-loading-overlay"
+        style="display:none; position:absolute; top:60px; left:0; width:100%; height:calc(100% - 85px); background:rgba(255,255,255,0.7); z-index:1500; align-items:center; justify-content:center; flex-direction:column; backdrop-filter: blur(2px);">
+        <div class="spinner"
+          style="width:40px;height:40px;border:4px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite;">
+        </div>
         <div style="margin-top:16px;font-weight:600;color:#0f172a;">Načítám data kalendáře...</div>
       </div>
-      <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+      <style>
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      </style>
 
       <!-- Prefetch Toast Banner -->
       <div id="prefetch-toast" class="prefetch-toast">
         <div style="display: flex; align-items: center; width: 100%;">
-          <div class="spinner" style="width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite; margin-right: 12px; flex-shrink: 0;"></div>
+          <div class="spinner"
+            style="width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;animation:spin 1s linear infinite; margin-right: 12px; flex-shrink: 0;">
+          </div>
           <div style="display: flex; flex-direction: column; min-width: 150px;">
-            <div id="prefetch-toast-title" style="font-weight:700; font-size: 11px; color: #1e293b; line-height: 1.2;">Optimalizace kalendáře</div>
-            <div id="prefetch-toast-text" style="font-weight:400; font-size: 10px; color: #64748b; line-height: 1.2;">Příprava dat na pozadí...</div>
+            <div id="prefetch-toast-title" style="font-weight:700; font-size: 11px; color: #1e293b; line-height: 1.2;">
+              Optimalizace kalendáře</div>
+            <div id="prefetch-toast-text" style="font-weight:400; font-size: 10px; color: #64748b; line-height: 1.2;">
+              Příprava dat na pozadí...</div>
           </div>
         </div>
-        <div class="prefetch-progress-container" style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 8px; overflow: hidden;">
-          <div id="prefetch-progress-bar" style="width: 0%; height: 100%; background: #0ea5e9; transition: width 0.3s ease;"></div>
+        <div class="prefetch-progress-container"
+          style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; margin-top: 8px; overflow: hidden;">
+          <div id="prefetch-progress-bar"
+            style="width: 0%; height: 100%; background: #0ea5e9; transition: width 0.3s ease;"></div>
         </div>
       </div>
 
@@ -466,21 +481,36 @@
         </div>
         <div class="footer-actions">
           <button id="footer-map-btn" class="footer-action-btn" onclick="openOfficeMapModal()" title="Mapa kanceláře">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
             <span>Mapa</span>
           </button>
           <button class="footer-action-btn" onclick="openActivityLogModal()" title="Log statusů">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 8v4l3 3" />
+              <circle cx="12" cy="12" r="10" />
+            </svg>
             <span>Log</span>
           </button>
-          <button id="footer-activity-btn" class="footer-action-btn" onclick="openUserActivityLogModal()" title="Aktivita uživatelů" style="display:none;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <button id="footer-activity-btn" class="footer-action-btn" onclick="openUserActivityLogModal()"
+            title="Aktivita uživatelů" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
             <span>Aktivita</span>
           </button>
         </div>
         <div id="deploy-time-footer">
-          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.7.3</a> 
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 09:27
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
+            id="app-version-display">v2.7.4</a>
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 10:40
         </div>
       </footer>
     </div>
@@ -493,7 +523,12 @@
       <div class="modal-brand-header">
         <div class="modal-deco-circle"></div>
         <div class="modal-header-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
         </div>
         <h2 class="modal-header-title">Mapa kanceláře</h2>
         <p class="modal-header-sub">Přehled obsazenosti a rezervace míst</p>
@@ -502,7 +537,8 @@
       <div class="footer-modal-body">
         <div class="map-modal-controls">
           <label class="map-modal-date-label">Datum:</label>
-          <input type="date" id="map-modal-date" class="map-modal-date-input" onchange="onMapModalDateChange(this.value)">
+          <input type="date" id="map-modal-date" class="map-modal-date-input"
+            onchange="onMapModalDateChange(this.value)">
           <div class="map-modal-nav">
             <button class="map-nav-btn" onclick="mapModalPrevDay()" title="Předchozí den">&larr;</button>
             <button class="map-nav-btn map-nav-today" onclick="mapModalToday()">Dnes</button>
@@ -529,7 +565,10 @@
       <div class="modal-brand-header">
         <div class="modal-deco-circle"></div>
         <div class="modal-header-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 8v4l3 3" />
+            <circle cx="12" cy="12" r="10" />
+          </svg>
         </div>
         <h2 class="modal-header-title">Log docházky</h2>
         <p class="modal-header-sub">Historie všech změn docházky v úseku</p>
@@ -543,10 +582,14 @@
           <select id="log-filter-status" class="log-filter-select" onchange="filterActivityLog()">
             <option value="">Všechny statusy</option>
           </select>
-          <input type="date" id="log-filter-from" class="log-filter-date" onchange="filterActivityLog()" placeholder="Od">
+          <input type="date" id="log-filter-from" class="log-filter-date" onchange="filterActivityLog()"
+            placeholder="Od">
           <input type="date" id="log-filter-to" class="log-filter-date" onchange="filterActivityLog()" placeholder="Do">
           <button class="log-filter-reset" onclick="resetActivityLogFilters()" title="Resetovat filtry">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
           </button>
         </div>
         <div class="log-table-wrapper">
@@ -577,7 +620,17 @@
       <div class="modal-brand-header" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);">
         <div class="modal-deco-circle"></div>
         <div class="modal-header-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><mask id="mask0"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></mask><g mask="url(#mask0)"><path d="M0 0h24v24H0z"/></g></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <mask id="mask0">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </mask>
+            <g mask="url(#mask0)">
+              <path d="M0 0h24v24H0z" />
+            </g>
+          </svg>
         </div>
         <h2 class="modal-header-title">Aktivita uživatelů</h2>
         <p class="modal-header-sub">Přehled poslední online aktivity všech uživatelů systému</p>
@@ -585,9 +638,13 @@
       </div>
       <div class="footer-modal-body">
         <div class="log-filters">
-          <input type="text" id="user-log-filter-q" class="log-filter-select" oninput="filterUserActivityLog()" placeholder="Hledat jméno nebo e-mail..." style="flex:1;">
+          <input type="text" id="user-log-filter-q" class="log-filter-select" oninput="filterUserActivityLog()"
+            placeholder="Hledat jméno nebo e-mail..." style="flex:1;">
           <button class="log-filter-reset" onclick="resetUserActivityLogFilters()" title="Resetovat filtry">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
           </button>
         </div>
         <div class="log-table-wrapper">
@@ -827,7 +884,8 @@
           <div class="att-apply-row" id="att-apply-row">
             <span class="att-apply-label">Použít také na:</span>
             <button class="att-apply-btn" id="btn-apply-week" onclick="toggleRangeAction('WEEK')">📅 Celý týden</button>
-            <button class="att-apply-btn" id="btn-apply-month" onclick="toggleRangeAction('MONTH')">🗓️ Celý měsíc</button>
+            <button class="att-apply-btn" id="btn-apply-month" onclick="toggleRangeAction('MONTH')">🗓️ Celý
+              měsíc</button>
           </div>
         </div>
       </div>
@@ -835,8 +893,10 @@
       <div class="att-modal-body">
         <!-- Zvětšené hromadné akce nad mřížkou -->
         <div class="att-batch-group-top">
-          <button id="att-batch-btn" class="att-batch-btn-large" onclick="startBatchMode('ENTRY')">➕ HROMADNÉ ZADÁVÁNÍ</button>
-          <button id="att-batch-delete-btn" class="att-batch-btn-large delete-style" onclick="startBatchMode('DELETE')">🗑️ HROMADNÉ MAZÁNÍ</button>
+          <button id="att-batch-btn" class="att-batch-btn-large" onclick="startBatchMode('ENTRY')">➕ HROMADNÉ
+            ZADÁVÁNÍ</button>
+          <button id="att-batch-delete-btn" class="att-batch-btn-large delete-style"
+            onclick="startBatchMode('DELETE')">🗑️ HROMADNÉ MAZÁNÍ</button>
         </div>
 
         <div class="att-status-grid" id="att-status-grid"></div>
@@ -849,7 +909,8 @@
             <span class="att-map-title">🪑 Výběr místa</span>
             <span class="att-map-subtitle" id="att-map-subtitle">Vyberte status pro aktivaci</span>
           </div>
-          <button class="att-map-skip-btn" onclick="skipDeskSelection()" title="Pokračovat bez výběru místa">Přeskočit →</button>
+          <button class="att-map-skip-btn" onclick="skipDeskSelection()" title="Pokračovat bez výběru místa">Přeskočit
+            →</button>
         </div>
         <div class="att-map-grid-scroll">
           <div id="att-map-grid"></div>
@@ -867,9 +928,11 @@
         <div class="att-footer-actions">
           <button id="att-clear-btn" class="att-clear-btn" onclick="clearAttendanceStatus()">🗑 Vymazat</button>
         </div>
-        <div id="att-work-start-box" style="display:none; align-items:center; gap:6px; background:#f0f9ff; border:1.5px solid #bae6fd; border-radius:8px; padding:0 10px; height:36px; box-sizing:border-box; margin-right:8px;">
+        <div id="att-work-start-box"
+          style="display:none; align-items:center; gap:6px; background:#f0f9ff; border:1.5px solid #bae6fd; border-radius:8px; padding:0 10px; height:36px; box-sizing:border-box; margin-right:8px;">
           <span style="font-size:12px; color:#0369a1; white-space:nowrap; font-weight:700;">⏰ Příchod:</span>
-          <input type="time" id="att-work-start-time" style="padding:2px 6px; border:1.5px solid #bae6fd; border-radius:6px; font-size:13px; font-family:inherit; color:#0c4a6e; background:#fff; width:96px; height:26px; box-sizing:border-box;">
+          <input type="time" id="att-work-start-time"
+            style="padding:2px 6px; border:1.5px solid #bae6fd; border-radius:6px; font-size:13px; font-family:inherit; color:#0c4a6e; background:#fff; width:96px; height:26px; box-sizing:border-box;">
         </div>
         <button class="att-close-btn" id="att-close-btn" onclick="closeAttendanceModal()">Hotovo</button>
       </div>
@@ -1273,12 +1336,12 @@
               <span class="sec-toggle-icon">🕐</span>
               <div>
                 <div>Zobrazovat čas příchodu</div>
-                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Při výběru Kancelář zobrazit pole pro čas</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Při výběru vybraných statusů zobrazit pole pro čas</div>
               </div>
             </div>
             <label class="sec-toggle-switch">
-              <input type="hidden" name="show_work_start_time" value="${user.show_work_start_time === 'true' ? 'true' : 'false'}">
-              <input type="checkbox" value="true" ${user.show_work_start_time === 'true' ? 'checked' : ''} onchange="this.previousElementSibling.value = this.checked ? 'true' : 'false'">
+              <input type="hidden" name="show_work_start_time" value="${(String(user.show_work_start_time) === 'true' || user.show_work_start_time === true) ? 'true' : 'false'}">
+              <input type="checkbox" value="true" ${(String(user.show_work_start_time) === 'true' || user.show_work_start_time === true) ? 'checked' : ''} onchange="this.previousElementSibling.value = this.checked ? 'true' : 'false'">
               <span class="sec-toggle-slider"></span>
             </label>
           </div>
@@ -1469,20 +1532,33 @@
   <!-- CHANGELOG MODAL -->
   <div id="changelog-modal" class="footer-modal-backdrop" style="display:none;">
     <div class="footer-modal-card" style="width:820px; max-height:85vh;">
-      <div class="modal-brand-header">
+      <div class="modal-brand-header" style="flex-shrink:0; min-height:100px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center;">
         <div class="modal-deco-circle"></div>
-        <button class="modal-close-btn" onclick="document.getElementById('changelog-modal').style.display='none'">&times;</button>
-        <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
-          <div>
-            <div class="modal-header-icon" style="margin-bottom:4px;">🚀</div>
-            <h2 class="modal-header-title" style="margin:0 0 4px;">Co je nového</h2>
-            <p class="modal-header-sub" style="margin:0;">Historie změn a aktualizací systému</p>
+        <button class="modal-close-btn"
+          onclick="document.getElementById('changelog-modal').style.display='none'">&times;</button>
+        <div style="display:flex; align-items:center; gap:20px; position:relative; z-index:1; width:100%;">
+          <div style="flex:1; min-width:0;">
+            <div class="modal-header-icon" style="margin-bottom:6px;">🚀</div>
+            <h2 class="modal-header-title" style="margin:0 0 2px; font-size:20px;">Co je nového</h2>
+            <p class="modal-header-sub" style="margin:0; opacity:0.8; font-size:12px;">Historie změn a aktualizací systému</p>
           </div>
-          <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#4ade80; display:inline-block; flex-shrink:0;"></span> Nová funkce</span>
-            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#c084fc; display:inline-block; flex-shrink:0;"></span> UI / Design</span>
-            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#f87171; display:inline-block; flex-shrink:0;"></span> Oprava</span>
-            <span style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:50%; background:#94a3b8; display:inline-block; flex-shrink:0;"></span> Úprava</span>
+          <div style="flex:0 1 auto; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; max-width:60%;">
+            <span
+              style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span
+                style="width:8px; height:8px; border-radius:50%; background:#4ade80; display:inline-block; flex-shrink:0;"></span>
+              Nová funkce</span>
+            <span
+              style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span
+                style="width:8px; height:8px; border-radius:50%; background:#c084fc; display:inline-block; flex-shrink:0;"></span>
+              UI / Design</span>
+            <span
+              style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span
+                style="width:8px; height:8px; border-radius:50%; background:#f87171; display:inline-block; flex-shrink:0;"></span>
+              Oprava</span>
+            <span
+              style="display:flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:rgba(255,255,255,0.8); background:rgba(255,255,255,0.1); padding:4px 10px; border-radius:20px; white-space:nowrap;"><span
+                style="width:8px; height:8px; border-radius:50%; background:#94a3b8; display:inline-block; flex-shrink:0;"></span>
+              Úprava</span>
           </div>
         </div>
       </div>
@@ -1531,10 +1607,10 @@
           let html = '';
           byDate.forEach((entries, date) => {
             let dateLabel = date;
-            try { dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' }); } catch(e) {}
+            try { dateLabel = new Date(date + 'T12:00:00').toLocaleDateString('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { }
 
-            // Seřadit: Funkce → UI → Opravy → Ostatní
-            entries.sort((a, b) => classifyChange(a.change).order - classifyChange(b.change).order);
+            // Seřadit v rámci dne: podle verze (sestupně)
+            entries.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
 
             html += `
             <div style="margin-bottom:28px;">
@@ -1544,15 +1620,24 @@
                 <div style="height:1px; flex:1; background:#e2e8f0;"></div>
               </div>
               <div style="display:flex; flex-direction:column; gap:3px;">
-                ${entries.map(({ version, change }) => {
+                ${(function () {
+                let lastVer = null;
+                return entries.map(({ version, change }) => {
                   const cls = classifyChange(change);
-                  return `<div style="display:flex; align-items:center; gap:10px; padding:9px 14px; background:#fafafa; border-radius:9px; border:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc';this.style.borderColor='#e2e8f0';" onmouseout="this.style.background='#fafafa';this.style.borderColor='#f1f5f9';">
-                    <span style="width:9px; height:9px; border-radius:50%; background:${cls.dot}; flex-shrink:0; box-shadow:0 0 0 3px ${cls.bg};"></span>
-                    <span style="font-size:10px; font-weight:800; color:#1e40af; background:#dbeafe; padding:2px 8px; border-radius:5px; flex-shrink:0; letter-spacing:0.02em; font-family:monospace;">v${version}</span>
-                    <span style="font-size:13px; color:#334155; flex:1; line-height:1.4;">${change}</span>
-                    <span style="font-size:10px; font-weight:700; color:${cls.color}; background:${cls.bg}; padding:2px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0; border:1px solid ${cls.dot}33;">${cls.label}</span>
-                  </div>`;
-                }).join('')}
+                  const isNewVer = version !== lastVer;
+                  lastVer = version;
+                  const verBadge = isNewVer
+                    ? `<span style="font-size:10px; font-weight:800; color:#1e40af; background:#dbeafe; padding:2px 8px; border-radius:5px; flex-shrink:0; letter-spacing:0.02em; font-family:monospace; min-width:44px; text-align:center;">v${version}</span>`
+                    : `<div style="width:60px; flex-shrink:0;"></div>`;
+
+                  return `<div style="display:flex; align-items:center; gap:10px; padding:9px 14px; background:#fafafa; border-radius:9px; border:1px solid #f1f5f9; margin-bottom:4px;" onmouseover="this.style.background='#f8fafc';this.style.borderColor='#e2e8f0';" onmouseout="this.style.background='#fafafa';this.style.borderColor='#f1f5f9';">
+                      <span style="width:9px; height:9px; border-radius:50%; background:${cls.dot}; flex-shrink:0; box-shadow:0 0 0 3px ${cls.bg};"></span>
+                      ${verBadge}
+                      <span style="font-size:13px; color:#334155; flex:1; line-height:1.4;">${change}</span>
+                      <span style="font-size:10px; font-weight:700; color:${cls.color}; background:${cls.bg}; padding:2px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0; border:1px solid ${cls.dot}33;">${cls.label}</span>
+                    </div>`;
+                }).join('');
+              })()}
               </div>
             </div>`;
           });

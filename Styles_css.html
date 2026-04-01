@@ -807,13 +807,51 @@
         position: relative; /* Pro absolutní pozicování vodoznaku */
     }
 
+    /* DOCHÁZKOVÉ CHIPY V BUŇCE */
+    .att-cell-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        font-size: 11px;
+        font-weight: 950;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: transform 0.1s, filter 0.1s;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+    }
+
+    .att-cell-chip:hover {
+        transform: scale(1.05);
+        filter: brightness(0.92);
+        z-index: 10;
+    }
+
+    .chip-time-tag {
+        font-size: 7px;
+        position: absolute;
+        bottom: 1px;
+        left: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.15);
+        color: white;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+        line-height: 1;
+        padding: 1px 0;
+    }
+
     /* VODOZNAK */
     .cell-watermark {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 800;
         color: rgba(0, 0, 0, 0.05); /* Jemná šedá */
         pointer-events: none;
@@ -2439,6 +2477,7 @@
         padding: 24px 24px 20px;
         position: relative;
         overflow: hidden;
+        flex-shrink: 0;
     }
 
     .modal-brand-header::before {

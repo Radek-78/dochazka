@@ -3,28 +3,35 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.3";
+const APP_VERSION = "2.7.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.4",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava vykreslování docházky, robustnější formátování času a stabilizace hlavičky changelogu."
+    ]
+  },
   {
     "version": "2.7.3",
     "date": "2026-04-01",
     "changes": [
-      "Redesign changelogu: seskupeni po dnech, klasifikace typu zmeny, barevne tečky"
+      "Redesign changelogu: seskupení po dnech, klasifikace typu změny, barevné tečky"
     ]
   },
   {
     "version": "2.7.2",
     "date": "2026-04-01",
     "changes": [
-      "Wider status modal, fix default_work_start_time not persisting after reload"
+      "Širší modální okno statusu, oprava ukládání default_work_start_time po zobrazení"
     ]
   },
   {
     "version": "2.7.1",
     "date": "2026-04-01",
     "changes": [
-      "Redesign status modal, inline work-time toggle, fix DB shows_work_time auto-extend"
+      "Redesign modálního okna statusu, řádkový přepínač zobrazení času, oprava auto-extend schématu pro shows_work_time"
     ]
   },
   {
@@ -80,14 +87,14 @@ const APP_CHANGELOG = [
     "version": "2.4.1",
     "date": "2026-03-31",
     "changes": [
-      "Test commit"
+      "Testovací commit"
     ]
   },
   {
     "version": "2.4.0",
     "date": "2026-03-28",
     "changes": [
-      "RBAC Scoped Engine Ready",
+      "RBAC Scoped Engine připraven",
       "Implementace pokročilého řízení přístupu (RBAC)",
       "Optimalizace výkonu vykreslování kalendáře",
       "Vylepšené logování změn"
