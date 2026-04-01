@@ -1938,6 +1938,17 @@ function getUserActivityLog(offset) {
 }
 
 /**
+ * Uloží marketingové kampaně (KT, pondělí, čtvrtek). Pouze ADMIN a SUPERADMIN.
+ */
+function updateMarketingWeeks(rows) {
+  try {
+    return Admin.updateMarketingWeeks(rows);
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Vyčistí osiřelé kalendáře (existují v Google, ale nemají záznam v DB).
  * Pouze ADMIN a SUPERADMIN.
  */

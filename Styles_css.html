@@ -487,6 +487,115 @@
         font-size: 11px;
     }
 
+    /* PROMO TOOLTIP — nový design */
+    .promo-tt-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px 8px;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 4px;
+    }
+    .promo-tt-title {
+        font-size: 11px;
+        font-weight: 800;
+        color: #1e293b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .promo-tt-week {
+        font-size: 10px;
+        font-weight: 800;
+        color: #004fac;
+        background: #eff6ff;
+        padding: 2px 8px;
+        border-radius: 20px;
+    }
+    .promo-tt-cols {
+        display: flex;
+        align-items: center;
+        padding: 0 10px 4px;
+        gap: 0;
+    }
+    .promo-tt-col-head {
+        flex: 1;
+        font-size: 9px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .promo-tt-day-badge {
+        font-size: 9px;
+        font-weight: 900;
+        padding: 1px 5px;
+        border-radius: 3px;
+        color: white;
+    }
+    .promo-tt-day-badge.po { background: #004fac; }
+    .promo-tt-day-badge.ct { background: #e21837; }
+    .promo-tt-row {
+        display: flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 8px;
+        gap: 0;
+        margin: 2px 4px;
+        transition: background 0.15s;
+    }
+    .promo-tt-row-active {
+        background: #f0f6ff;
+        border: 1px solid #bfdbfe;
+    }
+    .promo-tt-kt {
+        flex: 0 0 38px;
+    }
+    .promo-tt-kt-now {
+        background: #004fac;
+        color: white;
+        font-size: 10px;
+        font-weight: 900;
+        padding: 2px 7px;
+        border-radius: 5px;
+    }
+    .promo-tt-kt-num {
+        color: #94a3b8;
+        font-size: 11px;
+        font-weight: 700;
+    }
+    .promo-tt-val {
+        flex: 1;
+        font-size: 12px;
+    }
+    .promo-tt-chip {
+        font-size: 11px;
+        font-weight: 800;
+        padding: 2px 8px;
+        border-radius: 5px;
+        display: inline-block;
+    }
+    .promo-tt-chip.po { background: #eff6ff; color: #1d4ed8; }
+    .promo-tt-chip.ct { background: #fff1f2; color: #be123c; }
+    .promo-tt-empty {
+        color: #cbd5e1;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .promo-tt-footer {
+        margin: 6px 4px 4px;
+        padding: 8px 10px;
+        background: #f8fafc;
+        border-radius: 8px;
+        font-size: 10px;
+        font-weight: 700;
+        color: #64748b;
+        text-align: center;
+        letter-spacing: 0.02em;
+    }
+
     /* MARKETING MODAL EDITING */
     .marketing-edit-table {
         width: 100%;

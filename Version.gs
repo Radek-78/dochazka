@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.5";
+const APP_VERSION = "2.8.6";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.6",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava ulozeni kampani (chybejici wrapper), redesign tooltipu, auto-predvyplneni 10 tydnu v modalu"
+    ]
+  },
   {
     "version": "2.8.5",
     "date": "2026-04-01",

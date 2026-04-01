@@ -618,37 +618,33 @@
                 text.innerHTML = `KT ${currentKT}`;
             }
 
-            // Sestavit tooltipovou tabulku (3 týdny)
-            let html = `
-                <table class="promo-table">
-                    <thead>
-                        <tr>
-                            <th>KT</th>
-                            <th><span class="promo-day-label">Po</span> <span class="promo-blue">Start</span></th>
-                            <th><span class="promo-day-label">Čt</span> <span class="promo-red">Start</span></th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+            // Sestavit tooltip — aktuální týden + 2 další
+            const isAdmin = typeof hasPermission === 'function' && hasPermission('access_admin');
+            let html = `<div class="promo-tt-header">
+                <span class="promo-tt-title">🛒 Marketingové kampaně</span>
+                <span class="promo-tt-week">KT ${currentKT}</span>
+            </div>
+            <div class="promo-tt-cols">
+                <div class="promo-tt-col-head" style="flex:0 0 38px;"></div>
+                <div class="promo-tt-col-head"><span class="promo-tt-day-badge po">Po</span> START</div>
+                <div class="promo-tt-col-head"><span class="promo-tt-day-badge ct">Čt</span> START</div>
+            </div>`;
 
             for (let i = 0; i < 3; i++) {
                 const kt = currentKT + i;
                 const week = data.find(w => Number(w.kt) === kt);
-                const activeClass = i === 0 ? 'promo-row-active' : '';
-                
-                html += `
-                    <tr class="${activeClass}">
-                        <td><span class="promo-kt-badge">${kt}</span></td>
-                        <td>${week ? (week.monday || '—') : '—'}</td>
-                        <td>${week ? (week.thursday || '—') : '—'}</td>
-                    </tr>`;
+                const mon = week && week.monday ? week.monday : null;
+                const thu = week && week.thursday ? week.thursday : null;
+                const isCurrent = i === 0;
+                html += `<div class="promo-tt-row${isCurrent ? ' promo-tt-row-active' : ''}">
+                    <div class="promo-tt-kt">${isCurrent ? `<span class="promo-tt-kt-now">${kt}</span>` : `<span class="promo-tt-kt-num">${kt}</span>`}</div>
+                    <div class="promo-tt-val">${mon ? `<span class="promo-tt-chip po">${mon}</span>` : '<span class="promo-tt-empty">—</span>'}</div>
+                    <div class="promo-tt-val">${thu ? `<span class="promo-tt-chip ct">${thu}</span>` : '<span class="promo-tt-empty">—</span>'}</div>
+                </div>`;
             }
 
-            html += `</tbody></table>`;
-            
-            if (data.length === 0) {
-                html += '<div class="promo-empty">Kliknutím nastavíte kampaně.</div>';
-            } else {
-                html += '<div class="promo-footer">Klikněte pro správu kampaní</div>';
+            if (isAdmin) {
+                html += `<div class="promo-tt-footer">Klikněte pro správu kampaní →</div>`;
             }
 
             tooltip.innerHTML = html;
@@ -677,13 +673,21 @@
         const container = document.getElementById('marketing-edit-container');
         if (!modal || !container) return;
 
-        const data = [...(plannerData.marketingWeeks || [])];
-        // Pokud je prázdno, přidat aspoň aktuální týden
-        if (data.length === 0) {
-            data.push({ kt: getISOWeek(new Date()), monday: '', thursday: '' });
+        const existing = [...(plannerData.marketingWeeks || [])];
+        const currentKT = getISOWeek(new Date());
+        // Zajistit aktuální + dalších 9 týdnů (celkem 10)
+        const data = [];
+        for (let i = 0; i < 10; i++) {
+            const kt = currentKT + i;
+            const found = existing.find(w => Number(w.kt) === kt);
+            data.push(found ? { ...found } : { kt: String(kt), monday: '', thursday: '' });
         }
-        
-        // Seřadit podle KT
+        // Přidat případné starší záznamy z DB (pokud existují KT před aktuálním)
+        existing.forEach(w => {
+            if (Number(w.kt) < currentKT && !data.find(d => Number(d.kt) === Number(w.kt))) {
+                data.unshift({ ...w });
+            }
+        });
         data.sort((a, b) => Number(a.kt) - Number(b.kt));
 
         _renderMarketingEditTable(data);
