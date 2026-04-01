@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.1";
+const APP_VERSION = "2.8.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.2",
+    "date": "2026-04-01",
+    "changes": [
+      "Stabilizace marketingového modulu - ošetření chyb a přidání diagnostických logů do konzole."
+    ]
+  },
   {
     "version": "2.8.1",
     "date": "2026-04-01",

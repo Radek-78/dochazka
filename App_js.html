@@ -591,67 +591,86 @@
      * Vykreslí modul s marketingovými týdny a akčními dny (Po/Čt) v topbaru.
      */
     function _renderMarketingWeeks() {
-        const module = document.getElementById('topbar-promo-module');
-        const text = document.getElementById('promo-current-text');
-        const tooltip = document.getElementById('promo-tooltip');
-        if (!module || !text || !tooltip) return;
+        console.log("Marketing: Spouštím renderování...");
+        try {
+            const module = document.getElementById('topbar-promo-module');
+            const text = document.getElementById('promo-current-text');
+            const tooltip = document.getElementById('promo-tooltip');
+            if (!module || !text || !tooltip) {
+                console.warn("Marketing: Chybí HTML elementy.");
+                return;
+            }
 
-        const data = plannerData.marketingWeeks || [];
-        const today = new Date();
-        const currentKT = getISOWeek(today);
+            // Bezpečné načtení dat
+            const data = (plannerData && plannerData.marketingWeeks) ? plannerData.marketingWeeks : [];
+            const now = new Date();
+            const currentKT = getISOWeek(now);
+            console.log("Marketing: Aktuální KT =", currentKT, "| Data =", data.length);
 
-        // Najít aktuální data
-        const currentWeek = data.find(w => Number(w.kt) === currentKT);
-        
-        if (currentWeek) {
-            const mon = currentWeek.monday || '—';
-            const thu = currentWeek.thursday || '—';
-            text.innerHTML = `KT ${currentKT}: <span style="opacity:0.9; font-weight:700;">${mon} / ${thu}</span>`;
-        } else {
-            text.innerHTML = `KT ${currentKT}`;
-        }
-
-        // Sestavit tooltipovou tabulku (3 týdny)
-        let html = `
-            <table class="promo-table">
-                <thead>
-                    <tr>
-                        <th>KT</th>
-                        <th><span class="promo-day-label">Pondělí</span><span class="promo-day-val promo-blue">Start</span></th>
-                        <th><span class="promo-day-label">Čtvrtek</span><span class="promo-day-val promo-red">Start</span></th>
-                    </tr>
-                </thead>
-                <tbody>`;
-
-        for (let i = 0; i < 3; i++) {
-            const kt = currentKT + i;
-            const week = data.find(w => Number(w.kt) === kt);
-            const activeClass = i === 0 ? 'promo-row-active' : '';
+            // Najít aktuální data
+            const currentWeek = data.find(w => Number(w.kt) === currentKT);
             
-            html += `
-                <tr class="${activeClass}">
-                    <td><span class="promo-kt-badge">${kt}</span></td>
-                    <td style="color: ${i === 0 ? '#1e293b' : '#64748b'}; font-size: 13px;">${week ? (week.monday || '—') : '—'}</td>
-                    <td style="color: ${i === 0 ? '#1e293b' : '#64748b'}; font-size: 13px;">${week ? (week.thursday || '—') : '—'}</td>
-                </tr>`;
-        }
+            if (currentWeek) {
+                const mon = currentWeek.monday || '—';
+                const thu = currentWeek.thursday || '—';
+                text.innerHTML = `KT ${currentKT}: <span style="font-weight:700;">${mon} / ${thu}</span>`;
+            } else {
+                text.innerHTML = `KT ${currentKT}`;
+            }
 
-        html += `</tbody></table>`;
-        
-        if (!data || data.length === 0) {
-            html = '<div class="promo-empty">Data o kampaních nejsou k dispozici.</div>';
-        }
+            // Sestavit tooltipovou tabulku (3 týdny)
+            let html = `
+                <table class="promo-table">
+                    <thead>
+                        <tr>
+                            <th>KT</th>
+                            <th><span class="promo-day-label">Po</span> <span class="promo-blue">Start</span></th>
+                            <th><span class="promo-day-label">Čt</span> <span class="promo-red">Start</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
-        tooltip.innerHTML = html;
-        module.style.display = 'flex';
+            for (let i = 0; i < 3; i++) {
+                const kt = currentKT + i;
+                const week = data.find(w => Number(w.kt) === kt);
+                const activeClass = i === 0 ? 'promo-row-active' : '';
+                
+                html += `
+                    <tr class="${activeClass}">
+                        <td><span class="promo-kt-badge">${kt}</span></td>
+                        <td>${week ? (week.monday || '—') : '—'}</td>
+                        <td>${week ? (week.thursday || '—') : '—'}</td>
+                    </tr>`;
+            }
 
-        // Aktivovat kliknutí pro administrátory
-        if (plannerData && plannerData.isAdmin) {
-            module.onclick = (e) => {
-                e.stopPropagation();
-                openMarketingAdminModal();
-            };
-            module.title = "Klikněte pro správu kampaní";
+            html += `</tbody></table>`;
+            
+            if (data.length === 0) {
+                html += '<div class="promo-empty">Kliknutím nastavíte kampaně.</div>';
+            } else {
+                html += '<div class="promo-footer">Klikněte pro správu kampaní</div>';
+            }
+
+            tooltip.innerHTML = html;
+            module.style.display = 'flex';
+
+            // Aktivovat kliknutí pro administrátory
+            if (plannerData && plannerData.isAdmin) {
+                module.onclick = (e) => {
+                    e.stopPropagation();
+                    console.log("Marketing: Otevírám admin modal...");
+                    if (typeof openMarketingAdminModal === 'function') {
+                        openMarketingAdminModal();
+                    } else {
+                        console.error("Marketing: Funkce openMarketingAdminModal nenalezena.");
+                    }
+                };
+                module.title = "Klikněte pro správu kampaní";
+                module.style.cursor = 'pointer';
+            }
+            console.log("Marketing: Renderování dokončeno.");
+        } catch (err) {
+            console.error("Marketing ERROR:", err);
         }
     }
 
