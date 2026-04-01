@@ -608,7 +608,7 @@
             const thu = currentWeek.thursday || '—';
             text.innerHTML = `KT ${currentKT}: <span style="opacity:0.9; font-weight:700;">${mon} / ${thu}</span>`;
         } else {
-            text.textContent = `Kalendářní týden ${currentKT}`;
+            text.innerHTML = `KT ${currentKT}`;
         }
 
         // Sestavit tooltipovou tabulku (3 týdny)

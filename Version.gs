@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.6";
+const APP_VERSION = "2.7.7";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.7",
+    "date": "2026-04-01",
+    "changes": [
+      "Sjednocení designu marketingového modulu se statistikami a oprava výchozího popisku KT."
+    ]
+  },
   {
     "version": "2.7.6",
     "date": "2026-04-01",

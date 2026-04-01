@@ -374,35 +374,41 @@
         margin: 0 6px;
     }
 
-    /* PROMO MODULE (Marketingové týdny) */
+    /* PROMO MODULE (Marketingové týdny) - SJEDNOCENO SE STATISTIKAMI */
     .promo-module {
-        margin-right: 18px;
+        background: rgba(255, 255, 255, 0.08); /* Identické se statistikami */
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        padding: 4px 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
         position: relative;
+        height: 42px; /* Výška stejná jako u statistik */
+        box-sizing: border-box;
+        margin-right: 12px;
+    }
+    .promo-module:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.25);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
     }
     .promo-pill {
         display: flex;
         align-items: center;
-        gap: 8px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 5px 12px;
-        border-radius: 20px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        position: relative;
+        gap: 10px;
     }
-    .promo-pill:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    .promo-icon { 
+        font-size: 16px;
     }
-    .promo-icon { font-size: 14px; }
     .promo-text {
-        font-size: 11px;
-        font-weight: 800;
+        font-size: 12px;
+        font-weight: 900;
         color: white;
-        letter-spacing: 0.2px;
+        letter-spacing: 0.5px;
         white-space: nowrap;
     }
     .promo-tooltip-anchor {
