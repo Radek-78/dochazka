@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.8";
+const APP_VERSION = "2.8.9";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.9",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava role dropdown: admin muze u sebe videt vlastni roli, u ostatnich jen nizsi"
+    ]
+  },
   {
     "version": "2.8.8",
     "date": "2026-04-01",

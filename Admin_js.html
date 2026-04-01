@@ -1916,6 +1916,8 @@
             }
 
             // 3. Filter available roles
+            // Výjimka: při editaci sebe sama lze vybrat i svou vlastní roli (ne jen nižší)
+            const isSelf = user && currentUser && user.user_id === currentUser.user_id;
             const roleOptions = [
                 { val: 'USER', label: 'USER — Zaměstnanec' },
                 { val: 'LEADER', label: 'LEADER — Vedoucí' },
@@ -1923,7 +1925,8 @@
                 { val: 'SUPERADMIN', label: 'SUPERADMIN' }
             ].filter(r => {
                 if (myRole === 'SUPERADMIN') return true;
-                return roleWeights[r.val] < myWeight;
+                if (isSelf) return roleWeights[r.val] <= myWeight;   // sám sobě: max vlastní role
+                return roleWeights[r.val] < myWeight;                // ostatním: jen nižší role
             });
 
             const modal = document.getElementById('admin-modal');
