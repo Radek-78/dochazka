@@ -121,7 +121,7 @@ var Admin = {
     } else {
       sheet.getRange(1, 1, 1, data[0].length).setValues(data);
     }
-    return true;
+    return { success: true };
   },
 
   /**

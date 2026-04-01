@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.6";
+const APP_VERSION = "2.8.7";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.7",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava ukladani kampani - spravny return { success: true } z Admin.updateMarketingWeeks"
+    ]
+  },
   {
     "version": "2.8.6",
     "date": "2026-04-01",
