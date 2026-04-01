@@ -576,6 +576,204 @@
         updateDailyStats();
     }
 
+    /**
+     * Vrátí číslo kalendářního týdne (ISO 8601).
+     */
+    function getISOWeek(date) {
+        let d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        let dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        let yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
+    /**
+     * Vykreslí modul s marketingovými týdny a akčními dny (Po/Čt) v topbaru.
+     */
+    function _renderMarketingWeeks() {
+        const module = document.getElementById('topbar-promo-module');
+        const text = document.getElementById('promo-current-text');
+        const tooltip = document.getElementById('promo-tooltip');
+        if (!module || !text || !tooltip) return;
+
+        const data = plannerData.marketingWeeks || [];
+        const today = new Date();
+        const currentKT = getISOWeek(today);
+
+        // Najít aktuální data
+        const currentWeek = data.find(w => Number(w.kt) === currentKT);
+        
+        if (currentWeek) {
+            const mon = currentWeek.monday || '—';
+            const thu = currentWeek.thursday || '—';
+            text.innerHTML = `KT ${currentKT}: <span style="opacity:0.9; font-weight:700;">${mon} / ${thu}</span>`;
+        } else {
+            text.textContent = `Kalendářní týden ${currentKT}`;
+        }
+
+        // Sestavit tooltipovou tabulku (3 týdny)
+        let html = `
+            <table class="promo-table">
+                <thead>
+                    <tr>
+                        <th>KT</th>
+                        <th><span class="promo-day-label">Pondělí</span><span class="promo-day-val promo-blue">Start</span></th>
+                        <th><span class="promo-day-label">Čtvrtek</span><span class="promo-day-val promo-red">Start</span></th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        for (let i = 0; i < 3; i++) {
+            const kt = currentKT + i;
+            const week = data.find(w => Number(w.kt) === kt);
+            const activeClass = i === 0 ? 'promo-row-active' : '';
+            
+            html += `
+                <tr class="${activeClass}">
+                    <td><span class="promo-kt-badge">${kt}</span></td>
+                    <td style="color: ${i === 0 ? '#1e293b' : '#64748b'}; font-size: 13px;">${week ? (week.monday || '—') : '—'}</td>
+                    <td style="color: ${i === 0 ? '#1e293b' : '#64748b'}; font-size: 13px;">${week ? (week.thursday || '—') : '—'}</td>
+                </tr>`;
+        }
+
+        html += `</tbody></table>`;
+        
+        if (!data || data.length === 0) {
+            html = '<div class="promo-empty">Data o kampaních nejsou k dispozici.</div>';
+        }
+
+        tooltip.innerHTML = html;
+        module.style.display = 'block';
+    }
+
+    /**
+     * Otevře modál pro editaci marketingových týdnů (pouze pro adminy).
+     */
+    function openMarketingAdminModal() {
+        const modal = document.getElementById('marketing-modal');
+        const container = document.getElementById('marketing-edit-container');
+        if (!modal || !container) return;
+
+        const data = [...(plannerData.marketingWeeks || [])];
+        // Pokud je prázdno, přidat aspoň aktuální týden
+        if (data.length === 0) {
+            data.push({ kt: getISOWeek(new Date()), monday: '', thursday: '' });
+        }
+        
+        // Seřadit podle KT
+        data.sort((a, b) => Number(a.kt) - Number(b.kt));
+
+        _renderMarketingEditTable(data);
+        modal.style.display = 'flex';
+    }
+
+    /**
+     * Vykreslí editační tabulku v modálu.
+     */
+    function _renderMarketingEditTable(data) {
+        const container = document.getElementById('marketing-edit-container');
+        let html = `
+            <table class="marketing-edit-table">
+                <thead>
+                    <tr>
+                        <th style="width:70px;">KT</th>
+                        <th style="width:250px;">PROMO PONDĚLÍ</th>
+                        <th style="width:250px;">PROMO ČTVRTEK</th>
+                        <th style="width:40px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="marketing-edit-body">`;
+
+        data.forEach((row, idx) => {
+            html += _createMarketingEditRowHtml(row.kt, row.monday, row.thursday);
+        });
+
+        html += `</tbody></table>`;
+        container.innerHTML = html;
+    }
+
+    function _createMarketingEditRowHtml(kt, monday, thursday) {
+        return `
+            <tr class="marketing-edit-row">
+                <td><span class="marketing-edit-kt">${kt}</span><input type="hidden" class="kt-val" value="${kt}"></td>
+                <td>
+                    <div style="display:flex; align-items:center;">
+                        <span class="marketing-blue-tag">Po:</span>
+                        <input type="text" class="marketing-input mon-val" value="${escapeHtml(monday || '')}" placeholder="Přidat akci...">
+                    </div>
+                </td>
+                <td>
+                    <div style="display:flex; align-items:center;">
+                        <span class="marketing-red-tag">Čt:</span>
+                        <input type="text" class="marketing-input thu-val" value="${escapeHtml(thursday || '')}" placeholder="Přidat akci...">
+                    </div>
+                </td>
+                <td>
+                    <button onclick="this.closest('tr').remove()" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:16px;" title="Smazat řádek">&times;</button>
+                </td>
+            </tr>`;
+    }
+
+    /**
+     * Přidá nový prázdný řádek pro další kalendářní týden.
+     */
+    function addMarketingRow() {
+        const body = document.getElementById('marketing-edit-body');
+        if (!body) return;
+        
+        const lastKtStr = body.querySelector('tr:last-child .kt-val')?.value;
+        const nextKt = lastKtStr ? Number(lastKtStr) + 1 : getISOWeek(new Date());
+        
+        const temp = document.createElement('tbody');
+        temp.innerHTML = _createMarketingEditRowHtml(nextKt, '', '');
+        body.appendChild(temp.firstElementChild);
+        
+        // Autoscroll dolů v těle modálu
+        const modalBody = body.closest('.footer-modal-body');
+        if (modalBody) modalBody.scrollTop = modalBody.scrollHeight;
+    }
+
+    /**
+     * Uloží marketingové týdny na server.
+     */
+    async function saveMarketingWeeks() {
+        const saveBtn = document.getElementById('marketing-save-btn');
+        const rows = document.querySelectorAll('.marketing-edit-row');
+        const data = [];
+
+        rows.forEach(row => {
+            const kt = row.querySelector('.kt-val').value;
+            const mon = row.querySelector('.mon-val').value.trim();
+            const thu = row.querySelector('.thu-val').value.trim();
+            if (kt) data.push({ kt, monday: mon, thursday: thu });
+        });
+
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = 'UKLÁDÁM...';
+        }
+
+        try {
+            const res = await callServer('updateMarketingWeeks', data);
+            if (res && res.success) {
+                if (plannerData) plannerData.marketingWeeks = data;
+                _renderMarketingWeeks();
+                document.getElementById('marketing-modal').style.display = 'none';
+                showSyncToast('SAVE', data.length);
+            } else {
+                alert('Chyba při ukládání: ' + (res?.error || 'Neznámá chyba'));
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Chyba komunikace při ukládání kampaní.');
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = 'ULOŽIT ZMĚNY';
+            }
+        }
+    }
+
     function renderStats(stats) {
         if (!stats) return;
         const dateDisplay = document.getElementById('stats-display-date');
@@ -3197,6 +3395,7 @@
                 if (response && response.success) {
                     plannerData = response;
                     updateUserProfile(response.user);
+                    _renderMarketingWeeks();
                     renderPlanner();
                 }
             } catch (e) { console.warn('refreshApp (full) error:', e); }

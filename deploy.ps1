@@ -88,16 +88,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# Git push
-Write-Host ""
-Write-Host "Odesílám commit na Git remote..." -ForegroundColor Yellow
-git push
-if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "Git push SELHAL!" -ForegroundColor Red
-    pause
-    exit $LASTEXITCODE
-}
+# Git push byl odstraněn na žádost uživatele (pouze lokální Git)
 
 Write-Host ""
 Write-Host "====================================================" -ForegroundColor Green

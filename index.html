@@ -171,6 +171,18 @@
           </div>
         </div>
 
+        <div id="topbar-promo-module" class="topbar-module promo-module" style="display: none;">
+          <div class="promo-pill">
+            <span class="promo-icon">📅</span>
+            <span id="promo-current-text" class="promo-text">Načítám kampaň...</span>
+            <div id="promo-tooltip-anchor" class="promo-tooltip-anchor">
+              <div id="promo-tooltip" class="promo-tooltip">
+                <!-- Dynamicky plněno -->
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="topbar-center">
           <div class="topbar-stats-module" id="topbar-stats-module" style="display: none;">
             <div class="stats-nav">
@@ -509,8 +521,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.7.4</a>
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 10:40
+            id="app-version-display">v2.7.5</a>
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 11:37
         </div>
       </footer>
     </div>
@@ -1521,6 +1533,16 @@
       if (profileTrigger) {
         profileTrigger.onclick = () => openProfileModal();
       }
+
+      // Trigger pro marketingový modul
+      const promoPill = document.querySelector('.promo-pill');
+      if (promoPill) {
+        promoPill.onclick = () => {
+          if (plannerData && plannerData.isAdmin) {
+             openMarketingAdminModal();
+          }
+        };
+      }
     });
   </script>
   <? if (!isInitialized) { ?>
@@ -1566,6 +1588,34 @@
         <div id="changelog-content">
           <!-- Dynamicky plněno z Version.gs -->
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MARKETING-WEEKS MODAL -->
+  <div id="marketing-modal" class="footer-modal-backdrop" style="display:none;">
+    <div class="footer-modal-card" style="width:720px; max-height:85vh;">
+      <div class="modal-brand-header">
+        <div class="modal-deco-circle"></div>
+        <button class="modal-close-btn"
+          onclick="document.getElementById('marketing-modal').style.display='none'">&times;</button>
+        <div style="display:flex; align-items:center; gap:20px; position:relative; z-index:1; width:100%;">
+          <div style="flex:1; min-width:0;">
+            <div class="modal-header-icon" style="margin-bottom:6px;">🛒</div>
+            <h2 class="modal-header-title" style="margin:0 0 2px; font-size:20px;">Správa kampaní</h2>
+            <p class="modal-header-sub" style="margin:0; opacity:0.8; font-size:12px;">Editace akčních týdnů (Pondělí / Čtvrtek)</p>
+          </div>
+        </div>
+      </div>
+      <div class="footer-modal-body" style="overflow-y:auto; padding:24px 32px;">
+        <div id="marketing-edit-container">
+          <!-- JS dynamic render -->
+        </div>
+        <button class="marketing-add-btn" onclick="addMarketingRow()">+ PŘIDAT DALŠÍ TÝDEN</button>
+      </div>
+      <div class="modal-footer-brand">
+        <button class="btn-modal-cancel" onclick="document.getElementById('marketing-modal').style.display='none'">ZAVŘÍT</button>
+        <button class="btn-modal-save" id="marketing-save-btn" onclick="saveMarketingWeeks()">ULOŽIT ZMĚNY</button>
       </div>
     </div>
   </div>

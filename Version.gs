@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.4";
+const APP_VERSION = "2.7.5";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.5",
+    "date": "2026-04-01",
+    "changes": [
+      "Správa marketingových týdnů přímo z topbaru - interaktivní modal a inline editace."
+    ]
+  },
   {
     "version": "2.7.4",
     "date": "2026-04-01",

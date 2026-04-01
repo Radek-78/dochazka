@@ -92,6 +92,39 @@ var Admin = {
   },
 
   /**
+   * Hromadně aktualizuje marketingové kampaně v listu MARKETING_WEEKS.
+   */
+  updateMarketingWeeks: function (rows) {
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    const coreSS = DB.getCore();
+    const sheetName = DB_SHEETS.CORE.MARKETING_WEEKS;
+    let sheet = coreSS.getSheetByName(sheetName);
+
+    if (!sheet) {
+      // Pokud list neexistuje, vytvoříme ho
+      sheet = coreSS.insertSheet(sheetName);
+    }
+
+    const data = [["kt", "monday", "thursday"]];
+    // Seřadit podle KT
+    rows.sort((a, b) => Number(a.kt) - Number(b.kt));
+
+    rows.forEach(row => {
+      if (row.kt) {
+        data.push([row.kt, row.monday || "", row.thursday || ""]);
+      }
+    });
+
+    sheet.clearContents();
+    if (data.length > 1) {
+      sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+    } else {
+      sheet.getRange(1, 1, 1, data[0].length).setValues(data);
+    }
+    return true;
+  },
+
+  /**
    * Přidá novou lokaci (DL/LC).
    */
   addLocation: function(name, type) {

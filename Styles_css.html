@@ -374,6 +374,196 @@
         margin: 0 6px;
     }
 
+    /* PROMO MODULE (Marketingové týdny) */
+    .promo-module {
+        margin-right: 18px;
+        position: relative;
+    }
+    .promo-pill {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 5px 12px;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    .promo-pill:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.2);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .promo-icon { font-size: 14px; }
+    .promo-text {
+        font-size: 11px;
+        font-weight: 800;
+        color: white;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+    }
+    .promo-tooltip-anchor {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%) translateY(10px);
+        z-index: 5000;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+        padding-top: 10px;
+    }
+    .promo-pill:hover .promo-tooltip-anchor {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(-50%) translateY(0);
+    }
+    .promo-tooltip {
+        background: white;
+        color: #1e293b;
+        border-radius: 14px;
+        box-shadow: 0 15px 45px rgba(0,0,0,0.25);
+        border: 1px solid #e2e8f0;
+        padding: 12px 16px;
+        min-width: 320px;
+        overflow: hidden;
+    }
+    .promo-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .promo-table th {
+        text-align: left;
+        padding: 8px 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        font-size: 10px;
+        color: #64748b;
+        letter-spacing: 0.5px;
+    }
+    .promo-table td { padding: 10px; border-top: 1px solid #f1f5f9; font-weight: 600; }
+    .promo-row-active { background: #f8fafc; }
+    .promo-kt-badge {
+        background: #1e293b;
+        color: white;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 900;
+    }
+    .promo-day-val {
+        padding: 3px 10px;
+        border-radius: 6px;
+        display: inline-block;
+        font-weight: 800;
+        font-size: 11px;
+    }
+    .promo-day-label {
+        font-size: 9px;
+        text-transform: uppercase;
+        display: block;
+        margin-bottom: 3px;
+        opacity: 0.6;
+        font-weight: 900;
+        letter-spacing: 0.4px;
+    }
+    .promo-blue { background: #004fac; color: white; }
+    .promo-red { background: #e21837; color: white; }
+    .promo-empty {
+        text-align: center;
+        padding: 15px;
+        color: #94a3b8;
+        font-style: italic;
+        font-size: 11px;
+    }
+
+    /* MARKETING MODAL EDITING */
+    .marketing-edit-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 4px;
+    }
+    .marketing-edit-table th {
+        color: #94a3b8;
+        font-size: 10px;
+        text-transform: uppercase;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        padding: 0 12px 8px;
+        text-align: left;
+    }
+    .marketing-edit-row {
+        background: #f8fafc;
+        transition: all 0.2s ease;
+    }
+    .marketing-edit-row:hover {
+        background: #f1f5f9;
+    }
+    .marketing-edit-row td {
+        padding: 4px 8px;
+    }
+    .marketing-edit-row td:first-child { border-radius: 8px 0 0 8px; width: 60px; text-align: center; }
+    .marketing-edit-row td:last-child { border-radius: 0 8px 8px 0; }
+    
+    .marketing-edit-kt {
+        font-weight: 900;
+        color: #1e293b;
+        font-family: inherit;
+        font-size: 13px;
+        background: #e2e8f0;
+        padding: 2px 8px;
+        border-radius: 5px;
+        display: inline-block;
+    }
+    
+    .marketing-input {
+        width: 100%;
+        background: transparent;
+        border: 1px solid transparent;
+        padding: 9px 12px;
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        color: #334155;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        box-sizing: border-box;
+    }
+    .marketing-input:hover {
+        background: white;
+        border-color: #cbd5e1;
+        cursor: text;
+    }
+    .marketing-input:focus {
+        background: white;
+        border-color: #0ea5e9;
+        outline: none;
+        box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
+        color: #0f172a;
+    }
+    
+    .marketing-blue-tag { color: #004fac; font-weight: 900; font-size: 10px; margin-right: 4px; display: inline-block; width: 24px; }
+    .marketing-red-tag { color: #e21837; font-weight: 900; font-size: 10px; margin-right: 4px; display: inline-block; width: 24px; }
+    
+    .marketing-add-btn {
+        width: 100%;
+        background: white;
+        border: 2px dashed #e2e8f0;
+        color: #64748b;
+        padding: 12px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        margin-top: 10px;
+    }
+    .marketing-add-btn:hover {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+        color: #1e253b;
+    }
+
     .stats-grid {
         display: flex;
         align-items: stretch;

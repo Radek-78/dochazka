@@ -248,6 +248,7 @@ function getPlannerData() {
       rbacConfig: Admin.getRbacConfig ? Admin.getRbacConfig() : {},
       namedDays: Admin.getNamedDays ? Admin.getNamedDays() : CalendarData.NAMED_DAYS,
       holidays: CalendarData.getHolidaysForYear(currYearNum),
+      marketingWeeks: (function () { try { return DB.getTable(coreSS, DB_SHEETS.CORE.MARKETING_WEEKS) || []; } catch (e) { return []; } })(),
       plannerEvents: plannerEvents,
       plannerGroups: accessibleGroups,
       plannerPermissions: userGroupsMap
