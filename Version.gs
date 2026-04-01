@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.8.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.1",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava funkčnosti marketingového modulu - oprava z-indexu a inicializace kliknutí."
+    ]
+  },
   {
     "version": "2.8.0",
     "date": "2026-04-01",

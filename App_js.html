@@ -644,6 +644,15 @@
 
         tooltip.innerHTML = html;
         module.style.display = 'flex';
+
+        // Aktivovat kliknutí pro administrátory
+        if (plannerData && plannerData.isAdmin) {
+            module.onclick = (e) => {
+                e.stopPropagation();
+                openMarketingAdminModal();
+            };
+            module.title = "Klikněte pro správu kampaní";
+        }
     }
 
     /**

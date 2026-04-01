@@ -522,8 +522,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.8.0</a>
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 12:13
+            id="app-version-display">v2.8.1</a>
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 12:21
         </div>
       </footer>
     </div>
@@ -1535,15 +1535,7 @@
         profileTrigger.onclick = () => openProfileModal();
       }
 
-      // Trigger pro marketingový modul
-      const promoPill = document.querySelector('.promo-pill');
-      if (promoPill) {
-        promoPill.onclick = () => {
-          if (plannerData && plannerData.isAdmin) {
-             openMarketingAdminModal();
-          }
-        };
-      }
+      // Trigger pro marketingový modul (přesunuto do App_js)
     });
   </script>
   <? if (!isInitialized) { ?>
