@@ -401,17 +401,62 @@
     .promo-pill {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
     }
-    .promo-icon { 
-        font-size: 16px;
+    .promo-icon {
+        font-size: 15px;
+        flex-shrink: 0;
     }
     .promo-text {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: 12px;
+        font-weight: 700;
+        color: white;
+        white-space: nowrap;
+    }
+    .promo-pill-kt {
+        font-size: 11px;
         font-weight: 900;
         color: white;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
+    }
+    .promo-pill-sep {
+        width: 1px;
+        height: 16px;
+        background: rgba(255,255,255,0.25);
+        flex-shrink: 0;
+    }
+    .promo-pill-day {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(255,255,255,0.95);
         white-space: nowrap;
+    }
+    .promo-pill-tag {
+        font-size: 9px;
+        font-weight: 900;
+        padding: 1px 5px;
+        border-radius: 3px;
+        color: white;
+        letter-spacing: 0.3px;
+        flex-shrink: 0;
+    }
+    .promo-pill-tag.po { background: rgba(255,255,255,0.25); }
+    .promo-pill-tag.ct { background: #e21837; }
+    /* rok badge v editačním modalu */
+    .marketing-edit-year {
+        display: block;
+        font-size: 9px;
+        font-weight: 700;
+        color: #94a3b8;
+        letter-spacing: 0.3px;
+        text-align: center;
+        margin-top: 1px;
     }
     .promo-tooltip-anchor {
         position: absolute;

@@ -587,38 +587,70 @@
         return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     }
 
+    /** Vrátí ISO week ID ve formátu "YYYY-WW" (rok dle ISO 8601). */
+    function getWeekId(date) {
+        let d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        let dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const isoYear = d.getUTCFullYear();
+        const week = Math.ceil((((d - new Date(Date.UTC(isoYear, 0, 1))) / 86400000) + 1) / 7);
+        return isoYear + '-' + String(week).padStart(2, '0');
+    }
+
+    /** Parsuje week ID ("2026-14" nebo legacy "14") → { year, week }. */
+    function parseWeekId(kt) {
+        if (kt && String(kt).includes('-')) {
+            const parts = String(kt).split('-');
+            return { year: Number(parts[0]), week: Number(parts[1]) };
+        }
+        return { year: new Date().getFullYear(), week: Number(kt) };
+    }
+
+    /** Vrátí week ID pro datum posunuté o offsetWeeks od dnes. */
+    function offsetWeekId(baseDate, offsetWeeks) {
+        const d = new Date(baseDate);
+        d.setDate(d.getDate() + offsetWeeks * 7);
+        return getWeekId(d);
+    }
+
     /**
      * Vykreslí modul s marketingovými týdny a akčními dny (Po/Čt) v topbaru.
      */
     function _renderMarketingWeeks() {
-        console.log("Marketing: Spouštím renderování...");
         try {
             const module = document.getElementById('topbar-promo-module');
             const text = document.getElementById('promo-current-text');
             const tooltip = document.getElementById('promo-tooltip');
-            if (!module || !text || !tooltip) {
-                console.warn("Marketing: Chybí HTML elementy.");
-                return;
-            }
+            if (!module || !text || !tooltip) return;
 
-            // Bezpečné načtení dat
             const data = (plannerData && plannerData.marketingWeeks) ? plannerData.marketingWeeks : [];
             const now = new Date();
-            const currentKT = getISOWeek(now);
-            console.log("Marketing: Aktuální KT =", currentKT, "| Data =", data.length);
+            const currentWeekId = getWeekId(now);
+            const { week: currentKT } = parseWeekId(currentWeekId);
 
-            // Najít aktuální data
-            const currentWeek = data.find(w => Number(w.kt) === currentKT);
-            
-            if (currentWeek) {
+            // Najít aktuální týden — porovnáváme weekId nebo legacy číslo
+            const findWeek = (weekId) => data.find(w => {
+                const p = parseWeekId(w.kt);
+                const q = parseWeekId(weekId);
+                return p.year === q.year && p.week === q.week;
+            });
+
+            const currentWeek = findWeek(currentWeekId);
+
+            // --- Pill obsah ---
+            if (currentWeek && (currentWeek.monday || currentWeek.thursday)) {
                 const mon = currentWeek.monday || '—';
                 const thu = currentWeek.thursday || '—';
-                text.innerHTML = `KT ${currentKT}: <span style="font-weight:700;">${mon} / ${thu}</span>`;
+                text.innerHTML =
+                    `<span class="promo-pill-kt">KT ${currentKT}</span>` +
+                    `<span class="promo-pill-sep"></span>` +
+                    `<span class="promo-pill-day"><span class="promo-pill-tag po">Po</span>${mon}</span>` +
+                    `<span class="promo-pill-day"><span class="promo-pill-tag ct">Čt</span>${thu}</span>`;
             } else {
-                text.innerHTML = `KT ${currentKT}`;
+                text.innerHTML = `<span class="promo-pill-kt">KT ${currentKT}</span><span style="font-size:10px;opacity:0.6;margin-left:6px;">bez kampání</span>`;
             }
 
-            // Sestavit tooltip — aktuální týden + 2 další
+            // --- Tooltip ---
             const isAdmin = typeof hasPermission === 'function' && hasPermission('access_admin');
             let html = `<div class="promo-tt-header">
                 <span class="promo-tt-title">🛒 Marketingové kampaně</span>
@@ -626,13 +658,14 @@
             </div>
             <div class="promo-tt-cols">
                 <div class="promo-tt-col-head" style="flex:0 0 38px;"></div>
-                <div class="promo-tt-col-head"><span class="promo-tt-day-badge po">Po</span> START</div>
-                <div class="promo-tt-col-head"><span class="promo-tt-day-badge ct">Čt</span> START</div>
+                <div class="promo-tt-col-head"><span class="promo-tt-day-badge po">Po</span></div>
+                <div class="promo-tt-col-head"><span class="promo-tt-day-badge ct">Čt</span></div>
             </div>`;
 
             for (let i = 0; i < 3; i++) {
-                const kt = currentKT + i;
-                const week = data.find(w => Number(w.kt) === kt);
+                const weekId = offsetWeekId(now, i);
+                const { week: kt } = parseWeekId(weekId);
+                const week = findWeek(weekId);
                 const mon = week && week.monday ? week.monday : null;
                 const thu = week && week.thursday ? week.thursday : null;
                 const isCurrent = i === 0;
@@ -642,24 +675,19 @@
                     <div class="promo-tt-val">${thu ? `<span class="promo-tt-chip ct">${thu}</span>` : '<span class="promo-tt-empty">—</span>'}</div>
                 </div>`;
             }
-
-            if (isAdmin) {
-                html += `<div class="promo-tt-footer">Klikněte pro správu kampaní →</div>`;
-            }
-
+            if (isAdmin) html += `<div class="promo-tt-footer">Klikněte pro správu kampaní →</div>`;
             tooltip.innerHTML = html;
-            module.style.display = 'flex';
 
-            // Vždy připojit onclick — kontrola oprávnění probíhá uvnitř handleru
+            // Viditelnost: zobrazit jen v relevantních pohledech (stejně jako stats)
+            const showInView = (currentView === 'dashboard' || currentView === 'vacation' || currentView === 'attendance');
+            module.style.display = showInView ? 'flex' : 'none';
+
+            // Click handler
             module.onclick = (e) => {
                 e.stopPropagation();
-                if (typeof hasPermission === 'function' && hasPermission('access_admin')) {
-                    console.log("Marketing: Otevírám admin modal...");
-                    openMarketingAdminModal();
-                }
+                if (typeof hasPermission === 'function' && hasPermission('access_admin')) openMarketingAdminModal();
             };
-            module.style.cursor = typeof hasPermission === 'function' && hasPermission('access_admin') ? 'pointer' : 'default';
-            console.log("Marketing: Renderování dokončeno.");
+            module.style.cursor = isAdmin ? 'pointer' : 'default';
         } catch (err) {
             console.error("Marketing ERROR:", err);
         }
@@ -674,21 +702,31 @@
         if (!modal || !container) return;
 
         const existing = [...(plannerData.marketingWeeks || [])];
-        const currentKT = getISOWeek(new Date());
-        // Zajistit aktuální + dalších 9 týdnů (celkem 10)
+        const now = new Date();
+        // Aktuální + dalších 9 týdnů (celkem 10), s korektním rokem
         const data = [];
         for (let i = 0; i < 10; i++) {
-            const kt = currentKT + i;
-            const found = existing.find(w => Number(w.kt) === kt);
-            data.push(found ? { ...found } : { kt: String(kt), monday: '', thursday: '' });
+            const weekId = offsetWeekId(now, i);
+            const found = existing.find(w => {
+                const p = parseWeekId(w.kt); const q = parseWeekId(weekId);
+                return p.year === q.year && p.week === q.week;
+            });
+            data.push(found ? { ...found, kt: weekId } : { kt: weekId, monday: '', thursday: '' });
         }
-        // Přidat případné starší záznamy z DB (pokud existují KT před aktuálním)
+        // Přidat starší záznamy z DB
         existing.forEach(w => {
-            if (Number(w.kt) < currentKT && !data.find(d => Number(d.kt) === Number(w.kt))) {
-                data.unshift({ ...w });
+            const p = parseWeekId(w.kt);
+            const cur = parseWeekId(getWeekId(now));
+            if (p.year < cur.year || (p.year === cur.year && p.week < cur.week)) {
+                if (!data.find(d => { const q = parseWeekId(d.kt); return q.year === p.year && q.week === p.week; })) {
+                    data.unshift({ ...w });
+                }
             }
         });
-        data.sort((a, b) => Number(a.kt) - Number(b.kt));
+        data.sort((a, b) => {
+            const p = parseWeekId(a.kt), q = parseWeekId(b.kt);
+            return p.year !== q.year ? p.year - q.year : p.week - q.week;
+        });
 
         _renderMarketingEditTable(data);
         modal.style.display = 'flex';
@@ -720,9 +758,15 @@
     }
 
     function _createMarketingEditRowHtml(kt, monday, thursday) {
+        const { year, week } = parseWeekId(kt);
+        const weekId = year + '-' + String(week).padStart(2, '0');
         return `
             <tr class="marketing-edit-row">
-                <td><span class="marketing-edit-kt">${kt}</span><input type="hidden" class="kt-val" value="${kt}"></td>
+                <td>
+                    <input type="hidden" class="kt-val" value="${weekId}">
+                    <span class="marketing-edit-kt">${week}</span>
+                    <span class="marketing-edit-year">${year}</span>
+                </td>
                 <td>
                     <div style="display:flex; align-items:center;">
                         <span class="marketing-blue-tag">Po:</span>
@@ -749,7 +793,19 @@
         if (!body) return;
         
         const lastKtStr = body.querySelector('tr:last-child .kt-val')?.value;
-        const nextKt = lastKtStr ? Number(lastKtStr) + 1 : getISOWeek(new Date());
+        let nextKt;
+        if (lastKtStr) {
+            // Vezmi pondělí daného ISO týdne a posuň o 7 dní = další týden
+            const { year, week } = parseWeekId(lastKtStr);
+            const jan4 = new Date(Date.UTC(year, 0, 4)); // 4. ledna je vždy v KT1
+            const dayOfWeek = jan4.getUTCDay() || 7;
+            const mondayOfWeek1 = new Date(jan4.getTime() - (dayOfWeek - 1) * 86400000);
+            const mondayOfLastKt = new Date(mondayOfWeek1.getTime() + (week - 1) * 7 * 86400000);
+            const mondayOfNextKt = new Date(mondayOfLastKt.getTime() + 7 * 86400000);
+            nextKt = getWeekId(mondayOfNextKt);
+        } else {
+            nextKt = getWeekId(new Date());
+        }
         
         const temp = document.createElement('tbody');
         temp.innerHTML = _createMarketingEditRowHtml(nextKt, '', '');
@@ -3461,10 +3517,12 @@
         // Reset všech ikon
         switcherBtns.forEach(btn => btn.classList.remove('active'));
 
+        const promoModule = document.getElementById('topbar-promo-module');
         if (view === 'admin') {
             if (plannerWrapper) plannerWrapper.style.display = 'none';
             if (monthlyWrapper) monthlyWrapper.style.display = 'none';
             if (statsModule) statsModule.style.display = 'none';
+            if (promoModule) promoModule.style.display = 'none';
             adminView.classList.add('active');
             currentView = 'admin';
             document.getElementById('admin-icon-btn').classList.add('active');
@@ -3476,6 +3534,10 @@
             // Zobrazit statistiku jen v režimech Dashboard a Dovolené
             if (statsModule) {
                 statsModule.style.display = (view === 'dashboard' || view === 'vacation') ? 'flex' : 'none';
+            }
+            // Promo modul — stejná pravidla jako stats (dashboard, vacation, attendance)
+            if (promoModule) {
+                promoModule.style.display = (view === 'dashboard' || view === 'vacation' || view === 'attendance') ? 'flex' : 'none';
             }
 
             // Aktivovat správnou ikonu

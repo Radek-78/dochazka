@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.7";
+const APP_VERSION = "2.8.8";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.8",
+    "date": "2026-04-01",
+    "changes": [
+      "Marketing modul: viditelnost jako stats, YYYY-WW format kt, pill s Po/Ct labely, tooltip bez START"
+    ]
+  },
   {
     "version": "2.8.7",
     "date": "2026-04-01",
