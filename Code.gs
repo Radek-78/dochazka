@@ -670,7 +670,7 @@ function saveAttendanceEntries(entries) {
         allRows[existIdx][noteIdx] = e.note || '';
         allRows[existIdx][apprIdx] = approvedVal;
         if (catIdx !== -1) allRows[existIdx][catIdx] = new Date().toISOString();
-        if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time || '';
+        if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
         if (needsApproval) {
           pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: e.status_id });
         }
@@ -685,7 +685,7 @@ function saveAttendanceEntries(entries) {
         newRow[noteIdx] = e.note || '';
         newRow[apprIdx] = approvedVal;
         if (catIdx !== -1) newRow[catIdx] = new Date().toISOString();
-        if (wstIdx !== -1) newRow[wstIdx] = e.work_start_time || '';
+        if (wstIdx !== -1) newRow[wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
         toInsert.push(newRow);
         attIndex[lookupKey] = allRows.length; // udržuj index aktuální pro případ duplicit ve vstupu
         allRows.push(newRow);

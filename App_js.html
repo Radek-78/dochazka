@@ -719,10 +719,11 @@
             const titleSuffix = stagedDecision === true ? ' → schválit'
                 : stagedDecision === false ? ' → zamítnout'
                     : isPending ? ' (čeká na schválení)' : '';
-            const timeTag = entry.work_start_time
-                ? '<span class="chip-time-tag">' + entry.work_start_time + '</span>'
+            const formattedTime = _formatWorkTime(entry.work_start_time);
+            const timeTag = formattedTime
+                ? '<span class="chip-time-tag">' + formattedTime + '</span>'
                 : '';
-            const timeTitleSuffix = entry.work_start_time ? ' · příchod ' + entry.work_start_time : '';
+            const timeTitleSuffix = formattedTime ? ' · příchod ' + formattedTime : '';
             return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls +
                 '" data-slot="' + entry.slot + '" style="background:' + (st.color || '#94a3b8') +
                 ';color:' + (st.text_color || '#fff') + ';" title="' + (titlePrefix ? titlePrefix + ': ' : '') +
@@ -826,6 +827,24 @@
         if (!plannerData || !plannerData.officeMap) return false;
         var s = (plannerData.statuses || []).find(function (st) { return st.status_id === statusId; });
         return s && s.allows_desk_reservation === 'true';
+    }
+
+    /**
+     * Formátuje work_start_time na "H:MM".
+     * Zvládá HH:MM string i ISO date string (Google Sheets time konverze).
+     */
+    function _formatWorkTime(val) {
+        if (!val) return '';
+        var s = String(val);
+        // ISO date string (Google Sheets uložil čas jako datum: "1899-12-30T08:00:00.000Z")
+        if (s.indexOf('T') !== -1) {
+            var d = new Date(s);
+            if (!isNaN(d)) return d.getUTCHours() + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+        }
+        // HH:MM nebo H:MM string
+        var m = s.match(/^(\d{1,2}):(\d{2})/);
+        if (m) return parseInt(m[1]) + ':' + m[2];
+        return s;
     }
 
     /** Vrátí true pokud je status "kancelářský" (allows_desk_reservation), bez ohledu na mapu. */
@@ -1446,6 +1465,9 @@
                     _persistQueues();
                     clearTimeout(_attSaveTimer);
                     _attSaveTimer = setTimeout(flushAttendanceQueue, 400);
+                    // Re-render chipu aby se čas okamžitě zobrazil
+                    var cellEl = getCellElement(_attModal.userId, dk);
+                    if (cellEl) renderAttendanceCell(cellEl, _attModal.userId, dk);
                 }
             }
             workStartBox.style.display = 'none';

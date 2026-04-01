@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.5.2";
+const APP_VERSION = "2.5.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.5.3",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava formátu času příchodu v chipu a uložení jako text v DB"
+    ]
+  },
   {
     "version": "2.5.2",
     "date": "2026-04-01",
