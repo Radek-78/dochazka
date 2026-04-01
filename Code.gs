@@ -548,6 +548,13 @@ function saveAttendanceEntries(entries) {
       headers.push('created_at');
     }
 
+    // Auto-migrace: pokud sloupec work_start_time v sheetu chybí, přidej ho
+    if (headers.indexOf('work_start_time') === -1) {
+      var newCol = headers.length + 1;
+      sheet.getRange(1, newCol).setValue('work_start_time');
+      headers.push('work_start_time');
+    }
+
     const aidIdx  = headers.indexOf('attendance_id');
     const uidIdx  = headers.indexOf('user_id');
     const dateIdx = headers.indexOf('date');
@@ -556,6 +563,7 @@ function saveAttendanceEntries(entries) {
     const noteIdx = headers.indexOf('note');
     const apprIdx = headers.indexOf('approved');
     const catIdx  = headers.indexOf('created_at');
+    const wstIdx  = headers.indexOf('work_start_time');
 
     const lastRow = sheet.getLastRow();
     const allRows = lastRow > 1
@@ -662,6 +670,7 @@ function saveAttendanceEntries(entries) {
         allRows[existIdx][noteIdx] = e.note || '';
         allRows[existIdx][apprIdx] = approvedVal;
         if (catIdx !== -1) allRows[existIdx][catIdx] = new Date().toISOString();
+        if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time || '';
         if (needsApproval) {
           pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: e.status_id });
         }
@@ -676,6 +685,7 @@ function saveAttendanceEntries(entries) {
         newRow[noteIdx] = e.note || '';
         newRow[apprIdx] = approvedVal;
         if (catIdx !== -1) newRow[catIdx] = new Date().toISOString();
+        if (wstIdx !== -1) newRow[wstIdx] = e.work_start_time || '';
         toInsert.push(newRow);
         attIndex[lookupKey] = allRows.length; // udržuj index aktuální pro případ duplicit ve vstupu
         allRows.push(newRow);

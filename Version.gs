@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.4.2";
+const APP_VERSION = "2.5.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.5.0",
+    "date": "2026-04-01",
+    "changes": [
+      "Přidání zobrazení času příchodu pro status Kancelář"
+    ]
+  },
   {
     "version": "2.4.2",
     "date": "2026-03-31",

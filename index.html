@@ -479,8 +479,8 @@
           </button>
         </div>
         <div id="deploy-time-footer">
-          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.4.2</a> 
-          | RBAC Scoped Engine Ready | Aktualizace: 31.03.2026 15:29
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.5.0</a> 
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 07:49
         </div>
       </footer>
     </div>
@@ -866,6 +866,10 @@
       <div class="att-modal-footer">
         <div class="att-footer-actions">
           <button id="att-clear-btn" class="att-clear-btn" onclick="clearAttendanceStatus()">🗑 Vymazat</button>
+        </div>
+        <div id="att-work-start-box" style="display:none; align-items:center; gap:8px; background:#f0f9ff; border:1.5px solid #bae6fd; border-radius:8px; padding:7px 12px;">
+          <span style="font-size:13px; color:#0369a1; white-space:nowrap;">⏰ Příchod:</span>
+          <input type="time" id="att-work-start-time" style="padding:5px 8px; border:1.5px solid #bae6fd; border-radius:6px; font-size:13px; font-family:inherit; color:#0c4a6e; background:#fff; width:100px;">
         </div>
         <button class="att-close-btn" id="att-close-btn" onclick="closeAttendanceModal()">Hotovo</button>
       </div>
@@ -1268,6 +1272,32 @@
               <input type="checkbox" value="true" ${user.sync_planner === 'true' ? 'checked' : ''} onchange="handleCalendarSyncToggle(this,'planner')" ${!canEditSync ? 'disabled' : ''}>
               <span class="sec-toggle-slider"></span>
             </label>
+          </div>
+        </div>
+
+        <!-- Začátek pracovní doby -->
+        <div class="modal-section" style="margin-top:16px; margin-bottom:0;">
+          <div class="modal-section-title">⏰ Začátek pracovní doby</div>
+          <p style="font-size:12px; color:#64748b; margin:0 0 14px; line-height:1.6;">
+            Při výběru statusu Kancelář se zobrazí políčko pro zadání času příchodu.
+          </p>
+          <div class="sec-config-leader-toggle">
+            <div class="sec-toggle-label">
+              <span class="sec-toggle-icon">🕐</span>
+              <div>
+                <div>Zobrazovat čas příchodu</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Při výběru Kancelář zobrazit pole pro čas začátku</div>
+              </div>
+            </div>
+            <label class="sec-toggle-switch">
+              <input type="hidden" name="show_work_start_time" value="${user.show_work_start_time === 'true' ? 'true' : 'false'}">
+              <input type="checkbox" value="true" ${user.show_work_start_time === 'true' ? 'checked' : ''} onchange="this.previousElementSibling.value = this.checked ? 'true' : 'false'">
+              <span class="sec-toggle-slider"></span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-top:14px;">
+            <label>Výchozí čas příchodu</label>
+            <input type="time" name="default_work_start_time" value="${user.default_work_start_time || '08:00'}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
           </div>
         </div>
 

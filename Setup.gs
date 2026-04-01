@@ -101,7 +101,7 @@ const Setup = {
       case DB_SHEETS.CORE.POSITIONS:
         headers = ["position_id", "name", "active", "org_role"]; break;
       case DB_SHEETS.CORE.USERS:
-        headers = ["user_id", "email", "first_name", "last_name", "section_id", "department_id", "group_id", "position_id", "system_role", "org_role", "date_start", "date_end", "active", "auth_status", "last_active", "last_visit", "sync_own_attendance", "sync_team_vacations", "vacation_days_total", "vacation_days_carried_over"]; break;
+        headers = ["user_id", "email", "first_name", "last_name", "section_id", "department_id", "group_id", "position_id", "system_role", "org_role", "date_start", "date_end", "active", "auth_status", "last_active", "last_visit", "sync_own_attendance", "sync_team_vacations", "vacation_days_total", "vacation_days_carried_over", "show_work_start_time", "default_work_start_time"]; break;
       case DB_SHEETS.CORE.ATTENDANCE_STATUSES:
         headers = ["status_id", "name", "abbreviation", "color", "text_color", "category", "requires_approval", "allows_desk_reservation", "active", "is_vacation"]; break;
       case DB_SHEETS.CORE.VACATION_CONFIG:
@@ -118,7 +118,7 @@ const Setup = {
         headers = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN"]; break;
 
       case DB_SHEETS.TRANSACTION.ATTENDANCE:
-        headers = ["attendance_id", "user_id", "date", "status_id", "slot", "note", "approved", "created_at"]; break;
+        headers = ["attendance_id", "user_id", "date", "status_id", "slot", "note", "approved", "created_at", "work_start_time"]; break;
       case DB_SHEETS.TRANSACTION.PLANNER_EVENTS:
         headers = ["event_id", "group_id", "user_id", "date", "type", "description", "status"]; break;
       case DB_SHEETS.TRANSACTION.MAP_RESERVATIONS:

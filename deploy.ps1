@@ -88,6 +88,17 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# Git push
+Write-Host ""
+Write-Host "Odesílám commit na Git remote..." -ForegroundColor Yellow
+git push
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "Git push SELHAL!" -ForegroundColor Red
+    pause
+    exit $LASTEXITCODE
+}
+
 Write-Host ""
 Write-Host "====================================================" -ForegroundColor Green
 Write-Host "    Nasazení v$newVersion proběhlo úspěšně!" -ForegroundColor Green

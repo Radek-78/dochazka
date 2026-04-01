@@ -35,7 +35,7 @@
     let _batchMode = { active: false, status_id: null, slot: 'ALL_DAY', action: 'ENTRY' };
     let _batchActionRequest = null; // 'ENTRY' or 'DELETE'
     let _approvalMode = { active: false, entries: [], requesterId: null, decisions: {} };
-    
+
     // --- BACKGROUND PREFETCH CACHE ---
     // key: `year_month` (např. '2026_0')
     let _attendanceCache = {};
@@ -203,16 +203,16 @@
         if (!_attendanceCache[cacheKey]) {
             const officeMap = plannerData?.officeMap;
             const yearMonth = year + '-' + String(month + 1).padStart(2, '0');
-            
+
             _attendanceCache[cacheKey] = Promise.all([
                 callServer('getMonthAttendance', year, month),
                 (officeMap && officeMap.map_id)
                     ? callServer('getMapReservationsForMonth', officeMap.map_id, yearMonth)
                     : Promise.resolve(null)
             ]);
-            
+
             // Log for debugging
-            console.log(`[Prefetch] Started downloading: ${year}-${month+1}`);
+            console.log(`[Prefetch] Started downloading: ${year}-${month + 1}`);
         }
         return _attendanceCache[cacheKey];
     }
@@ -222,22 +222,22 @@
      */
     async function startBackgroundPrefetch() {
         if (!plannerData) return;
-        
+
         let monthsToFetch = [];
         // Předchozí 1 měsíc
         let pDate = new Date(currYear, currMonth - 1, 1);
-        monthsToFetch.push({y: pDate.getFullYear(), m: pDate.getMonth()});
-        
+        monthsToFetch.push({ y: pDate.getFullYear(), m: pDate.getMonth() });
+
         // Následujících 12 měsíců
         for (let i = 1; i <= 12; i++) {
             let nDate = new Date(currYear, currMonth + i, 1);
-            monthsToFetch.push({y: nDate.getFullYear(), m: nDate.getMonth()});
+            monthsToFetch.push({ y: nDate.getFullYear(), m: nDate.getMonth() });
         }
-        
+
         const toast = document.getElementById('prefetch-toast');
         const toastText = document.getElementById('prefetch-toast-text');
         const progressBar = document.getElementById('prefetch-progress-bar');
-        
+
         if (toast) toast.classList.add('active');
 
         const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
@@ -245,14 +245,14 @@
         for (let i = 0; i < monthsToFetch.length; i++) {
             let req = monthsToFetch[i];
             let mName = monthNames[req.m] + " " + req.y;
-            
+
             // Aktualizace textu a progressbaru
             if (toastText) toastText.innerText = `Načítám: ${mName}`;
             if (progressBar) {
                 const percent = Math.round(((i + 1) / monthsToFetch.length) * 100);
                 progressBar.style.width = percent + "%";
             }
-            
+
             try {
                 const [attRes] = await _fetchMonthDataCached(req.y, req.m);
                 if (attRes && attRes.success) {
@@ -268,17 +268,17 @@
                 console.warn('[Prefetch] Error fetching background data:', req, err);
             }
         }
-        
+
         if (toastText) toastText.innerText = "Všechna data jsou připravena.";
         const toastTitle = document.getElementById('prefetch-toast-title');
         if (toastTitle) toastTitle.innerText = "Optimalizace dokončena";
-        
+
         setTimeout(() => {
             if (toast) toast.classList.remove('active');
             // Reset po zmizení
             setTimeout(() => {
-               if (progressBar) progressBar.style.width = "0%";
-               if (toastTitle) toastTitle.innerText = "Optimalizace kalendáře";
+                if (progressBar) progressBar.style.width = "0%";
+                if (toastTitle) toastTitle.innerText = "Optimalizace kalendáře";
             }, 600);
         }, 3000);
     }
@@ -286,7 +286,7 @@
     async function loadAttendance() {
         if (!plannerData) return;
         _attLoadInProgress = true;
-        
+
         // Ukaž spinner POUZE pokud data ještě nejsou v cache a budou se teprve stahovat
         const cacheKey = currYear + '_' + currMonth;
         const spinner = document.getElementById('calendar-loading-overlay');
@@ -329,7 +329,7 @@
             renderAttendanceInGrid();
             // Po načtení základních dat iniciujeme statistiky a heartbeat
             initStatsAndHeartbeat();
-            
+
             // Spusť tiché načtení okolních měsíců do cache (využije volný čas JS i sítě)
             startBackgroundPrefetch();
         } catch (e) {
@@ -661,10 +661,10 @@
     // Vykreslí chipsy pro jednu buňku (ALL_DAY = celá buňka, AM/PM = poloviny)
     function renderAttendanceCell(cellEl, userId, date) {
         if (!plannerData || !plannerData.statuses) return;
-        
+
         cellEl.innerHTML = '';
         cellEl.classList.remove('has-status', 'weekend', 'sat', 'sun', 'holiday', 'row-highlighted');
-        
+
         // Zvýraznění řádku
         if (_highlightedUserId === userId) {
             cellEl.classList.add('row-highlighted');
@@ -824,6 +824,37 @@
         return s && s.allows_desk_reservation === 'true';
     }
 
+    /** Vrátí true pokud je status "kancelářský" (allows_desk_reservation), bez ohledu na mapu. */
+    function _statusIsOffice(statusId) {
+        if (!plannerData) return false;
+        var s = (plannerData.statuses || []).find(function (st) { return st.status_id === statusId; });
+        return !!(s && s.allows_desk_reservation === 'true');
+    }
+
+    /** Vrátí true pokud má uživatel zapnuto zobrazení time boxu A status je kancelářský. */
+    function _shouldShowWorkStartTimeBox(statusId) {
+        if (!plannerData || !plannerData.user) return false;
+        if (_attModal.userId !== plannerData.user.user_id) return false;
+        if (plannerData.user.show_work_start_time !== 'true') return false;
+        return _statusIsOffice(statusId);
+    }
+
+    function _showWorkStartTimeBox(slot) {
+        var box = document.getElementById('att-work-start-box');
+        var input = document.getElementById('att-work-start-time');
+        if (!box || !input) return;
+        var defaultTime = (plannerData && plannerData.user && plannerData.user.default_work_start_time) || '08:00';
+        input.value = defaultTime;
+        box.style.display = 'flex';
+        _attModal._workStartSlot = slot;
+    }
+
+    function _hideWorkStartTimeBox() {
+        var box = document.getElementById('att-work-start-box');
+        if (box) box.style.display = 'none';
+        _attModal._workStartSlot = null;
+    }
+
     /**
      * Přidá červený rámeček buňce pokud je status Kancelář a chybí rezervace stolu.
      * Volá se z renderAttendanceCell (jen pro vlastního uživatele).
@@ -931,6 +962,12 @@
                 var status = plannerData.statuses.find(function (s) { return s.status_id === _batchMode.statusId; });
                 if (!status) return;
                 var entry = { user_id: userId, date: date, slot: slot, status_id: _batchMode.statusId, note: '' };
+                // Automaticky přidat výchozí čas příchodu pro vlastní Kancelář záznamy
+                if (userId === plannerData.user.user_id &&
+                    plannerData.user.show_work_start_time === 'true' &&
+                    _statusIsOffice(_batchMode.statusId)) {
+                    entry.work_start_time = plannerData.user.default_work_start_time || '08:00';
+                }
                 _attendanceData[key] = entry;
                 renderAttendanceCell(cellEl, userId, date);
                 var chip = cellEl.querySelector('[data-slot="' + slot + '"]');
@@ -1031,7 +1068,7 @@
         // Dynamický výpočet limitu pro zobrazení ve 2 řadách (min 5, max polovina celku)
         var totalActive = rawStatuses.length;
         var rowLimit = Math.max(5, Math.ceil(totalActive / 2));
-        
+
         // Algoritmus pro balení do řádků
         var packedRows = [];
         var currentRow = null;
@@ -1062,10 +1099,10 @@
             });
             html += '</div>';
         });
-        
+
         var gridEl = document.getElementById('att-status-grid');
         gridEl.innerHTML = html;
-        
+
         // Nastavit počet sloupců podle nejdelší řady, aby mřížka lícovala
         var maxInRow = 0;
         packedRows.forEach(r => maxInRow = Math.max(maxInRow, r.items.length));
@@ -1314,14 +1351,14 @@
         }
         // Pokud jsme byli v režimu čekání na status pro hromadné zadávání
         if (typeof _batchActionRequest !== 'undefined' && _batchActionRequest === 'ENTRY') {
-            _batchMode = { 
-                active: true, 
-                statusId: statusId, 
-                slot: _attModal.slot || 'ALL_DAY', 
-                action: 'ENTRY' 
+            _batchMode = {
+                active: true,
+                statusId: statusId,
+                slot: _attModal.slot || 'ALL_DAY',
+                action: 'ENTRY'
             };
             _batchActionRequest = null; // Reset
-            
+
             document.getElementById('attendance-modal').classList.remove('visible');
             const banner = document.getElementById('batch-mode-banner');
             if (banner) {
@@ -1334,17 +1371,27 @@
 
         document.getElementById('att-apply-row').classList.add('visible');
         document.getElementById('att-clear-btn').classList.add('visible');
-        
+
         // Hromadná tlačítka jsou nyní trvale vidět, pokud canEdit (zajištěno v openModal)
 
         // Auto-close nebo zobrazit/skrýt mapu kanceláře
         var isFullDay = (_attModal.mode === 'FULL');
         var isSecondHalf = (_attModal.mode === 'HALF' && slot === 'PM');
         var needsDesk = _statusNeedsDeskReservation(statusId) && plannerData && plannerData.officeMap;
+        var needsWorkTime = _shouldShowWorkStartTimeBox(statusId);
+
+        // Zobrazit nebo skrýt box pro čas příchodu
+        if (needsWorkTime) {
+            _showWorkStartTimeBox(slot || 'ALL_DAY');
+        } else {
+            _hideWorkStartTimeBox();
+        }
 
         if (isFullDay || isSecondHalf) {
             if (needsDesk) {
                 setTimeout(function () { _showMapInModal(_attModal.date); }, 100);
+            } else if (needsWorkTime) {
+                // Nezavírat modal – uživatel upraví čas a klikne Hotovo
             } else {
                 setTimeout(closeAttendanceModal, 150);
             }
@@ -1380,8 +1427,28 @@
     }
 
     function closeAttendanceModal() {
+        // Pokud je viditelný box pro čas příchodu, aktualizuj záznam a re-ulož
+        var workStartBox = document.getElementById('att-work-start-box');
+        if (workStartBox && workStartBox.style.display !== 'none') {
+            var timeInput = document.getElementById('att-work-start-time');
+            var workStartSlot = _attModal._workStartSlot;
+            if (timeInput && timeInput.value && _attModal.userId && _attModal.date && workStartSlot) {
+                var dk = String(_attModal.date).substring(0, 10);
+                var key = _attModal.userId + '_' + dk + '_' + workStartSlot;
+                var entry = _attendanceData[key];
+                if (entry) {
+                    entry.work_start_time = timeInput.value;
+                    _attWriteQueue[key] = entry;
+                    _persistQueues();
+                    clearTimeout(_attSaveTimer);
+                    _attSaveTimer = setTimeout(flushAttendanceQueue, 400);
+                }
+            }
+            workStartBox.style.display = 'none';
+        }
+
         document.getElementById('attendance-modal').classList.remove('visible');
-        
+
         // Reset stavu hromadného výběru, pokud byl aktivní
         const previewContainer = document.querySelector('.att-status-preview-container');
         if (previewContainer) {
@@ -2410,7 +2477,7 @@
         } else {
             // NOVÉ FLOW: Zadávání -> nejprve musíme vybrat status v modálu
             _batchActionRequest = 'ENTRY';
-            
+
             // Zvýrazníme preview box
             const previewContainer = document.querySelector('.att-status-preview-container');
             if (previewContainer) {
@@ -2418,7 +2485,7 @@
                 const previewMsg = previewContainer.querySelector('.att-status-preview-msg');
                 if (previewMsg) previewMsg.innerText = 'KLIKNĚTE NA STATUS PRO HROMADNÉ ZADÁVÁNÍ';
             }
-            
+
             // Poznámka: Žádné innerText na att-slot-helper, ten už neexistuje
         }
     }
@@ -2651,14 +2718,14 @@
             var res = await callServer('processVacationDecisions', approvedIds, rejectedIds);
             if (res && res.success) {
                 // Optimistický update: schválené → approved='true', zamítnuté → smazat z dat
-                _approvalMode.entries.forEach(function(e) {
+                _approvalMode.entries.forEach(function (e) {
                     var aid = e.attendance_id;
                     if (!aid) return;
                     var dec = _approvalMode.decisions[aid];
                     if (dec === undefined) return;
 
-                    [_attendanceData, _globalAttendanceData].forEach(function(store) {
-                        Object.keys(store).forEach(function(key) {
+                    [_attendanceData, _globalAttendanceData].forEach(function (store) {
+                        Object.keys(store).forEach(function (key) {
                             if (store[key] && store[key].attendance_id === aid) {
                                 if (dec) {
                                     // Schváleno → aktualizuj stav
@@ -2738,9 +2805,9 @@
 
     function _hasPendingQueueItems() {
         return Object.keys(_attWriteQueue).length > 0 ||
-               Object.keys(_attDeleteQueue).length > 0 ||
-               _attInFlight.length > 0 ||
-               _attDeleteInFlight.length > 0;
+            Object.keys(_attDeleteQueue).length > 0 ||
+            _attInFlight.length > 0 ||
+            _attDeleteInFlight.length > 0;
     }
 
     // ─── WRITE QUEUE ────────────────────────────────────────────────────────────
@@ -2749,7 +2816,9 @@
         var slot = entry.slot || 'ALL_DAY';
         var dk = String(entry.date).substring(0, 10);
         var key = entry.user_id + '_' + dk + '_' + slot;
-        _attWriteQueue[key] = { user_id: entry.user_id, date: dk, slot: slot, status_id: entry.status_id };
+        var toQueue = { user_id: entry.user_id, date: dk, slot: slot, status_id: entry.status_id };
+        if (entry.work_start_time) toQueue.work_start_time = entry.work_start_time;
+        _attWriteQueue[key] = toQueue;
         _attendanceData[key] = _attWriteQueue[key];
         _persistQueues();
 
@@ -3395,7 +3464,7 @@
 
     function openSectionSwitcher() {
         if (!plannerData || !plannerData.sections) return;
-        var sections = plannerData.sections.filter(function(s) { return s.active !== 'false'; });
+        var sections = plannerData.sections.filter(function (s) { return s.active !== 'false'; });
         if (sections.length <= 1) return;
 
         var mySection = plannerData.user.section_id;
@@ -3409,8 +3478,8 @@
             '</div>' +
             '<div class="section-switcher-list">';
 
-        sections.sort(function(a, b) { return (a.name || '').localeCompare(b.name || '', 'cs'); });
-        sections.forEach(function(s) {
+        sections.sort(function (a, b) { return (a.name || '').localeCompare(b.name || '', 'cs'); });
+        sections.forEach(function (s) {
             var isActive = s.section_id === activeSid;
             var isHome = s.section_id === mySection;
             html += '<div class="section-switcher-item' + (isActive ? ' active' : '') + '"' +
@@ -3559,16 +3628,16 @@
                 const yearPrefix = String(year) + '-';
                 const monthPrefix = yearPrefix + String(month + 1).padStart(2, '0') + '-';
                 const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
-                
+
                 let usedYear = 0;
                 let usedMonth = 0;
                 Object.values(_globalAttendanceData).forEach(entry => {
                     if (entry.user_id !== emp.user_id) return;
                     if (!vacStatIds.includes(entry.status_id)) return;
-                    
+
                     const dateStr = String(entry.date);
                     const val = (entry.slot === 'ALL_DAY' || !entry.slot) ? 1 : 0.5;
-                    
+
                     if (dateStr.startsWith(yearPrefix)) usedYear += val;
                     if (dateStr.startsWith(monthPrefix)) usedMonth += val;
                 });
@@ -4863,7 +4932,7 @@
 
         for (var r = 0; r < map.rows; r++) {
             for (var c = 0; c < map.cols; c++) {
-                var cell = (map.cells || []).find(function(x) { return x.row === r && x.col === c; });
+                var cell = (map.cells || []).find(function (x) { return x.row === r && x.col === c; });
                 if (!cell) cell = { id: 'r' + r + 'c' + c, row: r, col: c, type: 'empty', label: '', permanent_user_id: '' };
 
                 if (cell.type !== 'desk') {
@@ -4879,15 +4948,15 @@
                 // Iniciály
                 var userInitials = '';
                 if (cell.permanent_user_id) {
-                    var u = (plannerData.employees || []).find(function(e) { return e.user_id === cell.permanent_user_id; });
+                    var u = (plannerData.employees || []).find(function (e) { return e.user_id === cell.permanent_user_id; });
                     if (u) userInitials = (u.first_name || '').charAt(0) + (u.last_name || '').charAt(0);
                 } else if (deskClass === 'desk-occupied' || deskClass === 'desk-mine') {
-                    var reservedBy = Object.entries(_mapReservations).find(function(kv) {
+                    var reservedBy = Object.entries(_mapReservations).find(function (kv) {
                         return kv[1].cell_id === cell.id && kv[1].date === date;
                     });
                     if (reservedBy) {
                         var reservedUserId = reservedBy[0].split('_')[0];
-                        var ru = (plannerData.employees || []).find(function(e) { return e.user_id === reservedUserId; });
+                        var ru = (plannerData.employees || []).find(function (e) { return e.user_id === reservedUserId; });
                         if (ru) userInitials = (ru.first_name || '').charAt(0) + (ru.last_name || '').charAt(0);
                     }
                 }
@@ -4897,15 +4966,15 @@
                 if (userInitials) {
                     var fullName = '';
                     if (cell.permanent_user_id) {
-                        var uu = (plannerData.employees || []).find(function(e) { return e.user_id === cell.permanent_user_id; });
+                        var uu = (plannerData.employees || []).find(function (e) { return e.user_id === cell.permanent_user_id; });
                         if (uu) fullName = uu.first_name + ' ' + uu.last_name;
                     } else if (deskClass === 'desk-occupied' || deskClass === 'desk-mine') {
-                        var rb = Object.entries(_mapReservations).find(function(kv) {
+                        var rb = Object.entries(_mapReservations).find(function (kv) {
                             return kv[1].cell_id === cell.id && kv[1].date === date;
                         });
                         if (rb) {
                             var rid = rb[0].split('_')[0];
-                            var ruu = (plannerData.employees || []).find(function(e) { return e.user_id === rid; });
+                            var ruu = (plannerData.employees || []).find(function (e) { return e.user_id === rid; });
                             if (ruu) fullName = ruu.first_name + ' ' + ruu.last_name;
                         }
                     }
@@ -4927,7 +4996,7 @@
     function _getUnreservedOfficeDays() {
         if (!plannerData || !plannerData.officeMap) return [];
         var myUserId = plannerData.user.user_id;
-        var hasPermanent = (plannerData.officeMap.cells || []).some(function(c) {
+        var hasPermanent = (plannerData.officeMap.cells || []).some(function (c) {
             return c.type === 'desk' && c.permanent_user_id === myUserId;
         });
         if (hasPermanent) return [];
@@ -4941,7 +5010,7 @@
             var dw = new Date(dateStr + 'T12:00:00').getDay();
             if (dw === 0 || dw === 6) continue;
 
-            var hasOfficeStatus = ['ALL_DAY', 'AM', 'PM'].some(function(slot) {
+            var hasOfficeStatus = ['ALL_DAY', 'AM', 'PM'].some(function (slot) {
                 var e = _attendanceData[myUserId + '_' + dateStr + '_' + slot];
                 return e && _statusNeedsDeskReservation(e.status_id);
             });
@@ -4962,7 +5031,7 @@
         }
         alertEl.style.display = '';
 
-        var dayChips = missing.map(function(dateStr) {
+        var dayChips = missing.map(function (dateStr) {
             var parts = dateStr.split('-');
             var label = parseInt(parts[2], 10) + '.' + parseInt(parts[1], 10) + '.';
             var isActive = dateStr === _mapModalDate ? ' map-day-chip-active' : '';
@@ -4971,11 +5040,11 @@
 
         alertEl.innerHTML =
             '<div class="map-missing-alert-top">' +
-                '<span class="map-missing-alert-text">' +
-                    '<span class="map-missing-badge">' + missing.length + '</span>' +
-                    ' ' + (missing.length === 1 ? 'den bez rezervace místa' : (missing.length < 5 ? 'dny bez rezervace místa' : 'dnů bez rezervace místa')) +
-                '</span>' +
-                '<button class="map-bulk-reserve-btn" onclick="mapBulkReserve()">Zarezervovat vybrané místo na všechny</button>' +
+            '<span class="map-missing-alert-text">' +
+            '<span class="map-missing-badge">' + missing.length + '</span>' +
+            ' ' + (missing.length === 1 ? 'den bez rezervace místa' : (missing.length < 5 ? 'dny bez rezervace místa' : 'dnů bez rezervace místa')) +
+            '</span>' +
+            '<button class="map-bulk-reserve-btn" onclick="mapBulkReserve()">Zarezervovat vybrané místo na všechny</button>' +
             '</div>' +
             '<div class="map-day-chips">' + dayChips + '</div>';
     }
@@ -4999,18 +5068,18 @@
 
         // Zjisti pro které dny je stůl volný
         var reservable = [];
-        missing.forEach(function(dateStr) {
+        missing.forEach(function (dateStr) {
             // Zkontroluj zda na tento stůl nikdo jiný nemá rezervaci
-            var taken = Object.entries(_mapReservations).some(function(kv) {
+            var taken = Object.entries(_mapReservations).some(function (kv) {
                 return kv[1].cell_id === cellId && kv[1].date === dateStr && kv[0].split('_')[0] !== myUserId;
             });
             // Zkontroluj permanent_user na tomto stolu
-            var deskCell = (map.cells || []).find(function(c) { return c.id === cellId; });
+            var deskCell = (map.cells || []).find(function (c) { return c.id === cellId; });
             if (deskCell && deskCell.permanent_user_id && deskCell.permanent_user_id !== myUserId) {
                 // Stůl má trvalého uživatele — zkontroluj zda ten den je pryč
                 var puId = deskCell.permanent_user_id;
-                var puEntries = ['ALL_DAY', 'AM', 'PM'].map(function(s) { return _attendanceData[puId + '_' + dateStr + '_' + s]; }).filter(Boolean);
-                var comesToOffice = puEntries.some(function(e) { return _statusNeedsDeskReservation(e.status_id); });
+                var puEntries = ['ALL_DAY', 'AM', 'PM'].map(function (s) { return _attendanceData[puId + '_' + dateStr + '_' + s]; }).filter(Boolean);
+                var comesToOffice = puEntries.some(function (e) { return _statusNeedsDeskReservation(e.status_id); });
                 if (comesToOffice || puEntries.length === 0) taken = true;
             }
             if (!taken) reservable.push(dateStr);
@@ -5024,18 +5093,18 @@
         var skipped = missing.length - reservable.length;
 
         // Optimistický update + uložení na server
-        reservable.forEach(function(dateStr) {
+        reservable.forEach(function (dateStr) {
             _mapReservations[myUserId + '_' + dateStr] = { reservation_id: '', map_id: map.map_id, cell_id: cellId, date: dateStr };
             callServer('saveMapReservation', { map_id: map.map_id, cell_id: cellId, user_id: myUserId, date: dateStr })
-                .then(function(res) {
+                .then(function (res) {
                     if (res && res.success && res.id && _mapReservations[myUserId + '_' + dateStr]) {
                         _mapReservations[myUserId + '_' + dateStr].reservation_id = res.id;
                     }
-                }).catch(function(e) { console.warn('bulkReserve:', e); });
+                }).catch(function (e) { console.warn('bulkReserve:', e); });
         });
 
         // Překresli kalendářní buňky (odstraní červený okraj needs-desk-chip)
-        reservable.forEach(function(dateStr) {
+        reservable.forEach(function (dateStr) {
             var cellEl = getCellElement(myUserId, dateStr);
             if (cellEl) renderAttendanceCell(cellEl, myUserId, dateStr);
         });
@@ -5059,7 +5128,7 @@
 
             var map = plannerData.officeMap;
             callServer('deleteMapReservation', map.map_id, myUserId, date)
-                .catch(function(e) { console.warn('deleteMapReservation:', e); });
+                .catch(function (e) { console.warn('deleteMapReservation:', e); });
         } else {
             // Nová rezervace
             var map = plannerData.officeMap;
@@ -5069,17 +5138,17 @@
             if (cellEl) renderAttendanceCell(cellEl, myUserId, date);
 
             callServer('saveMapReservation', { map_id: map.map_id, cell_id: cellId, user_id: myUserId, date: date })
-                .then(function(res) {
+                .then(function (res) {
                     if (res && res.success && res.id && _mapReservations[myUserId + '_' + date]) {
                         _mapReservations[myUserId + '_' + date].reservation_id = res.id;
                     }
                 })
-                .catch(function(e) { console.warn('saveMapReservation:', e); });
+                .catch(function (e) { console.warn('saveMapReservation:', e); });
         }
     }
 
     // Zavřít map modal klikem na backdrop
-    document.getElementById('office-map-modal')?.addEventListener('click', function(e) {
+    document.getElementById('office-map-modal')?.addEventListener('click', function (e) {
         if (e.target === this) closeOfficeMapModal();
     });
 
@@ -5115,7 +5184,7 @@
     }
 
     function _loadLogEntries(offset) {
-        callServer('getAttendanceLog', offset).then(function(res) {
+        callServer('getAttendanceLog', offset).then(function (res) {
             if (!res || !res.success) {
                 document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Chyba: ' + ((res && res.error) || 'Neznámá') + '</td></tr>';
                 return;
@@ -5136,7 +5205,7 @@
             if (loadMoreDiv) loadMoreDiv.style.display = _logHasMore ? 'flex' : 'none';
             var countInfo = document.getElementById('log-count-info');
             if (countInfo) countInfo.textContent = 'Zobrazeno ' + _logData.length + ' z ' + (res.total || _logData.length);
-        }).catch(function(e) {
+        }).catch(function (e) {
             document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Chyba načítání</td></tr>';
             console.warn('getAttendanceLog error:', e);
         });
@@ -5150,9 +5219,9 @@
         // Uživatelé
         var userSelect = document.getElementById('log-filter-user');
         var users = {};
-        _logData.forEach(function(e) { users[e.user_id] = e.user_name; });
+        _logData.forEach(function (e) { users[e.user_id] = e.user_name; });
         var opts = '<option value="">Všichni uživatelé</option>';
-        Object.keys(users).sort(function(a, b) { return users[a].localeCompare(users[b], 'cs'); }).forEach(function(uid) {
+        Object.keys(users).sort(function (a, b) { return users[a].localeCompare(users[b], 'cs'); }).forEach(function (uid) {
             opts += '<option value="' + uid + '">' + users[uid] + '</option>';
         });
         userSelect.innerHTML = opts;
@@ -5160,9 +5229,9 @@
         // Statusy
         var statusSelect = document.getElementById('log-filter-status');
         var statuses = {};
-        _logData.forEach(function(e) { statuses[e.status_id] = e.status_name; });
+        _logData.forEach(function (e) { statuses[e.status_id] = e.status_name; });
         var sOpts = '<option value="">Všechny statusy</option>';
-        Object.keys(statuses).sort(function(a, b) { return statuses[a].localeCompare(statuses[b], 'cs'); }).forEach(function(sid) {
+        Object.keys(statuses).sort(function (a, b) { return statuses[a].localeCompare(statuses[b], 'cs'); }).forEach(function (sid) {
             sOpts += '<option value="' + sid + '">' + statuses[sid] + '</option>';
         });
         statusSelect.innerHTML = sOpts;
@@ -5192,7 +5261,7 @@
         var filterFrom = document.getElementById('log-filter-from').value;
         var filterTo = document.getElementById('log-filter-to').value;
 
-        var filtered = _logData.filter(function(e) {
+        var filtered = _logData.filter(function (e) {
             if (filterUser && e.user_id !== filterUser) return false;
             if (filterStatus && e.status_id !== filterStatus) return false;
             if (filterFrom && e.date < filterFrom) return false;
@@ -5207,7 +5276,7 @@
 
         var slotLabels = { 'ALL_DAY': 'Celý den', 'AM': 'Dopoledne', 'PM': 'Odpoledne' };
         var html = '';
-        filtered.forEach(function(e) {
+        filtered.forEach(function (e) {
             var ts = e.created_at ? _formatLogTimestamp(e.created_at) : '—';
             var dateFormatted = e.date ? e.date.split('-').reverse().join('.') : '—';
             var textColor = _darkTextStatuses.indexOf(e.status_name) !== -1 ? '#1e293b' : 'white';
@@ -5216,7 +5285,7 @@
                 '<td>' + e.user_name + '</td>' +
                 '<td>' + dateFormatted + '</td>' +
                 '<td><span class="log-status-badge" style="background:' + (e.status_color || '#94a3b8') + '; color:' + textColor + '">' +
-                    (e.status_icon ? e.status_icon + ' ' : '') + e.status_name + '</span></td>' +
+                (e.status_icon ? e.status_icon + ' ' : '') + e.status_name + '</span></td>' +
                 '<td><span class="log-slot-badge">' + (slotLabels[e.slot] || e.slot) + '</span></td>' +
                 '</tr>';
         });
@@ -5233,11 +5302,11 @@
             var mi = String(d.getMinutes()).padStart(2, '0');
             var ss = String(d.getSeconds()).padStart(2, '0');
             return dd + '.' + mm + '.' + d.getFullYear() + ' ' + hh + ':' + mi + ':' + ss;
-        } catch(e) { return isoStr; }
+        } catch (e) { return isoStr; }
     }
 
     // Zavřít log modal klikem na backdrop
-    document.getElementById('activity-log-modal')?.addEventListener('click', function(e) {
+    document.getElementById('activity-log-modal')?.addEventListener('click', function (e) {
         if (e.target === this) closeActivityLogModal();
     });
 
@@ -5270,7 +5339,7 @@
     }
 
     function _loadUserActivityEntries(offset) {
-        callServer('getUserActivityLog', offset).then(function(res) {
+        callServer('getUserActivityLog', offset).then(function (res) {
             if (!res || !res.success) {
                 document.getElementById('user-log-table-body').innerHTML = '<tr><td colspan="4" class="log-empty-state">Chyba: ' + ((res && res.error) || 'Neznámá') + '</td></tr>';
                 return;
@@ -5290,7 +5359,7 @@
             if (loadMoreDiv) loadMoreDiv.style.display = _userLogHasMore ? 'flex' : 'none';
             var countInfo = document.getElementById('user-log-count-info');
             if (countInfo) countInfo.textContent = 'Zobrazeno ' + _userLogData.length + ' z ' + (res.total || _userLogData.length);
-        }).catch(function(e) {
+        }).catch(function (e) {
             document.getElementById('user-log-table-body').innerHTML = '<tr><td colspan="4" class="log-empty-state">Chyba načítání</td></tr>';
             console.warn('getUserActivityLog error:', e);
         });
@@ -5315,7 +5384,7 @@
 
         var q = document.getElementById('user-log-filter-q').value.toLowerCase().trim();
 
-        var filtered = _userLogData.filter(function(e) {
+        var filtered = _userLogData.filter(function (e) {
             if (q) {
                 var searchStr = (e.user_name + ' ' + e.email).toLowerCase();
                 if (!searchStr.includes(q)) return false;
@@ -5329,7 +5398,7 @@
         }
 
         var html = '';
-        filtered.forEach(function(e) {
+        filtered.forEach(function (e) {
             var ts = e.last_active ? _formatLogTimestamp(e.last_active) : '—';
             html += '<tr>' +
                 '<td class="log-timestamp">' + ts + '</td>' +
@@ -5342,7 +5411,7 @@
     }
 
     // Zavřít user log modal klikem na backdrop
-    document.getElementById('user-activity-log-modal')?.addEventListener('click', function(e) {
+    document.getElementById('user-activity-log-modal')?.addEventListener('click', function (e) {
         if (e.target === this) closeUserActivityLogModal();
     });
 
