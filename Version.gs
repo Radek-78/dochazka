@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.5";
+const APP_VERSION = "2.7.6";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.6",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava viditelnosti a umístění marketingového modulu v liště. UI úpravy pro display:flex."
+    ]
+  },
   {
     "version": "2.7.5",
     "date": "2026-04-01",
