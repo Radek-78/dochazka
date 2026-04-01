@@ -479,8 +479,8 @@
           </button>
         </div>
         <div id="deploy-time-footer">
-          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.5.3</a> 
-          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 08:16
+          <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link" id="app-version-display">v2.6.0</a> 
+          | RBAC Scoped Engine Ready | Aktualizace: 01.04.2026 08:35
         </div>
       </footer>
     </div>
@@ -1110,65 +1110,56 @@
       const canEditSync = hasPermission('edit_profile_sync');
 
       inner.innerHTML = `
-<div class="modal-brand-header">
-  <div class="modal-deco-circle"></div>
+<div class="modal-brand-header" style="padding:12px 20px;">
   <button class="modal-close-btn" onclick="document.getElementById('profile-modal').style.display='none'">&#x2715;</button>
-  <div style="display:flex; align-items:center; gap:16px; position:relative; z-index:1;">
-    <div style="position:relative; cursor:default;" title="Změna ikony profilu (připravujeme)">
-      <div style="width:60px; height:60px; border-radius:50%; background:rgba(255,255,255,0.18); border:3px solid rgba(255,255,255,0.35); display:flex; align-items:center; justify-content:center;">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-          <circle cx="12" cy="7" r="4"></circle>
-        </svg>
-      </div>
-      <div style="position:absolute; bottom:0; right:0; width:20px; height:20px; background:var(--secondary); border-radius:50%; border:2px solid #004fac; display:flex; align-items:center; justify-content:center; font-size:9px;">✏️</div>
+  <div style="display:flex; align-items:center; gap:12px; position:relative; z-index:1;">
+    <div style="width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,0.15); border:2.5px solid rgba(255,255,255,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+      </svg>
     </div>
-    <div>
-      <h2 class="modal-header-title">${user.first_name || ''} ${user.last_name || ''}</h2>
-      <p class="modal-header-sub">${user.email}</p>
-      ${posName ? `<p style="margin:3px 0 0; font-size:11px; color:rgba(255,240,0,0.85); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">${posName}</p>` : ''}
+    <div style="flex:1; min-width:0;">
+      <h2 class="modal-header-title" style="font-size:16px;">${user.first_name || ''} ${user.last_name || ''}</h2>
+      <p class="modal-header-sub" style="margin:2px 0 0;">${user.email}</p>
     </div>
+    ${posName ? `<span style="font-size:10px; font-weight:800; color:rgba(255,240,0,0.9); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,240,0,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${posName}</span>` : ''}
+    <span style="font-size:10px; font-weight:800; color:rgba(255,255,255,0.85); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,255,255,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${roleLabels[user.system_role] || user.system_role}</span>
   </div>
 </div>
 
-<div class="admin-modal-body">
+<div style="padding:14px 16px; background:#f1f5f9; overflow:hidden;">
   <form id="profile-form" autocomplete="off">
     <input type="hidden" name="user_id" value="${user.user_id || ''}">
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start;">
 
-      <!-- ── Levý sloupec ── -->
-      <div>
+      <!-- ── Levý sloupec: data ── -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
 
         <!-- Osobní údaje -->
-        <div class="modal-section">
+        <div class="modal-section" style="--ms-color:#3b82f6; --ms-bg:#eff6ff; --ms-border:#bfdbfe;">
           <div class="modal-section-title">👤 Osobní údaje</div>
-          <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
             <div class="form-group">
-              <label for="p-fname">Jméno</label>
-              ${canEditName
-          ? `<input type="text" id="p-fname" name="first_name" value="${user.first_name || ''}" required>`
-          : roField(user.first_name)}
+              <label>Jméno</label>
+              ${canEditName ? `<input type="text" name="first_name" value="${user.first_name || ''}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.first_name)}
             </div>
             <div class="form-group">
-              <label for="p-lname">Příjmení</label>
-              ${canEditName
-          ? `<input type="text" id="p-lname" name="last_name" value="${user.last_name || ''}" required>`
-          : roField(user.last_name)}
+              <label>Příjmení</label>
+              ${canEditName ? `<input type="text" name="last_name" value="${user.last_name || ''}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.last_name)}
             </div>
-            <div class="form-group" style="grid-column: span 2; margin-top: 4px;">
-              <label>E-mail (účet)</label>
-              ${canEditEmail
-          ? `<input type="email" name="email" value="${user.email}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
-          : roField(user.email)}
-            </div>
+          </div>
+          <div class="form-group">
+            <label>E-mail (účet)</label>
+            ${canEditEmail ? `<input type="email" name="email" value="${user.email}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.email)}
           </div>
         </div>
 
         <!-- Organizační zařazení -->
-        <div class="modal-section" style="margin-bottom:0;">
+        <div class="modal-section" style="--ms-color:#8b5cf6; --ms-bg:#f5f3ff; --ms-border:#ddd6fe;">
           <div class="modal-section-title">🏢 Organizační zařazení</div>
-          <div class="form-grid-3">
+          <div class="form-grid-3" style="gap:10px; margin-bottom:10px;">
             <div class="form-group">
               <label>Úsek</label>
               ${selOrRo(canEditOrg, 'section_id', sections.map(s => ({ v: s.section_id, l: s.name })), user.section_id, '— Úsek —')}
@@ -1182,7 +1173,7 @@
               ${selOrRo(canEditOrg, 'group_id', groups.map(g => ({ v: g.group_id, l: g.name })), user.group_id, '— Tým —')}
             </div>
           </div>
-          <div class="form-grid" style="margin-top:16px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
             <div class="form-group">
               <label>Pracovní pozice</label>
               ${selOrRo(canEditPos, 'position_id', positions.map(p => ({ v: p.position_id, l: p.name })), user.position_id, '— Bez pozice —')}
@@ -1194,46 +1185,41 @@
           </div>
         </div>
 
-      </div>
-
-      <!-- ── Pravý sloupec ── -->
-      <div>
-
         <!-- Pracovní období -->
-        <div class="modal-section">
+        <div class="modal-section" style="--ms-color:#f59e0b; --ms-bg:#fffbeb; --ms-border:#fde68a;">
           <div class="modal-section-title">📋 Pracovní období</div>
-          <div class="form-grid">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
             <div class="form-group">
               <label>Datum nástupu</label>
-              ${canEditOrg
-          ? `<input type="date" name="date_start" value="${startIso}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
-          : roDate(startIso)}
+              ${canEditOrg ? `<input type="date" name="date_start" value="${startIso}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roDate(startIso)}
             </div>
             <div class="form-group">
               <label>Datum ukončení</label>
-              ${canEditOrg
-          ? `<input type="date" name="date_end" value="${endIso}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">`
-          : roDate(endIso)}
+              ${canEditOrg ? `<input type="date" name="date_end" value="${endIso}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roDate(endIso)}
             </div>
           </div>
         </div>
 
+      </div>
+
+      <!-- ── Pravý sloupec: nastavení ── -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+
         <!-- Google Kalendář -->
-        <div class="modal-section" style="margin-bottom:0;">
+        <div class="modal-section" style="--ms-color:#0ea5e9; --ms-bg:#f0f9ff; --ms-border:#bae6fd;">
           <div class="modal-section-title" style="justify-content:space-between;">
             <span>📅 Google Kalendář</span>
-            ${user.sync_own_attendance === 'true' && canEditSync ? `<button type="button" id="cal-rebuild-btn" onclick="rebuildCalendarSync()" style="font-size:10px; font-weight:700; padding:3px 8px; border:1.5px solid #e2e8f0; border-radius:5px; background:#f8fafc; color:#475569; cursor:pointer; font-family:inherit; text-transform:uppercase; letter-spacing:0.4px;">↻ Obnovit</button>` : ''}
+            ${user.sync_own_attendance === 'true' && canEditSync ? `<button type="button" id="cal-rebuild-btn" onclick="rebuildCalendarSync()" style="font-size:10px; font-weight:700; padding:3px 8px; border:1.5px solid #bae6fd; border-radius:5px; background:#e0f2fe; color:#0369a1; cursor:pointer; font-family:inherit; text-transform:uppercase; letter-spacing:0.4px;">↻ Obnovit</button>` : ''}
           </div>
-          <p style="font-size:12px; color:#64748b; margin:0 0 14px; line-height:1.6;">
-            Po zapnutí synchronizace se automaticky vytvoří sdílený kalendář ve vašem Google Kalendáři.
-          </p>
-          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}" style="margin-bottom:8px;">
             <div class="sec-toggle-label">
               <span class="sec-toggle-icon">🗓️</span>
               <div>
-                <div>Vlastní docházka</div>
-                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Synchronizovat mou docházku do Google Kalendáře</div>
-                <div id="cal-sync-status-personal" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_own_attendance === 'true' ? '#22c55e' : 'transparent'};">${user.sync_own_attendance === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span>Vlastní docházka</span>
+                  <span id="cal-sync-status-personal" style="font-size:10px; font-weight:700; color:${user.sync_own_attendance === 'true' ? '#22c55e' : 'transparent'};">${user.sync_own_attendance === 'true' ? '✓' : '·'}</span>
+                </div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Synchronizovat docházku do kalendáře</div>
               </div>
             </div>
             <label class="sec-toggle-switch">
@@ -1243,13 +1229,15 @@
             </label>
           </div>
           ${(isManager || isSuperAdmin) ? `
-          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}" style="margin-bottom:8px;">
             <div class="sec-toggle-label">
               <span class="sec-toggle-icon">👥</span>
               <div>
-                <div>Docházka týmu</div>
-                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Dovolené a HomeOffice Oddělení</div>
-                <div id="cal-sync-status-team" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_team_vacations === 'true' ? '#22c55e' : 'transparent'};">${user.sync_team_vacations === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span>Docházka týmu</span>
+                  <span id="cal-sync-status-team" style="font-size:10px; font-weight:700; color:${user.sync_team_vacations === 'true' ? '#22c55e' : 'transparent'};">${user.sync_team_vacations === 'true' ? '✓' : '·'}</span>
+                </div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Dovolené a HomeOffice oddělení</div>
               </div>
             </div>
             <label class="sec-toggle-switch">
@@ -1258,13 +1246,15 @@
               <span class="sec-toggle-slider"></span>
             </label>
           </div>` : ''}
-          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}">
+          <div class="sec-config-leader-toggle ${!canEditSync ? 'toggle-disabled' : ''}" style="margin-bottom:0;">
             <div class="sec-toggle-label">
               <span class="sec-toggle-icon">🏗️</span>
               <div>
-                <div>Plánovací kalendář</div>
-                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Synchronizace Plánovacích skupin</div>
-                <div id="cal-sync-status-planner" style="font-size:11px; margin-top:3px; min-height:14px; color:${user.sync_planner === 'true' ? '#22c55e' : 'transparent'};">${user.sync_planner === 'true' ? '✅ Synchronizace aktivní' : '&nbsp;'}</div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span>Plánovací kalendář</span>
+                  <span id="cal-sync-status-planner" style="font-size:10px; font-weight:700; color:${user.sync_planner === 'true' ? '#22c55e' : 'transparent'};">${user.sync_planner === 'true' ? '✓' : '·'}</span>
+                </div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Synchronizace plánovacích skupin</div>
               </div>
             </div>
             <label class="sec-toggle-switch">
@@ -1276,17 +1266,14 @@
         </div>
 
         <!-- Začátek pracovní doby -->
-        <div class="modal-section" style="margin-top:16px; margin-bottom:0;">
+        <div class="modal-section" style="--ms-color:#10b981; --ms-bg:#f0fdf4; --ms-border:#bbf7d0;">
           <div class="modal-section-title">⏰ Začátek pracovní doby</div>
-          <p style="font-size:12px; color:#64748b; margin:0 0 14px; line-height:1.6;">
-            Při výběru statusu Kancelář se zobrazí políčko pro zadání času příchodu.
-          </p>
-          <div class="sec-config-leader-toggle">
+          <div class="sec-config-leader-toggle" style="margin-bottom:10px;">
             <div class="sec-toggle-label">
               <span class="sec-toggle-icon">🕐</span>
               <div>
                 <div>Zobrazovat čas příchodu</div>
-                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:2px;">Při výběru Kancelář zobrazit pole pro čas začátku</div>
+                <div style="font-weight:400; font-size:11px; color:#94a3b8; margin-top:1px;">Při výběru Kancelář zobrazit pole pro čas</div>
               </div>
             </div>
             <label class="sec-toggle-switch">
@@ -1295,21 +1282,21 @@
               <span class="sec-toggle-slider"></span>
             </label>
           </div>
-          <div class="form-group" style="margin-top:14px;">
+          <div class="form-group">
             <label>Výchozí čas příchodu</label>
-            <input type="time" name="default_work_start_time" value="${user.default_work_start_time || '08:00'}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
+            <input type="time" name="default_work_start_time" value="${user.default_work_start_time || '08:00'}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
           </div>
         </div>
+
+        ${!isAdminPlus ? `
+        <div style="padding:9px 12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; font-size:11px; color:#1d4ed8; line-height:1.5;">
+          ℹ️ Jméno a příjmení si lze změnit. Pro změnu ostatních údajů kontaktujte administrátora.
+        </div>` : ''}
 
       </div>
 
     </div>
   </form>
-
-  ${!isAdminPlus ? `
-  <div style="margin-top:16px; padding:10px 14px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; font-size:11px; color:#1d4ed8;">
-    ℹ️ Jméno a příjmení si lze změnit. Pro změnu ostatních údajů (role, org. zařazení, data) kontaktujte administrátora.
-  </div>` : ''}
 </div>
 
 <div class="modal-footer-brand">

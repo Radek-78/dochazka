@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.5.3";
+const APP_VERSION = "2.6.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.6.0",
+    "date": "2026-04-01",
+    "changes": [
+      "Redesign profilu: kompaktní header, 2-sloupcové rozložení bez scrollování, barevné karty"
+    ]
+  },
   {
     "version": "2.5.3",
     "date": "2026-04-01",
