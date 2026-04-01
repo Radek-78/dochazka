@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.2";
+const APP_VERSION = "2.8.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.8.3",
+    "date": "2026-04-01",
+    "changes": [
+      "Oprava inicializace marketingového modulu při prvním startu aplikace."
+    ]
+  },
   {
     "version": "2.8.2",
     "date": "2026-04-01",

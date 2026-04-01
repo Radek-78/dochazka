@@ -3603,6 +3603,9 @@
 
                 setSplashMsg("Ověřuji přístupová práva...");
                 updateUserProfile(response.user);
+                
+                // Inicializace marketingového modulu v topbaru
+                _renderMarketingWeeks();
 
                 // Admin icon visibility based on RBAC 'access_admin'
                 const adminIcon = document.getElementById('admin-icon-btn');
