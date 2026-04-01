@@ -1264,6 +1264,7 @@
                     <th style="text-align:center">Barva</th>
                     <th style="text-align:center">Vyžaduje schválení</th>
                     <th style="text-align:center">Rezervace stolu</th>
+                    <th style="text-align:center">Čas příchodu</th>
                     <th style="text-align:center">Stav</th>
                     <th style="text-align:center">Akce</th>
                 </tr>
@@ -1292,6 +1293,9 @@
                     </td>
                     <td style="text-align:center;">${reqApproval ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">${deskRes ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
+                    <td style="text-align:center;">
+                        <button onclick="admin.toggleStatusWorkTime('${s.status_id}')" title="Kliknutím přepnout" style="background:none; border:none; cursor:pointer; padding:4px;">${s.shows_work_time === 'true' ? '<span class="badge-auth-yes" style="min-width:36px;">⏰ Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</button>
+                    </td>
                     <td style="text-align:center;"><span class="${isActive ? 'badge-status-active' : 'badge-status-inactive'}">${isActive ? 'Aktivní' : 'Neaktivní'}</span></td>
                     <td style="text-align:center;">
                         <button onclick="admin.showStatusModal('${s.status_id}')" class="btn-icon" title="Upravit">✏️</button>
@@ -1300,7 +1304,7 @@
                 </tr>`;
                 });
             } else {
-                html += '<tr><td colspan="8" style="text-align:center; padding:40px; color:#94a3b8;">Zatím nejsou definovány žádné statusy.</td></tr>';
+                html += '<tr><td colspan="9" style="text-align:center; padding:40px; color:#94a3b8;">Zatím nejsou definovány žádné statusy.</td></tr>';
             }
 
             html += `</tbody></table></div></div>`;
@@ -1319,118 +1323,160 @@
             const txtColor = (item && item.text_color) ? item.text_color : '#ffffff';
             const abbr = item ? (item.abbreviation || '') : '';
 
+            const chkAttr = (field, fieldItem) => String(fieldItem && fieldItem[field]) === 'true';
+            const togHtml = (name, checked, icon, label, desc) => `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#fff; border:1px solid #e8edf2; border-radius:10px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:18px; line-height:1;">${icon}</span>
+                        <div>
+                            <div style="font-size:12px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:0.04em;">${label}</div>
+                            <div style="font-size:11px; color:#9ca3af; margin-top:1px;">${desc}</div>
+                        </div>
+                    </div>
+                    <label style="position:relative; display:inline-block; width:42px; height:23px; cursor:pointer; flex-shrink:0;">
+                        <input type="checkbox" name="${name}" value="true" ${checked ? 'checked' : ''}
+                            style="opacity:0; width:0; height:0; position:absolute;"
+                            onchange="var tr=this.closest('label').querySelector('.tog-tr'); var th=this.closest('label').querySelector('.tog-th'); tr.style.background=this.checked?'#3b82f6':'#d1d5db'; th.style.transform=this.checked?'translateX(19px)':'translateX(0)';">
+                        <span class="tog-tr" style="position:absolute; inset:0; border-radius:23px; background:${checked ? '#3b82f6' : '#d1d5db'}; transition:background 0.2s;"></span>
+                        <span class="tog-th" style="position:absolute; left:2px; top:2px; width:19px; height:19px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:transform 0.2s; transform:${checked ? 'translateX(19px)' : 'translateX(0)'};"></span>
+                    </label>
+                </div>`;
+
             modalBody.innerHTML = `
-<div class="modal-brand-header">
+<div class="modal-brand-header" style="position:relative; overflow:visible;">
     <div class="modal-deco-circle"></div>
     <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
-    <div class="modal-header-icon">🏷️</div>
-    <h2 class="modal-header-title">${id ? 'Upravit status' : 'Nový docházkový status'}</h2>
-    <p class="modal-header-sub">${id ? 'Úprava stávajícího docházkového statusu' : 'Vytvoření nového docházkového statusu'}</p>
+    <div style="display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;">
+        <div>
+            <div class="modal-header-icon" style="margin-bottom:4px;">🏷️</div>
+            <h2 class="modal-header-title" style="margin:0 0 4px;">${id ? 'Upravit status' : 'Nový docházkový status'}</h2>
+            <p class="modal-header-sub" style="margin:0;">${id ? 'Úprava stávajícího docházkového statusu' : 'Vytvoření nového docházkového statusu'}</p>
+        </div>
+        <span id="status-chip-preview"
+            style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; height:64px; border-radius:14px; padding:0 18px; background:${bgColor}; color:${txtColor}; font-weight:900; font-size:26px; letter-spacing:0.03em; box-shadow:0 4px 16px rgba(0,0,0,0.18); transition:background 0.1s, color 0.1s; margin-right:8px; flex-shrink:0;">
+            ${abbr || '?'}
+        </span>
+    </div>
 </div>
-<div class="modal-body-padded" style="padding: 30px 40px;">
+<div class="modal-body-padded" style="padding:24px 32px;">
     <form id="status-form" autocomplete="off">
         <input type="hidden" name="status_id" value="${id || ''}">
 
-        <!-- Live náhled -->
-        <div style="display:flex; justify-content:center; margin-bottom:30px;">
-            <span id="status-chip-preview"
-                style="display:inline-flex; align-items:center; justify-content:center; min-width:80px; height:80px; border-radius:16px; padding:0 20px; background:${bgColor}; color:${txtColor}; font-weight:900; font-size:32px; letter-spacing:0.03em; box-shadow:0 8px 16px rgba(0,0,0,0.1); transition:background 0.1s, color 0.1s;">
-                ${abbr || '?'}
-            </span>
-        </div>
-
-        <!-- Název + Zkratka + Kategorie -->
-        <div style="display:grid; grid-template-columns:1fr 0.5fr 0.8fr; gap:16px;">
-            <div class="modal-form-group">
-                <label class="modal-form-label">NÁZEV</label>
-                <input type="text" name="name" value="${item ? item.name : ''}" class="modal-form-input" style="height:46px; border-radius:10px;" required>
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">ZKRATKA</label>
-                <input type="text" name="abbreviation" value="${abbr}" class="modal-form-input" style="height:46px; border-radius:10px;" maxlength="4" required
-                    oninput="var p=document.getElementById('status-chip-preview'); p.textContent=this.value||'?';">
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">KATEGORIE</label>
-                <select name="category" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="Práce" ${item && item.category === 'Práce' ? 'selected' : ''}>Práce</option>
-                    <option value="Volno / Absence" ${item && item.category === 'Volno / Absence' ? 'selected' : ''}>Volno / Absence</option>
-                    <option value="Zdraví" ${item && item.category === 'Zdraví' ? 'selected' : ''}>Zdraví</option>
-                    <option value="Ostatní" ${!item || (item.category !== 'Práce' && item.category !== 'Volno / Absence' && item.category !== 'Zdraví') ? 'selected' : ''}>Ostatní</option>
-                </select>
+        <!-- Základní informace -->
+        <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">✏️ Základní informace</div>
+            <div style="display:grid; grid-template-columns:1fr 120px 1fr; gap:12px;">
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">NÁZEV</label>
+                    <input type="text" name="name" value="${item ? item.name : ''}" class="modal-form-input" style="height:42px; border-radius:9px;" required>
+                </div>
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">ZKRATKA</label>
+                    <input type="text" name="abbreviation" value="${abbr}" class="modal-form-input" style="height:42px; border-radius:9px; font-size:17px; font-weight:800; text-align:center;" maxlength="4" required
+                        oninput="var p=document.getElementById('status-chip-preview'); p.textContent=this.value||'?';">
+                </div>
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">KATEGORIE</label>
+                    <select name="category" class="modal-form-input" style="height:42px; border-radius:9px;">
+                        <option value="Práce" ${item && item.category === 'Práce' ? 'selected' : ''}>🏢 Práce</option>
+                        <option value="Volno / Absence" ${item && item.category === 'Volno / Absence' ? 'selected' : ''}>🏖️ Volno / Absence</option>
+                        <option value="Zdraví" ${item && item.category === 'Zdraví' ? 'selected' : ''}>🏥 Zdraví</option>
+                        <option value="Ostatní" ${!item || (item.category !== 'Práce' && item.category !== 'Volno / Absence' && item.category !== 'Zdraví') ? 'selected' : ''}>📌 Ostatní</option>
+                    </select>
+                </div>
             </div>
         </div>
 
         <!-- Barvy -->
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:25px;">
-            <div class="modal-form-group">
-                <label class="modal-form-label">BARVA BUŇKY (POZADÍ)</label>
-                <div style="display:flex; align-items:center; gap:12px; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-                    <input type="color" name="color" value="${bgColor}"
-                        style="width:48px; height:32px; padding:0; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
-                        oninput="document.getElementById('status-chip-preview').style.background=this.value; document.getElementById('status-bg-val').textContent=this.value;">
-                    <span id="status-bg-val" style="font-size:13px; color:#475569; font-weight:600; font-family:monospace;">${bgColor}</span>
+        <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">🎨 Barevné schéma</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">BARVA BUŇKY (POZADÍ)</label>
+                    <div style="display:flex; align-items:center; gap:10px; padding:5px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:9px; height:42px; box-sizing:border-box;">
+                        <input type="color" name="color" value="${bgColor}"
+                            style="width:30px; height:28px; padding:0; border:none; border-radius:4px; cursor:pointer; background:none;"
+                            oninput="document.getElementById('status-chip-preview').style.background=this.value; document.getElementById('status-bg-val').textContent=this.value; document.getElementById('status-bg-swatch').style.background=this.value;">
+                        <span id="status-bg-val" style="font-size:12px; color:#475569; font-weight:700; font-family:monospace;">${bgColor}</span>
+                        <span style="margin-left:auto; width:20px; height:20px; border-radius:4px; background:${bgColor}; border:1px solid #e2e8f0; display:inline-block;" id="status-bg-swatch"></span>
+                    </div>
                 </div>
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">BARVA TEXTU</label>
-                <div style="display:flex; align-items:center; gap:12px; padding:6px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-                    <input type="color" name="text_color" value="${txtColor}"
-                        style="width:48px; height:32px; padding:0; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
-                        oninput="document.getElementById('status-chip-preview').style.color=this.value; document.getElementById('status-txt-val').textContent=this.value;">
-                    <span id="status-txt-val" style="font-size:13px; color:#475569; font-weight:600; font-family:monospace;">${txtColor}</span>
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">BARVA TEXTU</label>
+                    <div style="display:flex; align-items:center; gap:10px; padding:5px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:9px; height:42px; box-sizing:border-box;">
+                        <input type="color" name="text_color" value="${txtColor}"
+                            style="width:30px; height:28px; padding:0; border:none; border-radius:4px; cursor:pointer; background:none;"
+                            oninput="document.getElementById('status-chip-preview').style.color=this.value; document.getElementById('status-txt-val').textContent=this.value; document.getElementById('status-txt-swatch').style.background=this.value;">
+                        <span id="status-txt-val" style="font-size:12px; color:#475569; font-weight:700; font-family:monospace;">${txtColor}</span>
+                        <span style="margin-left:auto; width:20px; height:20px; border-radius:4px; background:${txtColor}; border:1px solid #e2e8f0; display:inline-block;" id="status-txt-swatch"></span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Volby -->
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; margin-top:25px;">
-            <div class="modal-form-group">
-                <label class="modal-form-label">VYŽADUJE SCHVÁLENÍ</label>
-                <select name="requires_approval" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="false" ${!item || String(item.requires_approval) !== 'true' ? 'selected' : ''}>Ne</option>
-                    <option value="true" ${item && String(item.requires_approval) === 'true' ? 'selected' : ''}>Ano</option>
-                </select>
+        <!-- Chování -->
+        <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">⚙️ Chování statusu</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                ${togHtml('requires_approval', chkAttr('requires_approval', item), '✅', 'Vyžaduje schválení', 'Status musí být schválen vedoucím')}
+                ${togHtml('allows_desk_reservation', chkAttr('allows_desk_reservation', item), '🪑', 'Rezervace stolu', 'Umožní rezervaci pracovního místa')}
+                ${togHtml('shows_work_time', chkAttr('shows_work_time', item), '⏰', 'Zobrazovat čas příchodu', 'Zobrazí picker pro čas příchodu')}
+                ${togHtml('is_vacation', chkAttr('is_vacation', item), '🏖️', 'Počítá se do dovolené', 'Odpočítává ze zůstatku dovolené')}
             </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">REZERVACE STOLU</label>
-                <select name="allows_desk_reservation" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="false" ${!item || String(item.allows_desk_reservation) !== 'true' ? 'selected' : ''}>Ne</option>
-                    <option value="true" ${item && String(item.allows_desk_reservation) === 'true' ? 'selected' : ''}>Ano</option>
-                </select>
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">ZOBRAZOVAT ČAS PŘÍCHODU</label>
-                <select name="shows_work_time" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="false" ${!item || String(item.shows_work_time) !== 'true' ? 'selected' : ''}>Ne</option>
-                    <option value="true" ${item && String(item.shows_work_time) === 'true' ? 'selected' : ''}>Ano</option>
-                </select>
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">POČÍTÁ SE DO DOVOLENÉ</label>
-                <select name="is_vacation" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="false" ${!item || String(item.is_vacation) !== 'true' ? 'selected' : ''}>Ne</option>
-                    <option value="true" ${item && String(item.is_vacation) === 'true' ? 'selected' : ''}>Ano</option>
-                </select>
-            </div>
-            <div class="modal-form-group">
-                <label class="modal-form-label">STAV</label>
-                <select name="active" class="modal-form-input" style="height:46px; border-radius:10px;">
-                    <option value="true" ${!item || String(item.active) !== 'false' ? 'selected' : ''}>Aktivní</option>
-                    <option value="false" ${item && String(item.active) === 'false' ? 'selected' : ''}>Neaktivní</option>
-                </select>
+        </div>
+
+        <!-- Stav -->
+        <div style="display:flex; align-items:center; gap:12px; padding:12px 18px; background:#f8fafc; border:1px solid #e8edf2; border-radius:12px;">
+            <span style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; flex-shrink:0;">Stav záznamu</span>
+            <div style="display:flex; gap:8px; flex:1; justify-content:flex-end;">
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:6px 14px; border-radius:8px; border:1.5px solid ${!item || String(item.active) !== 'false' ? '#22c55e' : '#e2e8f0'}; background:${!item || String(item.active) !== 'false' ? '#f0fdf4' : '#fff'}; transition:all 0.15s;">
+                    <input type="radio" name="active" value="true" ${!item || String(item.active) !== 'false' ? 'checked' : ''} style="accent-color:#22c55e;"
+                        onchange="this.closest('div').querySelectorAll('label').forEach((l,i)=>{var c=l.querySelector('input').checked; l.style.borderColor=c?(i===0?'#22c55e':'#f87171'):'#e2e8f0'; l.style.background=c?(i===0?'#f0fdf4':'#fff7f7'):'#fff';})">
+                    <span style="font-size:12px; font-weight:700; color:#16a34a;">✓ Aktivní</span>
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; padding:6px 14px; border-radius:8px; border:1.5px solid ${item && String(item.active) === 'false' ? '#f87171' : '#e2e8f0'}; background:${item && String(item.active) === 'false' ? '#fff7f7' : '#fff'}; transition:all 0.15s;">
+                    <input type="radio" name="active" value="false" ${item && String(item.active) === 'false' ? 'checked' : ''} style="accent-color:#ef4444;"
+                        onchange="this.closest('div').querySelectorAll('label').forEach((l,i)=>{var c=l.querySelector('input').checked; l.style.borderColor=c?(i===0?'#22c55e':'#f87171'):'#e2e8f0'; l.style.background=c?(i===0?'#f0fdf4':'#fff7f7'):'#fff';})">
+                    <span style="font-size:12px; font-weight:700; color:#dc2626;">✕ Neaktivní</span>
+                </label>
             </div>
         </div>
     </form>
 </div>
-<div class="modal-footer-brand" style="padding: 20px 40px; background:#f8fafc; border-top:1px solid #eef2f6;">
-    <button class="btn-modal-cancel" onclick="admin.closeModal()" style="height:44px; padding:0 24px;">ZRUŠIT</button>
-    <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:44px; padding:0 30px; background:var(--primary);">ULOŽIT</button>
+<div class="modal-footer-brand" style="padding:16px 32px; background:#f8fafc; border-top:1px solid #eef2f6;">
+    <button class="btn-modal-cancel" onclick="admin.closeModal()" style="height:42px; padding:0 22px;">ZRUŠIT</button>
+    <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:42px; padding:0 28px; background:var(--primary);">ULOŽIT STATUS</button>
 </div>`;
         },
 
         saveStatus: function () {
             this.saveGeneric('updateAttendanceStatus', 'status-form');
+        },
+
+        toggleStatusWorkTime: function (id) {
+            const s = this.statuses.find(st => st.status_id === id);
+            if (!s) return;
+            const newVal = String(s.shows_work_time) === 'true' ? 'false' : 'true';
+            s.shows_work_time = newVal;
+            this.renderCurrentTab();
+            callServer('updateAttendanceStatus', { ...s })
+                .then(result => {
+                    if (result.success) {
+                        showAdminToast('Status upraven', 'success');
+                        this.refreshAllData().then(() => {
+                            this.renderCurrentTab();
+                            if (window.plannerData) window.plannerData.statuses = this.statuses;
+                        });
+                    } else {
+                        s.shows_work_time = newVal === 'true' ? 'false' : 'true';
+                        this.renderCurrentTab();
+                        alert('Chyba: ' + result.error);
+                    }
+                })
+                .catch(() => {
+                    s.shows_work_time = newVal === 'true' ? 'false' : 'true';
+                    this.renderCurrentTab();
+                });
         },
 
         deleteStatus: function (id) {

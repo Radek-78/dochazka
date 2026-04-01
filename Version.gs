@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.7.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.1",
+    "date": "2026-04-01",
+    "changes": [
+      "Redesign status modal, inline work-time toggle, fix DB shows_work_time auto-extend"
+    ]
+  },
   {
     "version": "2.7.0",
     "date": "2026-04-01",
