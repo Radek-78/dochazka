@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.7.0",
+    "date": "2026-04-01",
+    "changes": [
+      "Konfigurovatelné zobrazení času příchodu per-status (shows_work_time)"
+    ]
+  },
   {
     "version": "2.6.0",
     "date": "2026-04-01",

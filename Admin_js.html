@@ -1400,6 +1400,13 @@
                 </select>
             </div>
             <div class="modal-form-group">
+                <label class="modal-form-label">ZOBRAZOVAT ČAS PŘÍCHODU</label>
+                <select name="shows_work_time" class="modal-form-input" style="height:46px; border-radius:10px;">
+                    <option value="false" ${!item || String(item.shows_work_time) !== 'true' ? 'selected' : ''}>Ne</option>
+                    <option value="true" ${item && String(item.shows_work_time) === 'true' ? 'selected' : ''}>Ano</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
                 <label class="modal-form-label">POČÍTÁ SE DO DOVOLENÉ</label>
                 <select name="is_vacation" class="modal-form-input" style="height:46px; border-radius:10px;">
                     <option value="false" ${!item || String(item.is_vacation) !== 'true' ? 'selected' : ''}>Ne</option>
