@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.5.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.5.1",
+    "date": "2026-04-01",
+    "changes": [
+      "Zobrazení času příchodu v badgi statusu Kancelář"
+    ]
+  },
   {
     "version": "2.5.0",
     "date": "2026-04-01",

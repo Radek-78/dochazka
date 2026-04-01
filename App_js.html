@@ -719,11 +719,15 @@
             const titleSuffix = stagedDecision === true ? ' → schválit'
                 : stagedDecision === false ? ' → zamítnout'
                     : isPending ? ' (čeká na schválení)' : '';
+            const timeTag = entry.work_start_time
+                ? '<span class="chip-time-tag">' + entry.work_start_time + '</span>'
+                : '';
+            const timeTitleSuffix = entry.work_start_time ? ' · příchod ' + entry.work_start_time : '';
             return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls +
                 '" data-slot="' + entry.slot + '" style="background:' + (st.color || '#94a3b8') +
                 ';color:' + (st.text_color || '#fff') + ';" title="' + (titlePrefix ? titlePrefix + ': ' : '') +
-                (st.name || '') + titleSuffix + '">' +
-                (st.abbreviation || '') + '</span>' + pendingOverlay;
+                (st.name || '') + timeTitleSuffix + titleSuffix + '">' +
+                (st.abbreviation || '') + timeTag + '</span>' + pendingOverlay;
         };
 
         let hasPending = false;
