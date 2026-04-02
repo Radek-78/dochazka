@@ -1113,7 +1113,7 @@
     function _statusNeedsDeskReservation(statusId) {
         if (!statusId || !plannerData || !plannerData.statuses) return false;
         var s = (plannerData.statuses || []).find(function (st) { return st.status_id == statusId; });
-        return s && (s.needs_desk === 'true' || s.needs_desk === true);
+        return s && (s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true);
     }
 
     /**

@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.8.9";
+const APP_VERSION = "2.9.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.9.0",
+    "date": "2026-04-02",
+    "changes": [
+      "Oprava detekce potřeby rezervace stolu (chybný název vlastnosti needs_desk -> allows_desk_reservation)"
+    ]
+  },
   {
     "version": "2.8.9",
     "date": "2026-04-01",
