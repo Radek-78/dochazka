@@ -1526,19 +1526,27 @@
             let syncMap = {};
             try { syncMap = JSON.parse(cfg.calendar_sync_map || '{}'); } catch(e) { syncMap = {}; }
 
+            // Dynamické zjištění role z existujících pozic
+            const roleLabels = {
+                'SECTION_LEADER': 'Vedoucí úseku',
+                'SECTION_DEPUTY': 'Zástupce v. úseku',
+                'DEPT_LEADER': 'Vedoucí oddělení',
+                'DEPT_DEPUTY': 'Zástupce v. oddělení',
+                'MEMBER': 'Řadový člen'
+            };
+
+            const usedOrgRoles = [...new Set((this.data.positions || []).map(p => p.org_role).filter(r => r))];
+
             const managerRoles = [
-                { id: 'SECTION_LEADER', label: 'Vedoucí úseku' },
-                { id: 'SECTION_DEPUTY', label: 'Zástupce v. úseku' },
-                { id: 'DEPT_LEADER', label: 'Vedoucí oddělení' },
-                { id: 'DEPT_DEPUTY', label: 'Zástupce v. oddělení' }
-            ];
+                'SECTION_LEADER', 'SECTION_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY'
+            ].filter(r => usedOrgRoles.indexOf(r) !== -1).map(r => ({ id: r, label: roleLabels[r] || r }));
 
             const targetRoles = [
-                { id: 'DEPT_LEADER', label: 'Vedoucí odd.' },
-                { id: 'DEPT_DEPUTY', label: 'Zástupce odd.' },
-                { id: 'MEMBER', label: 'Člen' },
-                { id: 'DIRECT_MEMBER', label: 'Bez oddělení' }
-            ];
+                'SECTION_LEADER', 'SECTION_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'MEMBER'
+            ].filter(r => usedOrgRoles.indexOf(r) !== -1).map(r => ({ id: r, label: roleLabels[r] || r }));
+            
+            // "Bez oddělení" přidáme vždy jako speciální volbu
+            targetRoles.push({ id: 'DIRECT_MEMBER', label: 'Bez oddělení' });
 
             panel.innerHTML = `
 <div class="admin-card" style="padding:0; overflow:hidden; max-width: 800px; margin: 0 auto;">
