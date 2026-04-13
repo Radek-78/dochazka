@@ -412,7 +412,8 @@ var Admin = {
         base_days: 25,
         max_extra_days: 5,
         require_dept_leader_approval: 'false',
-        anniversary_milestones: '[10,15,20,40]'
+        anniversary_milestones: '[10,15,20,40]',
+        calendar_sync_map: '{}'
       };
     }
     const cfg = table[0];
@@ -422,6 +423,9 @@ var Admin = {
     }
     if (cfg.anniversary_milestones === undefined || cfg.anniversary_milestones === '') {
       cfg.anniversary_milestones = '[10,15,20,40]';
+    }
+    if (cfg.calendar_sync_map === undefined || cfg.calendar_sync_map === '') {
+      cfg.calendar_sync_map = '{}';
     }
     return cfg;
   },
@@ -765,7 +769,7 @@ var Admin = {
     saveVacationConfig: function(data) {
     const coreSS = DB.getCore();
     let sheet = coreSS.getSheetByName(DB_SHEETS.CORE.VACATION_CONFIG);
-    const correctHeaders = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval", "anniversary_milestones"];
+    const correctHeaders = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval", "anniversary_milestones", "calendar_sync_map"];
 
     if (!sheet) {
       sheet = coreSS.insertSheet(DB_SHEETS.CORE.VACATION_CONFIG);

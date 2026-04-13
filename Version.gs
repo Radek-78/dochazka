@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.10.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.0",
+    "date": "2026-04-13",
+    "changes": [
+      "Implementace konfigurovatelné synchronizace týmového kalendáře"
+    ]
+  },
   {
     "version": "2.9.0",
     "date": "2026-04-02",

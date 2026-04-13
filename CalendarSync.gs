@@ -751,23 +751,56 @@ var CalendarSync = {
    * Vrátí seznam podřízených daného vedoucího.
    */
   _getSubordinates: function(manager, allUsers) {
-    var positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
-    var orgRole = _resolveOrgRole(manager, positions);
-    var managerRoles = [
-      ROLES.ORG.SECTION_LEADER, ROLES.ORG.SECTION_DEPUTY,
-      ROLES.ORG.DEPT_LEADER, ROLES.ORG.DEPT_DEPUTY
-    ];
+    try {
+      var coreSS = DB.getCore();
+      var positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+      var orgRole = _resolveOrgRole(manager, positions);
+      
+      // Načíst konfiguraci synchronizace
+      var vacationConfig = Admin.getVacationConfig();
+      var syncMap = {};
+      try {
+        syncMap = JSON.parse(vacationConfig.calendar_sync_map || '{}');
+      } catch (e) {
+        console.warn('CalendarSync._getSubordinates – JSON parse error: ' + e);
+      }
+      
+      var allowedRoles = syncMap[orgRole];
 
-    return allUsers.filter(function(u) {
-      if (u.user_id === manager.user_id || u.active === 'false') return false;
-      if (orgRole === ROLES.ORG.SECTION_LEADER || orgRole === ROLES.ORG.SECTION_DEPUTY) {
-        return u.section_id === manager.section_id;
-      }
-      if (orgRole === ROLES.ORG.DEPT_LEADER || orgRole === ROLES.ORG.DEPT_DEPUTY) {
-        return u.department_id === manager.department_id;
-      }
-      return false;
-    });
+      return allUsers.filter(function(u) {
+        if (u.user_id === manager.user_id || u.active === 'false') return false;
+        
+        // 1. Kontrola rozsahu (úsek vs oddělení)
+        var inScope = false;
+        if (orgRole === ROLES.ORG.SECTION_LEADER || orgRole === ROLES.ORG.SECTION_DEPUTY) {
+          inScope = (u.section_id === manager.section_id);
+        } else if (orgRole === ROLES.ORG.DEPT_LEADER || orgRole === ROLES.ORG.DEPT_DEPUTY) {
+          inScope = (u.department_id === manager.department_id);
+        }
+        
+        if (!inScope) return false;
+
+        // 2. Kontrola role (pokud je nakonfigurována)
+        if (allowedRoles && Array.isArray(allowedRoles) && allowedRoles.length > 0) {
+          var uRole = _resolveOrgRole(u, positions);
+          var isAllowed = allowedRoles.indexOf(uRole) !== -1;
+          
+          // Speciální případ: Člen bez oddělení (DIRECT_MEMBER)
+          if (!isAllowed && allowedRoles.indexOf('DIRECT_MEMBER') !== -1) {
+            if (!u.department_id || u.department_id === '') {
+              isAllowed = true;
+            }
+          }
+          return isAllowed;
+        }
+
+        // Pokud není nic konfigurováno, vracíme všechny v rozsahu (původní chování)
+        return true;
+      });
+    } catch (e) {
+      console.warn('CalendarSync._getSubordinates error: ' + e);
+      return [];
+    }
   },
 
   /**

@@ -105,7 +105,7 @@ const Setup = {
       case DB_SHEETS.CORE.ATTENDANCE_STATUSES:
         headers = ["status_id", "name", "abbreviation", "color", "text_color", "category", "requires_approval", "allows_desk_reservation", "active", "is_vacation", "shows_work_time"]; break;
       case DB_SHEETS.CORE.VACATION_CONFIG:
-        headers = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval"]; break;
+        headers = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval", "calendar_sync_map"]; break;
       case DB_SHEETS.CORE.PLANNER_GROUPS:
         headers = ["group_id", "name", "description", "active", "color", "calendar_id"]; break;
       case DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS:
@@ -153,6 +153,7 @@ const Setup = {
       case DB_SHEETS.CORE.SECTION_VIEW_CONFIG: h = ["section_id", "show_leader_first", "config_json"]; break;
       case DB_SHEETS.CORE.OFFICE_MAPS: h = ["map_id", "section_id", "name", "rows", "cols", "cells_json", "active"]; break;
       case DB_SHEETS.TRANSACTION.ATTENDANCE: h = ["attendance_id", "user_id", "date", "status_id", "slot", "note", "approved", "created_at", "work_start_time"]; break;
+      case DB_SHEETS.CORE.VACATION_CONFIG: h = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval", "calendar_sync_map"]; break;
       case DB_SHEETS.TRANSACTION.MAP_RESERVATIONS: h = ["reservation_id", "map_id", "cell_id", "user_id", "date", "active"]; break;
     }
     return h;
