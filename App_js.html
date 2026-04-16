@@ -703,9 +703,9 @@
 
         const existing = [...(plannerData.marketingWeeks || [])];
         const now = new Date();
-        // Aktuální + dalších 9 týdnů (celkem 10), s korektním rokem
+        // Aktuální + dalších 10 týdnů (celkem 11), s korektním rokem
         const data = [];
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 11; i++) {
             const weekId = offsetWeekId(now, i);
             const found = existing.find(w => {
                 const p = parseWeekId(w.kt); const q = parseWeekId(weekId);
@@ -713,21 +713,6 @@
             });
             data.push(found ? { ...found, kt: weekId } : { kt: weekId, monday: '', thursday: '' });
         }
-        // Přidat starší záznamy z DB
-        existing.forEach(w => {
-            const p = parseWeekId(w.kt);
-            const cur = parseWeekId(getWeekId(now));
-            if (p.year < cur.year || (p.year === cur.year && p.week < cur.week)) {
-                if (!data.find(d => { const q = parseWeekId(d.kt); return q.year === p.year && q.week === p.week; })) {
-                    data.unshift({ ...w });
-                }
-            }
-        });
-        data.sort((a, b) => {
-            const p = parseWeekId(a.kt), q = parseWeekId(b.kt);
-            return p.year !== q.year ? p.year - q.year : p.week - q.week;
-        });
-
         _renderMarketingEditTable(data);
         modal.style.display = 'flex';
     }
