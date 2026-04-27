@@ -56,9 +56,6 @@ var Auth = {
 
     let scope = 'NONE';
     const role = currentUser.system_role || 'USER';
-    
-    // SUPERADMIN vidí vše bez výjimky
-    if (role === 'SUPERADMIN') return true;
 
     const config = rbacConfig || this._rbacCache || {};
     const perm = config['view_attendance_scope'];
@@ -66,8 +63,10 @@ var Auth = {
       scope = perm[role] || 'NONE';
     } else {
       // Fallback pokud není v databázi RBAC záznam (použijeme výchozí pravidla aplikace)
-      if (role === 'SUPERADMIN' || role === 'ADMIN') {
+      if (role === 'ADMIN') {
         scope = 'ALL';
+      } else if (role === 'SUPERADMIN') {
+        scope = 'OWN_SECTION';
       } else if (role === 'LEADER' || role === 'USER') {
         scope = 'OWN_SECTION';
       } else {

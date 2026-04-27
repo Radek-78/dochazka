@@ -136,7 +136,7 @@ function getPlannerData() {
     // Přepsat org_role přihlášeného uživatele z pozice
     user.org_role = _resolveOrgRole(user, positions);
 
-    const employees = allEmployees.filter(u => u.active === "true").map(u => {
+    const employees = allEmployees.filter(u => u.active === "true" && u.section_id === user.section_id).map(u => {
       // 0. Efektivní org_role z pozice
       u.org_role = _resolveOrgRole(u, positions);
 

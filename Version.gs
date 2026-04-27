@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.2";
+const APP_VERSION = "2.10.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.3",
+    "date": "2026-04-27",
+    "changes": [
+      "Bezpečnostní oprava: SUPERADMIN vidí docházku pouze vlastního úseku (OWN_SECTION scope)",
+      "Server nyní odesílá zaměstnance pouze z úseku přihlášeného uživatele"
+    ]
+  },
   {
     "version": "2.10.2",
     "date": "2026-04-16",
