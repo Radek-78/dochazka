@@ -115,7 +115,7 @@ const Setup = {
       case DB_SHEETS.CORE.OFFICE_MAPS:
         headers = ["map_id", "section_id", "name", "rows", "cols", "cells_json", "active"]; break;
       case DB_SHEETS.CORE.RBAC_CONFIG:
-        headers = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN"]; break;
+        headers = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN", "MEMBER", "GROUP_LEADER", "GROUP_DEPUTY", "DEPT_LEADER", "DEPT_DEPUTY", "SECTION_LEADER", "SECTION_DEPUTY"]; break;
 
       case DB_SHEETS.TRANSACTION.ATTENDANCE:
         headers = ["attendance_id", "user_id", "date", "status_id", "slot", "note", "approved", "created_at", "work_start_time"]; break;

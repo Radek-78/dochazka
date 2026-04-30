@@ -2617,6 +2617,22 @@
             { label: 'Upravovat docházku ostatních', key: 'edit_attendance_scope', category: 'Docházka & Dovolené', type: 'edit_scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
             { label: 'Schvalovat / zamítat dovolené kolegům', key: 'approve_vacation_scope', category: 'Docházka & Dovolené', type: 'approval_scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
 
+            // Kategorie: GDPR VIDITELNOST STATUSŮ (řídí se organizační rolí z POSITIONS.org_role)
+            {
+                label: 'Nemaskovaná viditelnost běžných statusů',
+                key: 'privacy_unmasked_status_scope',
+                category: 'GDPR viditelnost statusů',
+                type: 'privacy_scope',
+                roleSet: 'org_role',
+                MEMBER: 'OWN',
+                GROUP_LEADER: 'OWN_GROUP',
+                GROUP_DEPUTY: 'OWN_GROUP',
+                DEPT_LEADER: 'OWN_DEPARTMENT',
+                DEPT_DEPUTY: 'OWN_DEPARTMENT',
+                SECTION_LEADER: 'OWN_SECTION',
+                SECTION_DEPUTY: 'OWN_SECTION'
+            },
+
             // Kategorie: PLÁNOVACÍ KALENDÁŘ (PLANNER)
             { label: 'Přístup k modulu Plánovač', key: 'view_planner', category: 'Plánovač (Planner)', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
             { label: 'Vytvářet nové plánovací skupiny', key: 'create_planner_group', category: 'Plánovač (Planner)', USER: false, LEADER: true, ADMIN: true, SUPERADMIN: true },
@@ -2642,7 +2658,7 @@
                     config = config.map(row => {
                         const saved = res.data[row.key];
                         if (saved) {
-                            ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'].forEach(role => {
+                            Object.keys(saved).forEach(role => {
                                 if (saved[role] !== undefined) row[role] = saved[role];
                             });
                         }
@@ -2654,10 +2670,8 @@
             }
 
             const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'];
+            const orgRoles = ['MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
             const roleColors = { USER: '#64748b', LEADER: '#16a34a', ADMIN: '#004fac', SUPERADMIN: '#e7030c' };
-            const privacyEnabled = !!(this.privacySettings && this.privacySettings.masking_enabled);
-            const maskStatusesCount = (this.statuses || []).filter(s => String(s.status_kind || 'NORMAL').toUpperCase() === 'MASK').length;
-            const normalStatusesCount = (this.statuses || []).filter(s => String(s.status_kind || 'NORMAL').toUpperCase() !== 'MASK').length;
             const orgRoleLabels = {
                 'MEMBER': 'Běžný člen',
                 'GROUP_LEADER': 'Vedoucí týmu',
@@ -2667,85 +2681,6 @@
                 'SECTION_LEADER': 'Vedoucí úseku',
                 'SECTION_DEPUTY': 'Zástupce úseku'
             };
-            const privacyOrgRoles = ['MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY']
-                .filter(role => role === 'MEMBER' || (this.data.positions || []).some(p => (p.org_role || 'MEMBER') === role));
-            const privacyRoleRules = {
-                'MEMBER': {
-                    scope: 'Pouze vlastní statusy',
-                    detail: 'Svoje statusy vidí v původní podobě. Statusy všech ostatních zaměstnanců se zobrazí maskovaně.'
-                },
-                'GROUP_LEADER': {
-                    scope: 'Vlastní tým nemaskovaně',
-                    detail: 'Členy svého týmu vidí v původní podobě. Ostatní zaměstnance mimo tým vidí přes maskovací statusy.'
-                },
-                'GROUP_DEPUTY': {
-                    scope: 'Vlastní tým nemaskovaně',
-                    detail: 'Stejný provozní pohled jako vedoucí týmu, pokud je tato org role používána.'
-                },
-                'DEPT_LEADER': {
-                    scope: 'Vlastní oddělení nemaskovaně',
-                    detail: 'Členy svého oddělení vidí v původní podobě. Zaměstnance mimo oddělení vidí přes maskovací statusy.'
-                },
-                'DEPT_DEPUTY': {
-                    scope: 'Vlastní oddělení nemaskovaně',
-                    detail: 'Stejný provozní pohled jako vedoucí oddělení, pokud je tato org role používána.'
-                },
-                'SECTION_LEADER': {
-                    scope: 'Vlastní úsek nemaskovaně',
-                    detail: 'Členy svého úseku vidí v původní podobě. Zaměstnance mimo úsek vidí přes maskovací statusy.'
-                },
-                'SECTION_DEPUTY': {
-                    scope: 'Vlastní úsek nemaskovaně',
-                    detail: 'Stejný provozní pohled jako vedoucí úseku, pokud je tato org role používána.'
-                }
-            };
-            const privacyRoleCards = privacyOrgRoles.map(role => {
-                const rule = privacyRoleRules[role] || privacyRoleRules.MEMBER;
-                const className = role.indexOf('SECTION_') === 0 ? 'is-section'
-                    : role.indexOf('DEPT_') === 0 ? 'is-dept'
-                    : role.indexOf('GROUP_') === 0 ? 'is-group'
-                    : '';
-                return `
-                        <article>
-                            <div class="rbac-privacy-role ${className}">${role}</div>
-                            <h3>${orgRoleLabels[role] || role}</h3>
-                            <strong>${rule.scope}</strong>
-                            <p>${rule.detail}</p>
-                        </article>`;
-            }).join('');
-
-            const privacyVisibilityHtml = `
-                <section class="rbac-privacy-panel" aria-label="Viditelnost GDPR statusů">
-                    <div class="rbac-privacy-head">
-                        <div>
-                            <div class="rbac-privacy-kicker">GDPR maskování statusů</div>
-                            <h2>Viditelnost statusů podle organizační role</h2>
-                        </div>
-                        <div class="rbac-privacy-state ${privacyEnabled ? 'is-enabled' : 'is-disabled'}">
-                            ${privacyEnabled ? 'Aktivní' : 'Neaktivní'}
-                        </div>
-                    </div>
-                    <div class="rbac-privacy-summary">
-                        <div>
-                            <strong>${normalStatusesCount}</strong>
-                            <span>běžných statusů</span>
-                        </div>
-                        <div>
-                            <strong>${maskStatusesCount}</strong>
-                            <span>maskovacích statusů</span>
-                        </div>
-                        <div>
-                            <strong>${privacyEnabled ? 'Zapnuto' : 'Vypnuto'}</strong>
-                            <span>globální pravidlo</span>
-                        </div>
-                    </div>
-                    <div class="rbac-privacy-grid">
-                        ${privacyRoleCards}
-                    </div>
-                    <div class="rbac-privacy-note">
-                        Viditelnost citlivých statusů se bude řídit podle <strong>POSITIONS.org_role</strong>, nikoliv podle systémové role uživatele. Například uživatel se systémovou rolí <strong>SUPERADMIN</strong>, ale organizační rolí <strong>MEMBER</strong>, má v běžném provozním pohledu vidět klasicky jen své vlastní statusy; statusy ostatních se mu mají maskovat. Samotné mapování běžných statusů na maskovací statusy se nastavuje v sekci <strong>Statusy</strong>.
-                    </div>
-                </section>`;
 
             // 2. Seskupení podle kategorií
             const categories = {};
@@ -2759,9 +2694,12 @@
             let categoriesHtml = '';
             for (const catName in categories) {
                 const isExpanded = this._expandedRbac.has(catName);
+                const categoryRows = categories[catName];
+                const isOrgRoleCategory = categoryRows.some(row => row.roleSet === 'org_role');
+                const tableRoles = isOrgRoleCategory ? orgRoles : roles;
                 const rows = categories[catName].map((row, i) => {
-                    const cells = roles.map(role => {
-                        const isSuper = role === 'SUPERADMIN';
+                    const cells = tableRoles.map(role => {
+                        const isSuper = !isOrgRoleCategory && role === 'SUPERADMIN';
                         if (row.type === 'scope') {
                             const val = row[role] !== undefined ? row[role] : 'NONE';
                             return `<td style="text-align:center; padding:10px;">
@@ -2802,6 +2740,17 @@
                                     <option value="ALL" ${val === 'ALL' || val === true ? 'selected' : ''}>Vše</option>
                                 </select>
                             </td>`;
+                        } else if (row.type === 'privacy_scope') {
+                            const val = row[role] !== undefined ? row[role] : 'OWN';
+                            return `<td style="text-align:center; padding:10px;">
+                                <select class="rbac-scope-select" data-key="${row.key}" data-role="${role}" style="padding:4px; border-radius:4px; border:1px solid #cbd5e1; font-size:11px; font-weight:700; background:#fff; width:100%; color:#475569; outline:none;">
+                                    <option value="OWN" ${val === 'OWN' ? 'selected' : ''}>Jen vlastní</option>
+                                    <option value="OWN_GROUP" ${val === 'OWN_GROUP' ? 'selected' : ''}>Tým</option>
+                                    <option value="OWN_DEPARTMENT" ${val === 'OWN_DEPARTMENT' ? 'selected' : ''}>Oddělení</option>
+                                    <option value="OWN_SECTION" ${val === 'OWN_SECTION' ? 'selected' : ''}>Úsek</option>
+                                    <option value="ALL" ${val === 'ALL' ? 'selected' : ''}>Vše</option>
+                                </select>
+                            </td>`;
                         } else {
                             return `<td style="text-align:center; padding:10px;">
                                 <label class="rbac-switch">
@@ -2820,6 +2769,7 @@
                         <td style="padding:12px 16px;">
                             <div style="font-weight:600; color:#334155; font-size:13px;">${row.label}</div>
                             <div style="font-size:11px; color:#94a3b8; font-family:monospace;">${row.key}</div>
+                            ${row.type === 'privacy_scope' ? '<div style="font-size:11px; color:#64748b; margin-top:4px;">Nastavuje rozsah, ve kterém se běžné statusy zobrazí nemaskovaně. Mimo tento rozsah se použije maskovací status.</div>' : ''}
                         </td>
                         ${cells}
                     </tr>`;
@@ -2841,7 +2791,10 @@
                                 <thead>
                                     <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
                                         <th style="text-align:left; padding:12px 16px; color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:1px; width:40%;">Právo / Akce</th>
-                                        ${roles.map(r => `<th style="text-align:center; padding:12px 10px; color:${roleColors[r]}; font-size:10px; font-weight:900; letter-spacing:1px;">${r}</th>`).join('')}
+                                        ${tableRoles.map(r => `<th style="text-align:center; padding:12px 10px; color:${roleColors[r] || '#475569'}; font-size:10px; font-weight:900; letter-spacing:1px;">
+                                            <div>${r}</div>
+                                            ${isOrgRoleCategory ? `<div style="margin-top:3px; color:#94a3b8; font-size:9px; font-weight:700; letter-spacing:0;">${orgRoleLabels[r] || r}</div>` : ''}
+                                        </th>`).join('')}
                                     </tr>
                                 </thead>
                                 <tbody>${rows}</tbody>
@@ -2863,12 +2816,11 @@
                     </div>
                     <button onclick="admin.saveRbac()" class="btn-modal-save" style="padding:12px 28px; font-size:13px; letter-spacing:1px; box-shadow:0 4px 14px rgba(0, 79, 172, 0.25);">ULOŽIT NASTAVENÍ</button>
                 </div>
-                ${privacyVisibilityHtml}
                 ${categoriesHtml}
                 <div class="rbac-info-box">
                     <div style="font-size:24px; filter:grayscale(0.5);">💡</div>
                     <div style="font-size:12px; color:#92400e; line-height:1.6;">
-                        <strong>Logika oprávnění:</strong> Superadmin má práva vždy aktivní. Leader (vedoucí) má funkční oprávnění (zápis, smazání) omezena pouze na <strong>svoje oddělení</strong> nebo <strong>podřízené</strong> podle organizační struktury. Nastavení zde určuje pouze, zda má tuto funkci v aplikaci vůbec přístupnou.
+                        <strong>Logika oprávnění:</strong> Systémové role řídí přístup k funkcím aplikace. GDPR viditelnost statusů je samostatná a řídí se organizační rolí z <strong>POSITIONS.org_role</strong>, takže například SUPERADMIN s org rolí MEMBER může mít provozní viditelnost jen na vlastní běžné statusy.
                     </div>
                 </div>
             </div>`;

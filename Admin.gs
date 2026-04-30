@@ -857,6 +857,7 @@ var Admin = {
   getRbacConfig: function() {
     const ss = DB.getCore();
     const rows = DB.getTable(ss, DB_SHEETS.CORE.RBAC_CONFIG);
+    const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN', 'MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
     const parseValue = (val) => {
       const s = String(val).toUpperCase();
       if (s === 'TRUE') return true;
@@ -866,12 +867,11 @@ var Admin = {
 
     const config = {};
     rows.forEach(r => {
-      config[r.rbac_key] = {
-        USER: parseValue(r.USER),
-        LEADER: parseValue(r.LEADER),
-        ADMIN: parseValue(r.ADMIN),
-        SUPERADMIN: parseValue(r.SUPERADMIN)
-      };
+      if (!r.rbac_key) return;
+      config[r.rbac_key] = {};
+      roles.forEach(role => {
+        if (r[role] !== undefined) config[r.rbac_key][role] = parseValue(r[role]);
+      });
     });
     return config;
   },
@@ -889,9 +889,21 @@ var Admin = {
       Setup.setHeaders(sheet, DB_SHEETS.CORE.RBAC_CONFIG);
     }
 
+    const defaultHeaders = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN", "MEMBER", "GROUP_LEADER", "GROUP_DEPUTY", "DEPT_LEADER", "DEPT_DEPUTY", "SECTION_LEADER", "SECTION_DEPUTY"];
+    const configRoles = {};
+    Object.keys(config || {}).forEach(key => {
+      Object.keys(config[key] || {}).forEach(role => { configRoles[role] = true; });
+    });
+    const headers = defaultHeaders.slice();
+    Object.keys(configRoles).forEach(role => {
+      if (headers.indexOf(role) === -1) headers.push(role);
+    });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+
     // Smazat stará data (kromě hlavičky)
     if (sheet.getLastRow() > 1) {
-      sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastHeaderColumn ? sheet.getLastHeaderColumn() : 5).clearContent();
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
     }
 
     const prepareValue = (val) => {
@@ -902,22 +914,17 @@ var Admin = {
 
     const rows = [];
     for (let key in config) {
-      rows.push([
-        key,
-        prepareValue(config[key].USER),
-        prepareValue(config[key].LEADER),
-        prepareValue(config[key].ADMIN),
-        prepareValue(config[key].SUPERADMIN)
-      ]);
+      rows.push(headers.map(header => header === 'rbac_key' ? key : prepareValue(config[key][header])));
     }
 
     if (rows.length > 0) {
       // Důležité: Vyčistit stávající ověření dat (checkboxy), protože nyní do sloupců B-E ukládáme scope stringy
       if (sheet.getLastRow() > 1) {
-        sheet.getRange(2, 2, sheet.getLastRow() - 1, 4).setDataValidation(null);
+        sheet.getRange(2, 2, sheet.getLastRow() - 1, headers.length - 1).setDataValidation(null);
       }
-      sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
     }
+    DB.clearCache(DB_SHEETS.CORE.RBAC_CONFIG);
     return true;
   }
 };
