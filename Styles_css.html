@@ -7583,6 +7583,208 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
     }
 
+    .rbac-privacy-panel {
+        background:
+            linear-gradient(135deg, rgba(0, 79, 172, 0.08), rgba(231, 3, 12, 0.045)),
+            #ffffff;
+        border: 1px solid #dbeafe;
+        border-radius: 14px;
+        padding: 22px;
+        margin-bottom: 22px;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
+    }
+
+    .rbac-privacy-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        margin-bottom: 18px;
+    }
+
+    .rbac-privacy-kicker {
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+
+    .rbac-privacy-head h2 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .rbac-privacy-state {
+        flex-shrink: 0;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        border: 1px solid;
+    }
+
+    .rbac-privacy-state.is-enabled {
+        color: #047857;
+        background: #ecfdf5;
+        border-color: #a7f3d0;
+    }
+
+    .rbac-privacy-state.is-disabled {
+        color: #92400e;
+        background: #fffbeb;
+        border-color: #fde68a;
+    }
+
+    .rbac-privacy-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .rbac-privacy-summary>div {
+        background: rgba(255, 255, 255, 0.76);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 10px;
+        padding: 12px 14px;
+    }
+
+    .rbac-privacy-summary strong {
+        display: block;
+        color: #0f172a;
+        font-size: 18px;
+        font-weight: 900;
+        line-height: 1;
+        margin-bottom: 5px;
+    }
+
+    .rbac-privacy-summary span {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .rbac-privacy-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .rbac-privacy-grid article {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 15px;
+        min-height: 156px;
+    }
+
+    .rbac-privacy-role {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 58px;
+        height: 24px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 10px;
+        font-weight: 900;
+        margin-bottom: 12px;
+    }
+
+    .rbac-privacy-role.is-leader {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .rbac-privacy-role.is-group {
+        background: #ecfdf5;
+        color: #047857;
+    }
+
+    .rbac-privacy-role.is-dept {
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    .rbac-privacy-role.is-section {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .rbac-privacy-role.is-admin {
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+
+    .rbac-privacy-role.is-superadmin {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .rbac-privacy-grid h3 {
+        margin: 0 0 8px;
+        color: #1e293b;
+        font-size: 14px;
+        font-weight: 900;
+    }
+
+    .rbac-privacy-grid article>strong {
+        display: block;
+        color: #0f172a;
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1.35;
+        margin-bottom: 8px;
+    }
+
+    .rbac-privacy-grid p {
+        margin: 0;
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.55;
+    }
+
+    .rbac-privacy-note {
+        margin-top: 14px;
+        border-left: 4px solid var(--primary);
+        background: rgba(255, 255, 255, 0.72);
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: #475569;
+        font-size: 12px;
+        line-height: 1.55;
+    }
+
+    @media (max-width: 980px) {
+        .rbac-privacy-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 640px) {
+        .rbac-privacy-head,
+        .rbac-privacy-summary {
+            grid-template-columns: 1fr;
+        }
+
+        .rbac-privacy-head {
+            display: grid;
+        }
+
+        .rbac-privacy-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
     /* Modern Toggle Switch (stávající, upravená) */
     .rbac-switch {
         position: relative;

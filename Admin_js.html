@@ -2655,6 +2655,97 @@
 
             const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'];
             const roleColors = { USER: '#64748b', LEADER: '#16a34a', ADMIN: '#004fac', SUPERADMIN: '#e7030c' };
+            const privacyEnabled = !!(this.privacySettings && this.privacySettings.masking_enabled);
+            const maskStatusesCount = (this.statuses || []).filter(s => String(s.status_kind || 'NORMAL').toUpperCase() === 'MASK').length;
+            const normalStatusesCount = (this.statuses || []).filter(s => String(s.status_kind || 'NORMAL').toUpperCase() !== 'MASK').length;
+            const orgRoleLabels = {
+                'MEMBER': 'Běžný člen',
+                'GROUP_LEADER': 'Vedoucí týmu',
+                'GROUP_DEPUTY': 'Zástupce týmu',
+                'DEPT_LEADER': 'Vedoucí oddělení',
+                'DEPT_DEPUTY': 'Zástupce oddělení',
+                'SECTION_LEADER': 'Vedoucí úseku',
+                'SECTION_DEPUTY': 'Zástupce úseku'
+            };
+            const privacyOrgRoles = ['MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY']
+                .filter(role => role === 'MEMBER' || (this.data.positions || []).some(p => (p.org_role || 'MEMBER') === role));
+            const privacyRoleRules = {
+                'MEMBER': {
+                    scope: 'Pouze vlastní statusy',
+                    detail: 'Svoje statusy vidí v původní podobě. Statusy všech ostatních zaměstnanců se zobrazí maskovaně.'
+                },
+                'GROUP_LEADER': {
+                    scope: 'Vlastní tým nemaskovaně',
+                    detail: 'Členy svého týmu vidí v původní podobě. Ostatní zaměstnance mimo tým vidí přes maskovací statusy.'
+                },
+                'GROUP_DEPUTY': {
+                    scope: 'Vlastní tým nemaskovaně',
+                    detail: 'Stejný provozní pohled jako vedoucí týmu, pokud je tato org role používána.'
+                },
+                'DEPT_LEADER': {
+                    scope: 'Vlastní oddělení nemaskovaně',
+                    detail: 'Členy svého oddělení vidí v původní podobě. Zaměstnance mimo oddělení vidí přes maskovací statusy.'
+                },
+                'DEPT_DEPUTY': {
+                    scope: 'Vlastní oddělení nemaskovaně',
+                    detail: 'Stejný provozní pohled jako vedoucí oddělení, pokud je tato org role používána.'
+                },
+                'SECTION_LEADER': {
+                    scope: 'Vlastní úsek nemaskovaně',
+                    detail: 'Členy svého úseku vidí v původní podobě. Zaměstnance mimo úsek vidí přes maskovací statusy.'
+                },
+                'SECTION_DEPUTY': {
+                    scope: 'Vlastní úsek nemaskovaně',
+                    detail: 'Stejný provozní pohled jako vedoucí úseku, pokud je tato org role používána.'
+                }
+            };
+            const privacyRoleCards = privacyOrgRoles.map(role => {
+                const rule = privacyRoleRules[role] || privacyRoleRules.MEMBER;
+                const className = role.indexOf('SECTION_') === 0 ? 'is-section'
+                    : role.indexOf('DEPT_') === 0 ? 'is-dept'
+                    : role.indexOf('GROUP_') === 0 ? 'is-group'
+                    : '';
+                return `
+                        <article>
+                            <div class="rbac-privacy-role ${className}">${role}</div>
+                            <h3>${orgRoleLabels[role] || role}</h3>
+                            <strong>${rule.scope}</strong>
+                            <p>${rule.detail}</p>
+                        </article>`;
+            }).join('');
+
+            const privacyVisibilityHtml = `
+                <section class="rbac-privacy-panel" aria-label="Viditelnost GDPR statusů">
+                    <div class="rbac-privacy-head">
+                        <div>
+                            <div class="rbac-privacy-kicker">GDPR maskování statusů</div>
+                            <h2>Viditelnost statusů podle organizační role</h2>
+                        </div>
+                        <div class="rbac-privacy-state ${privacyEnabled ? 'is-enabled' : 'is-disabled'}">
+                            ${privacyEnabled ? 'Aktivní' : 'Neaktivní'}
+                        </div>
+                    </div>
+                    <div class="rbac-privacy-summary">
+                        <div>
+                            <strong>${normalStatusesCount}</strong>
+                            <span>běžných statusů</span>
+                        </div>
+                        <div>
+                            <strong>${maskStatusesCount}</strong>
+                            <span>maskovacích statusů</span>
+                        </div>
+                        <div>
+                            <strong>${privacyEnabled ? 'Zapnuto' : 'Vypnuto'}</strong>
+                            <span>globální pravidlo</span>
+                        </div>
+                    </div>
+                    <div class="rbac-privacy-grid">
+                        ${privacyRoleCards}
+                    </div>
+                    <div class="rbac-privacy-note">
+                        Viditelnost citlivých statusů se bude řídit podle <strong>POSITIONS.org_role</strong>, nikoliv podle systémové role uživatele. Například uživatel se systémovou rolí <strong>SUPERADMIN</strong>, ale organizační rolí <strong>MEMBER</strong>, má v běžném provozním pohledu vidět klasicky jen své vlastní statusy; statusy ostatních se mu mají maskovat. Samotné mapování běžných statusů na maskovací statusy se nastavuje v sekci <strong>Statusy</strong>.
+                    </div>
+                </section>`;
 
             // 2. Seskupení podle kategorií
             const categories = {};
@@ -2772,6 +2863,7 @@
                     </div>
                     <button onclick="admin.saveRbac()" class="btn-modal-save" style="padding:12px 28px; font-size:13px; letter-spacing:1px; box-shadow:0 4px 14px rgba(0, 79, 172, 0.25);">ULOŽIT NASTAVENÍ</button>
                 </div>
+                ${privacyVisibilityHtml}
                 ${categoriesHtml}
                 <div class="rbac-info-box">
                     <div style="font-size:24px; filter:grayscale(0.5);">💡</div>
