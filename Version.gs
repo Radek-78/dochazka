@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.9";
+const APP_VERSION = "2.10.10";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.10",
+    "date": "2026-04-30",
+    "changes": [
+      "GDPR maskování: přidána funkční backendová vrstva pro docházku, denní statistiky, log statusů a týmovou kalendářovou synchronizaci",
+      "Administrace statusů: doplněna kontrola chybějících nebo neaktivních maskovacích statusů"
+    ]
+  },
   {
     "version": "2.10.9",
     "date": "2026-04-30",

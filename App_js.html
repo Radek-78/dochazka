@@ -1371,7 +1371,9 @@
 
     // Vykreslí mřížku statusů (seskupeno po kategoriích, ale baleno do řádků po max 5)
     function _renderStatusGrid(canEdit) {
-        var rawStatuses = plannerData.statuses.filter(function (s) { return s.active !== 'false'; });
+        var rawStatuses = plannerData.statuses.filter(function (s) {
+            return s.active !== 'false' && String(s.status_kind || 'NORMAL').toUpperCase() !== 'MASK';
+        });
         var groupOrder = ['Práce', 'Volno / Absence', 'Zdraví', 'Ostatní'];
 
         // Seskupit do objektů

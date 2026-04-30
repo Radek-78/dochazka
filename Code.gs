@@ -114,7 +114,9 @@ function getPlannerData() {
     const allEmployees = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
     const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
     const groups = DB.getTable(coreSS, DB_SHEETS.CORE.GROUPS);
-    const statuses = DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES).filter(s => s.active !== "false");
+    const statuses = Privacy.ensureFallbackMaskStatus(
+      DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES).filter(s => s.active !== "false")
+    );
     const vacationConfig = Admin.getVacationConfig ? Admin.getVacationConfig() : { system_type: VACATION_SYSTEM_TYPE.GLOBAL, global_days: 30 };
 
     const today = new Date();
@@ -511,7 +513,16 @@ function getMonthAttendance(year, month) {
       return Auth.canAccessUserData(targetUser, rbacConfig);
     });
 
-    return { success: true, data: filtered };
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const privacyCtx = Privacy.createContext({
+      viewer: currentUser,
+      positions: positions,
+      statuses: statuses,
+      rbacConfig: rbacConfig
+    });
+
+    return { success: true, data: Privacy.maskAttendanceEntries(filtered, userMap, privacyCtx) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1380,6 +1391,9 @@ function updateUserActivity() {
  */
 function getDailyStats(dateStr) {
   try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+
     const coreSS = DB.getCore();
     const transSS = DB.getTransaction();
     
@@ -1388,14 +1402,25 @@ function getDailyStats(dateStr) {
     
     const allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
     const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
-    const statuses = DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    const privacyCtx = Privacy.createContext({
+      viewer: currentUser,
+      positions: positions,
+      statuses: statuses,
+      rbacConfig: rbacConfig
+    });
     
     const dayAttendance = allAttendance.filter(a => {
         const dStr = _toPfx(a.date, transSS);
         return dStr === isoDate;
     });
 
-    const activeUsers = allUsers.filter(u => u.active !== 'false');
+    const activeUsers = allUsers.filter(function(u) {
+      if (u.active === 'false') return false;
+      return Auth.canAccessUserData(u, rbacConfig);
+    });
     const now = new Date();
     const onlineThresholdMinutes = 10;
 
@@ -1439,7 +1464,8 @@ function getDailyStats(dateStr) {
         return;
       }
       
-      const primary = userAtt.find(a => a.slot === 'ALL_DAY') || userAtt.find(a => a.slot === 'AM') || userAtt[0];
+      const primaryRaw = userAtt.find(a => a.slot === 'ALL_DAY') || userAtt.find(a => a.slot === 'AM') || userAtt[0];
+      const primary = Privacy.maskAttendanceEntry(primaryRaw, u, privacyCtx);
       const status = statusMap[primary.status_id];
       if (!status) {
         stats.unfilled.push(u.first_name + " " + u.last_name);
@@ -1815,14 +1841,25 @@ function getAttendanceLog(offset) {
 
     const coreDb = DB.getCore();
     const allUsers = DB.getTable(coreDb, DB_SHEETS.CORE.USERS);
-    const allStatuses = DB.getTable(coreDb, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const allStatuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreDb, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(coreDb, DB_SHEETS.CORE.POSITIONS);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    const privacyCtx = Privacy.createContext({
+      viewer: currentUser,
+      positions: positions,
+      statuses: allStatuses,
+      rbacConfig: rbacConfig
+    });
 
     // Uživatelé ve stejném úseku
     const sectionId = currentUser.section_id;
     const sectionUserMap = {};
+    const sectionUserObjMap = {};
     allUsers.forEach(function(u) {
       if (u.section_id === sectionId && u.active === 'true') {
+        u.org_role = _resolveOrgRole(u, positions);
         sectionUserMap[u.user_id] = u.first_name + ' ' + u.last_name;
+        sectionUserObjMap[u.user_id] = u;
       }
     });
 
@@ -1853,15 +1890,19 @@ function getAttendanceLog(offset) {
       var uid = r[uidIdx];
       if (!sectionUserMap[uid]) return;
       var createdAt = catIdx !== -1 ? r[catIdx] : '';
+      var rawStatusId = r[statIdx];
+      var statusId = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx)
+        ? rawStatusId
+        : Privacy.getMaskedStatusId(rawStatusId, privacyCtx);
       logEntries.push({
         attendance_id: r[aidIdx],
         user_id: uid,
         user_name: sectionUserMap[uid],
         date: _toPfx(r[dateIdx], transDB),
-        status_id: r[statIdx],
-        status_name: (statusMap[r[statIdx]] || {}).name || r[statIdx],
-        status_color: (statusMap[r[statIdx]] || {}).color || '#94a3b8',
-        status_icon: (statusMap[r[statIdx]] || {}).icon || '',
+        status_id: statusId,
+        status_name: (statusMap[statusId] || {}).name || statusId,
+        status_color: (statusMap[statusId] || {}).color || '#94a3b8',
+        status_icon: (statusMap[statusId] || {}).icon || '',
         slot: r[slotIdx] || 'ALL_DAY',
         created_at: createdAt ? String(createdAt) : ''
       });

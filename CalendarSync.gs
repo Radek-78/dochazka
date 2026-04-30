@@ -324,9 +324,22 @@ var CalendarSync = {
       if (!CalendarSync._isTeamSyncStatus(statusObj)) return;
 
       var managers = CalendarSync._getManagersOf(subordinateId);
+      var coreSS = DB.getCore();
+      var statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+      var positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+      var allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
+      var subordinate = allUsers.find(function(u) { return u.user_id === subordinateId; }) || { user_id: subordinateId };
+      var statusById = {};
+      statuses.forEach(function(s) { statusById[s.status_id] = s; });
+
       managers.forEach(function(manager) {
         if (manager.sync_team_vacations !== 'true' || !manager.team_calendar_id) return;
-        var displayName = (statusObj.abbreviation && statusObj.abbreviation.toUpperCase() === 'HO') ? statusObj.abbreviation : statusObj.name;
+        var privacyCtx = Privacy.createContext({ viewer: manager, positions: positions, statuses: statuses });
+        var displayStatus = statusObj;
+        if (!Privacy.canViewUnmasked(subordinate, privacyCtx)) {
+          displayStatus = statusById[Privacy.getMaskedStatusId(statusObj.status_id, privacyCtx)] || statusObj;
+        }
+        var displayName = (displayStatus.abbreviation && displayStatus.abbreviation.toUpperCase() === 'HO') ? displayStatus.abbreviation : displayStatus.name;
         var title = subordinateName + ' – ' + CalendarSync._buildTitle(displayName, slot);
         CalendarSync._upsertTeamEvent(manager.team_calendar_id, dateStr, slot, subordinateId, title);
       });
@@ -679,10 +692,14 @@ var CalendarSync = {
       var yearStart = new Date().getFullYear() + '-01-01';
       var coreSS = DB.getCore();
       var transSS = DB.getTransaction();
-      var statuses = DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+      var statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
       var allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
       var manager = allUsers.find(function(u) { return u.user_id === managerId; });
       if (!manager) return;
+      var positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+      var privacyCtx = Privacy.createContext({ viewer: manager, positions: positions, statuses: statuses });
+      var statusById = {};
+      statuses.forEach(function(s) { statusById[s.status_id] = s; });
 
       // Najít podřízené (stejné oddělení nebo sekce, dle role)
       var subordinates = CalendarSync._getSubordinates(manager, allUsers);
@@ -696,7 +713,10 @@ var CalendarSync = {
           var st = statuses.find(function(s) { return s.status_id === rec.status_id; });
           if (!st || !CalendarSync._isTeamSyncStatus(st)) return;
           var name = (sub.first_name || '') + ' ' + (sub.last_name || '');
-          var displayName = (st.abbreviation && st.abbreviation.toUpperCase() === 'HO') ? st.abbreviation : st.name;
+          var displayStatus = Privacy.canViewUnmasked(sub, privacyCtx)
+            ? st
+            : (statusById[Privacy.getMaskedStatusId(st.status_id, privacyCtx)] || st);
+          var displayName = (displayStatus.abbreviation && displayStatus.abbreviation.toUpperCase() === 'HO') ? displayStatus.abbreviation : displayStatus.name;
           var title = name.trim() + ' – ' + CalendarSync._buildTitle(displayName, rec.slot);
           CalendarSync._upsertTeamEvent(calId, rec.date, rec.slot, sub.user_id, title);
         });
