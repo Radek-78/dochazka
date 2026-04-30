@@ -22,6 +22,7 @@ var Admin = {
       groups: DB.getTable(coreSS, DB_SHEETS.CORE.GROUPS),
       positions: Admin._getPositionsWithMigration(coreSS),
       vacationConfig: config,
+      privacySettings: this.getPrivacySettings(),
       orgRoles: ROLES.ORG
     };
   },
@@ -351,17 +352,74 @@ var Admin = {
     const coreSS = DB.getCore();
     const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
     if (sheet && sheet.getLastColumn() > 0) {
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      if (headers.indexOf('text_color') === -1) {
-        sheet.getRange(1, sheet.getLastColumn() + 1).setValue('text_color').setFontWeight('bold');
-      }
-      // Re-read headers after potential migration above
-      const hdrs2 = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      if (hdrs2.indexOf('category') === -1) {
-        sheet.getRange(1, sheet.getLastColumn() + 1).setValue('category').setFontWeight('bold');
-      }
+      let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      let schemaChanged = false;
+      const required = [
+        'text_color',
+        'category',
+        'status_kind',
+        'masked_status_id',
+        'retention_category'
+      ];
+      required.forEach(function(header) {
+        if (headers.indexOf(header) === -1) {
+          sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header).setFontWeight('bold');
+          headers.push(header);
+          schemaChanged = true;
+        }
+      });
+      if (schemaChanged) DB.clearCache(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
     }
-    return DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const statuses = DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    return statuses.map(function(s) {
+      if (!s.status_kind) s.status_kind = 'NORMAL';
+      if (!s.retention_category) s.retention_category = s.is_vacation === 'true' ? 'YEAR_END' : 'SHORT_TERM';
+      return s;
+    });
+  },
+
+  /**
+   * Vrátí globální nastavení GDPR maskování statusů.
+   */
+  getPrivacySettings: function() {
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    const props = PropertiesService.getScriptProperties();
+    return {
+      masking_enabled: props.getProperty(CONFIG.PROP_PRIVACY_MASKING_ENABLED) === 'true'
+    };
+  },
+
+  /**
+   * Uloží globální nastavení GDPR maskování statusů.
+   */
+  savePrivacySettings: function(data) {
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    const enabled = data && (data.masking_enabled === true || data.masking_enabled === 'true');
+    PropertiesService.getScriptProperties().setProperty(
+      CONFIG.PROP_PRIVACY_MASKING_ENABLED,
+      enabled ? 'true' : 'false'
+    );
+    return this.getPrivacySettings();
+  },
+
+  /**
+   * Uloží docházkový nebo maskovací status a doplní bezpečné výchozí hodnoty.
+   */
+  updateAttendanceStatus: function(data) {
+    if (!data) data = {};
+    data.status_kind = data.status_kind === 'MASK' ? 'MASK' : 'NORMAL';
+    if (!data.retention_category) {
+      data.retention_category = data.is_vacation === 'true' ? 'YEAR_END' : 'SHORT_TERM';
+    }
+    if (data.status_kind === 'MASK') {
+      data.masked_status_id = '';
+      data.requires_approval = 'false';
+      data.allows_desk_reservation = 'false';
+      data.is_vacation = 'false';
+      data.shows_work_time = 'false';
+      if (!data.category) data.category = 'Ostatní';
+    }
+    return this.updateEntity(DB_SHEETS.CORE.ATTENDANCE_STATUSES, 'status_id', data);
   },
 
   /**
@@ -389,6 +447,14 @@ var Admin = {
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const idIdx = headers.indexOf('status_id');
+    const maskedIdx = headers.indexOf('masked_status_id');
+    if (maskedIdx !== -1) {
+      for (var refI = 1; refI < data.length; refI++) {
+        if (data[refI][maskedIdx] === statusId) {
+          throw new Error("Maskovací status je použitý u jiného statusu. Nejdříve zrušte jeho vazby.");
+        }
+      }
+    }
     for (var i = 1; i < data.length; i++) {
       if (data[i][idIdx] === statusId) {
         sheet.deleteRow(i + 1);
@@ -1159,7 +1225,23 @@ function getAttendanceStatuses() {
 
 function updateAttendanceStatus(data) {
   try {
-    return Admin.updateEntity(DB_SHEETS.CORE.ATTENDANCE_STATUSES, 'status_id', data);
+    return Admin.updateAttendanceStatus(data);
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function getPrivacySettings() {
+  try {
+    return { success: true, data: Admin.getPrivacySettings() };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function savePrivacySettings(data) {
+  try {
+    return { success: true, data: Admin.savePrivacySettings(data) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

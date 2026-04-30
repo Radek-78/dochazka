@@ -28,6 +28,8 @@
         showInactiveUsers: true,
         currentTab: 'users',
         userSearchQuery: '',
+        statusView: 'normal',
+        privacySettings: { masking_enabled: false },
         _expandedLocations: new Set(),
         _locationsInitialized: false,
         _sectionViewMode: {},       // { [sectionId]: 'structure' | 'config' }
@@ -107,6 +109,7 @@
                 if (orgResult.success) {
                     this.data = orgResult.data;
                     this.vacationConfig = orgResult.data.vacationConfig;
+                    this.privacySettings = orgResult.data.privacySettings || { masking_enabled: false };
                 }
                 if (usersResult.success) this.users = usersResult.data;
                 if (statusesResult.success) this.statuses = statusesResult.data || [];
@@ -1306,38 +1309,93 @@
             const panel = document.getElementById('admin-panel-statuses');
             if (!panel) return;
 
+            const privacyEnabled = !!(this.privacySettings && this.privacySettings.masking_enabled);
+            const allStatuses = this.statuses || [];
+            const maskStatuses = allStatuses.filter(s => String(s.status_kind || 'NORMAL').toUpperCase() === 'MASK');
+            const normalStatuses = allStatuses.filter(s => String(s.status_kind || 'NORMAL').toUpperCase() !== 'MASK');
+            const currentView = this.statusView === 'mask' ? 'mask' : 'normal';
+            const visibleStatuses = currentView === 'mask' ? maskStatuses : normalStatuses;
+            const maskById = {};
+            maskStatuses.forEach(s => { maskById[s.status_id] = s; });
+            const usedMaskCounts = {};
+            normalStatuses.forEach(s => {
+                if (s.masked_status_id) usedMaskCounts[s.masked_status_id] = (usedMaskCounts[s.masked_status_id] || 0) + 1;
+            });
+            const retentionLabels = {
+                SHORT_TERM: 'Běžná retence',
+                YEAR_END: 'Do konce roku',
+                KEEP: 'Nemazat automaticky',
+                MANUAL: 'Ruční čištění'
+            };
+
             let html = `
 <div class="admin-card" style="padding:0; overflow:hidden;">
-    <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
-        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Docházkové statusy</h2>
-        <button class="btn-action" onclick="admin.showStatusModal()"
+    <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <div>
+            <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Docházkové statusy</h2>
+            <div style="font-size:11px; color:#64748b; font-weight:700; margin-top:2px;">Správa běžných a GDPR maskovacích statusů</div>
+        </div>
+        <button class="btn-action" onclick="admin.showStatusModal(null, '${currentView === 'mask' ? 'MASK' : 'NORMAL'}')"
             style="background:var(--success); color:white; padding:8px 16px; border-radius:8px; border:none; font-weight:800; cursor:pointer;">+
-            PŘIDAT STATUS</button>
+            ${currentView === 'mask' ? 'PŘIDAT MASKOVACÍ STATUS' : 'PŘIDAT STATUS'}</button>
+    </div>
+    <div style="padding:14px 16px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 16px; border-radius:12px; background:${privacyEnabled ? '#ecfdf5' : '#fff'}; border:1.5px solid ${privacyEnabled ? '#bbf7d0' : '#e2e8f0'};">
+            <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+                <div style="width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:${privacyEnabled ? '#16a34a' : '#94a3b8'}; color:white; font-weight:900;">GDPR</div>
+                <div>
+                    <div style="font-size:13px; font-weight:900; color:#0f172a;">Maskování citlivých statusů</div>
+                    <div style="font-size:11px; font-weight:700; color:#64748b; margin-top:2px;">${privacyEnabled ? 'Aktivní: neoprávněné pohledy budou používat maskovací statusy.' : 'Neaktivní: konfigurace se ukládá, ale zatím se neuplatňuje v zobrazení.'}</div>
+                </div>
+            </div>
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; flex-shrink:0;">
+                <span style="font-size:11px; font-weight:900; color:${privacyEnabled ? '#15803d' : '#64748b'}; text-transform:uppercase;">${privacyEnabled ? 'Aktivní' : 'Neaktivní'}</span>
+                <input type="checkbox" ${privacyEnabled ? 'checked' : ''} onchange="admin.togglePrivacyMasking(this.checked)" style="width:42px; height:22px; accent-color:#16a34a; cursor:pointer;">
+            </label>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+            <button onclick="admin.setStatusView('normal')" style="padding:8px 14px; border-radius:8px; border:1.5px solid ${currentView === 'normal' ? 'var(--primary)' : '#e2e8f0'}; background:${currentView === 'normal' ? '#eff6ff' : '#fff'}; color:${currentView === 'normal' ? 'var(--primary)' : '#64748b'}; font-weight:900; cursor:pointer;">Docházkové statusy <span style="opacity:.65;">${normalStatuses.length}</span></button>
+            <button onclick="admin.setStatusView('mask')" style="padding:8px 14px; border-radius:8px; border:1.5px solid ${currentView === 'mask' ? 'var(--primary)' : '#e2e8f0'}; background:${currentView === 'mask' ? '#eff6ff' : '#fff'}; color:${currentView === 'mask' ? 'var(--primary)' : '#64748b'}; font-weight:900; cursor:pointer;">Maskovací statusy <span style="opacity:.65;">${maskStatuses.length}</span></button>
+        </div>
     </div>
     <div class="table-container">
         <table class="admin-table">
             <thead>
+                ${currentView === 'mask' ? `
                 <tr>
                     <th>Náhled</th>
                     <th>Název</th>
                     <th style="text-align:center">Zkratka</th>
                     <th style="text-align:center">Barva</th>
+                    <th style="text-align:center">Použito</th>
+                    <th style="text-align:center">Stav</th>
+                    <th style="text-align:center">Akce</th>
+                </tr>` : `
+                <tr>
+                    <th>Náhled</th>
+                    <th>Název</th>
+                    <th style="text-align:center">Zkratka</th>
+                    <th style="text-align:center">Barva</th>
+                    <th style="text-align:center">Maskováno jako</th>
+                    <th style="text-align:center">Retence</th>
                     <th style="text-align:center">Vyžaduje schválení</th>
                     <th style="text-align:center">Rezervace stolu</th>
                     <th style="text-align:center">Čas příchodu</th>
                     <th style="text-align:center">Stav</th>
                     <th style="text-align:center">Akce</th>
-                </tr>
+                </tr>`}
             </thead>
             <tbody>`;
 
-            if (this.statuses && this.statuses.length > 0) {
-                this.statuses.forEach(s => {
+            if (visibleStatuses.length > 0) {
+                visibleStatuses.forEach(s => {
                     const isActive = s.active !== 'false';
                     const reqApproval = s.requires_approval === 'true' || s.requires_approval === true;
                     const deskRes = s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true;
                     const bgColor = safeCssColor(s.color);
                     const txtColor = safeCssColor(s.text_color || '#ffffff');
+                    const masked = s.masked_status_id ? maskById[s.masked_status_id] : null;
+                    const retention = retentionLabels[s.retention_category || 'SHORT_TERM'] || s.retention_category || 'Běžná retence';
                     html += `
                 <tr class="${!isActive ? 'row-inactive' : ''}">
                     <td>
@@ -1351,11 +1409,16 @@
                             <span style="display:inline-block; width:22px; height:22px; border-radius:5px; background:${txtColor}; border:1px solid #e2e8f0;" title="Text: ${escapeHtml(txtColor)}"></span>
                         </div>
                     </td>
+                    ${currentView === 'mask' ? `
+                    <td style="text-align:center;"><span style="display:inline-block; padding:3px 8px; border-radius:6px; background:#eff6ff; color:#1d4ed8; font-size:11px; font-weight:900;">${usedMaskCounts[s.status_id] || 0} statusů</span></td>
+                    ` : `
+                    <td style="text-align:center;">${masked ? `<span style="display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border-radius:6px; background:${safeCssColor(masked.color)}22; color:#334155; font-size:11px; font-weight:900;"><span style="width:10px; height:10px; border-radius:3px; background:${safeCssColor(masked.color)};"></span>${escapeHtml(masked.name)}</span>` : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
+                    <td style="text-align:center;"><span style="font-size:11px; font-weight:800; color:#64748b;">${escapeHtml(retention)}</span></td>
                     <td style="text-align:center;">${reqApproval ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">${deskRes ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">
                         <button onclick="admin.toggleStatusWorkTime('${s.status_id}')" title="Kliknutím přepnout" style="background:none; border:none; cursor:pointer; padding:4px;">${s.shows_work_time === 'true' ? '<span class="badge-auth-yes" style="min-width:36px;">⏰ Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</button>
-                    </td>
+                    </td>`}
                     <td style="text-align:center;"><span class="${isActive ? 'badge-status-active' : 'badge-status-inactive'}">${isActive ? 'Aktivní' : 'Neaktivní'}</span></td>
                     <td style="text-align:center;">
                         <button onclick="admin.showStatusModal('${s.status_id}')" class="btn-icon" title="Upravit">✏️</button>
@@ -1364,24 +1427,60 @@
                 </tr>`;
                 });
             } else {
-                html += '<tr><td colspan="9" style="text-align:center; padding:40px; color:#94a3b8;">Zatím nejsou definovány žádné statusy.</td></tr>';
+                html += `<tr><td colspan="${currentView === 'mask' ? '7' : '11'}" style="text-align:center; padding:40px; color:#94a3b8;">${currentView === 'mask' ? 'Zatím nejsou definovány žádné maskovací statusy.' : 'Zatím nejsou definovány žádné docházkové statusy.'}</td></tr>`;
             }
 
             html += `</tbody></table></div></div>`;
             panel.innerHTML = html;
         },
 
-        showStatusModal: function (id) {
+        setStatusView: function (view) {
+            this.statusView = view === 'mask' ? 'mask' : 'normal';
+            this.renderStatuses();
+        },
+
+        togglePrivacyMasking: async function (enabled) {
+            const previous = !!(this.privacySettings && this.privacySettings.masking_enabled);
+            this.privacySettings = { masking_enabled: !!enabled };
+            this.renderStatuses();
+            try {
+                const result = await callServer('savePrivacySettings', { masking_enabled: !!enabled });
+                if (result && result.success) {
+                    this.privacySettings = result.data || { masking_enabled: !!enabled };
+                    showAdminToast(enabled ? 'GDPR maskování zapnuto' : 'GDPR maskování vypnuto', 'success');
+                    this.renderStatuses();
+                } else {
+                    this.privacySettings = { masking_enabled: previous };
+                    this.renderStatuses();
+                    showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
+                }
+            } catch (e) {
+                this.privacySettings = { masking_enabled: previous };
+                this.renderStatuses();
+                showAdminToast('Chyba komunikace: ' + e);
+            }
+        },
+
+        showStatusModal: function (id, kind) {
             const item = id ? this.statuses.find(s => s.status_id === id) : null;
+            const statusKind = item
+                ? (String(item.status_kind || 'NORMAL').toUpperCase() === 'MASK' ? 'MASK' : 'NORMAL')
+                : (kind === 'MASK' ? 'MASK' : 'NORMAL');
+            const isMaskStatus = statusKind === 'MASK';
+            const maskStatuses = (this.statuses || []).filter(s => String(s.status_kind || 'NORMAL').toUpperCase() === 'MASK' && (!id || s.status_id !== id));
+            const maskOptions = ['<option value="">Nemaskovat</option>']
+                .concat(maskStatuses.map(s => `<option value="${s.status_id}" ${item && item.masked_status_id === s.status_id ? 'selected' : ''}>${escapeHtml(s.name || s.abbreviation || s.status_id)}</option>`))
+                .join('');
             const modal = document.getElementById('admin-modal');
             const modalBody = document.getElementById('modal-body');
             modal.classList.remove('step-hidden');
             modal.style.display = 'flex';
             modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
 
-            const bgColor = (item && item.color) ? item.color : '#4CAF50';
+            const bgColor = (item && item.color) ? item.color : (isMaskStatus ? '#64748b' : '#4CAF50');
             const txtColor = (item && item.text_color) ? item.text_color : '#ffffff';
             const abbr = item ? (item.abbreviation || '') : '';
+            const retention = item && item.retention_category ? item.retention_category : (item && String(item.is_vacation) === 'true' ? 'YEAR_END' : 'SHORT_TERM');
 
             const chkAttr = (field, fieldItem) => String(fieldItem && fieldItem[field]) === 'true';
             const togHtml = (name, checked, icon, label, desc) => `
@@ -1409,8 +1508,8 @@
     <div style="display:flex; align-items:center; justify-content:space-between; position:relative; z-index:1;">
         <div>
             <div class="modal-header-icon" style="margin-bottom:4px;">🏷️</div>
-            <h2 class="modal-header-title" style="margin:0 0 4px;">${id ? 'Upravit status' : 'Nový docházkový status'}</h2>
-            <p class="modal-header-sub" style="margin:0;">${id ? 'Úprava stávajícího docházkového statusu' : 'Vytvoření nového docházkového statusu'}</p>
+            <h2 class="modal-header-title" style="margin:0 0 4px;">${id ? 'Upravit status' : (isMaskStatus ? 'Nový maskovací status' : 'Nový docházkový status')}</h2>
+            <p class="modal-header-sub" style="margin:0;">${isMaskStatus ? 'Neutrální status používaný pouze pro GDPR zobrazení' : 'Skutečný status zadávaný do docházky'}</p>
         </div>
         <span id="status-chip-preview"
             style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; height:64px; border-radius:14px; padding:0 18px; background:${bgColor}; color:${txtColor}; font-weight:900; font-size:26px; letter-spacing:0.03em; box-shadow:0 4px 16px rgba(0,0,0,0.18); transition:background 0.1s, color 0.1s; margin-right:8px; flex-shrink:0;">
@@ -1421,10 +1520,11 @@
 <div class="modal-body-padded" style="padding:24px 32px;">
     <form id="status-form" autocomplete="off">
         <input type="hidden" name="status_id" value="${id || ''}">
+        <input type="hidden" name="status_kind" value="${statusKind}">
 
         <!-- Základní informace -->
         <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
-            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">✏️ Základní informace</div>
+            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">✏️ ${isMaskStatus ? 'Maskovací status' : 'Základní informace'}</div>
             <div style="display:grid; grid-template-columns:1fr 120px 1fr; gap:12px;">
                 <div class="modal-form-group" style="margin:0;">
                     <label class="modal-form-label">NÁZEV</label>
@@ -1474,7 +1574,35 @@
             </div>
         </div>
 
+        ${!isMaskStatus ? `
+        <!-- GDPR maskování a retence -->
+        <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
+            <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">🛡️ GDPR maskování a retence</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">MASKOVAT JAKO</label>
+                    <select name="masked_status_id" class="modal-form-input" style="height:42px; border-radius:9px;">
+                        ${maskOptions}
+                    </select>
+                </div>
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">RETENCE</label>
+                    <select name="retention_category" class="modal-form-input" style="height:42px; border-radius:9px;">
+                        <option value="SHORT_TERM" ${retention === 'SHORT_TERM' ? 'selected' : ''}>Běžná retence</option>
+                        <option value="YEAR_END" ${retention === 'YEAR_END' ? 'selected' : ''}>Do konce roku</option>
+                        <option value="KEEP" ${retention === 'KEEP' ? 'selected' : ''}>Nemazat automaticky</option>
+                        <option value="MANUAL" ${retention === 'MANUAL' ? 'selected' : ''}>Ruční čištění</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        ` : `
+        <input type="hidden" name="masked_status_id" value="">
+        <input type="hidden" name="retention_category" value="SHORT_TERM">
+        `}
+
         <!-- Chování -->
+        ${!isMaskStatus ? `
         <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
             <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">⚙️ Chování statusu</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
@@ -1484,6 +1612,12 @@
                 ${togHtml('is_vacation', chkAttr('is_vacation', item), '🏖️', 'Počítá se do dovolené', 'Odpočítává ze zůstatku dovolené')}
             </div>
         </div>
+        ` : `
+        <input type="hidden" name="requires_approval" value="false">
+        <input type="hidden" name="allows_desk_reservation" value="false">
+        <input type="hidden" name="shows_work_time" value="false">
+        <input type="hidden" name="is_vacation" value="false">
+        `}
 
         <!-- Stav -->
         <div style="display:flex; align-items:center; gap:12px; padding:12px 18px; background:#f8fafc; border:1px solid #e8edf2; border-radius:12px;">
@@ -1505,7 +1639,7 @@
 </div>
 <div class="modal-footer-brand" style="padding:16px 32px; background:#f8fafc; border-top:1px solid #eef2f6;">
     <button class="btn-modal-cancel" onclick="admin.closeModal()" style="height:42px; padding:0 22px;">ZRUŠIT</button>
-    <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:42px; padding:0 28px; background:var(--primary);">ULOŽIT STATUS</button>
+    <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:42px; padding:0 28px; background:var(--primary);">ULOŽIT ${isMaskStatus ? 'MASKOVACÍ STATUS' : 'STATUS'}</button>
 </div>`;
         },
 

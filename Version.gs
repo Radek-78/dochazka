@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.5";
+const APP_VERSION = "2.10.6";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.6",
+    "date": "2026-04-30",
+    "changes": [
+      "Administrace statusů: přidána konfigurace GDPR maskování, maskovací statusy a globální přepínač aktivace"
+    ]
+  },
   {
     "version": "2.10.5",
     "date": "2026-04-30",
