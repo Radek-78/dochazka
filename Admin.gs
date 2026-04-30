@@ -857,7 +857,7 @@ var Admin = {
   getRbacConfig: function() {
     const ss = DB.getCore();
     const rows = DB.getTable(ss, DB_SHEETS.CORE.RBAC_CONFIG);
-    const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN', 'MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
+    const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN', 'MEMBER', 'GROUP_LEADER', 'DEPT_LEADER', 'SECTION_LEADER'];
     const parseValue = (val) => {
       const s = String(val).toUpperCase();
       if (s === 'TRUE') return true;
@@ -889,7 +889,7 @@ var Admin = {
       Setup.setHeaders(sheet, DB_SHEETS.CORE.RBAC_CONFIG);
     }
 
-    const defaultHeaders = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN", "MEMBER", "GROUP_LEADER", "GROUP_DEPUTY", "DEPT_LEADER", "DEPT_DEPUTY", "SECTION_LEADER", "SECTION_DEPUTY"];
+    const defaultHeaders = ["rbac_key", "USER", "LEADER", "ADMIN", "SUPERADMIN", "MEMBER", "GROUP_LEADER", "DEPT_LEADER", "SECTION_LEADER"];
     const configRoles = {};
     Object.keys(config || {}).forEach(key => {
       Object.keys(config[key] || {}).forEach(role => { configRoles[role] = true; });
@@ -898,6 +898,7 @@ var Admin = {
     Object.keys(configRoles).forEach(role => {
       if (headers.indexOf(role) === -1) headers.push(role);
     });
+    sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
     sheet.setFrozenRows(1);
 

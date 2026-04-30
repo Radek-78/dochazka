@@ -2626,11 +2626,8 @@
                 roleSet: 'org_role',
                 MEMBER: 'OWN',
                 GROUP_LEADER: 'OWN_GROUP',
-                GROUP_DEPUTY: 'OWN_GROUP',
                 DEPT_LEADER: 'OWN_DEPARTMENT',
-                DEPT_DEPUTY: 'OWN_DEPARTMENT',
-                SECTION_LEADER: 'OWN_SECTION',
-                SECTION_DEPUTY: 'OWN_SECTION'
+                SECTION_LEADER: 'OWN_SECTION'
             },
 
             // Kategorie: PLÁNOVACÍ KALENDÁŘ (PLANNER)
@@ -2670,16 +2667,13 @@
             }
 
             const roles = ['USER', 'LEADER', 'ADMIN', 'SUPERADMIN'];
-            const orgRoles = ['MEMBER', 'GROUP_LEADER', 'GROUP_DEPUTY', 'DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
+            const orgRoles = ['MEMBER', 'GROUP_LEADER', 'DEPT_LEADER', 'SECTION_LEADER'];
             const roleColors = { USER: '#64748b', LEADER: '#16a34a', ADMIN: '#004fac', SUPERADMIN: '#e7030c' };
             const orgRoleLabels = {
                 'MEMBER': 'Běžný člen',
                 'GROUP_LEADER': 'Vedoucí týmu',
-                'GROUP_DEPUTY': 'Zástupce týmu',
                 'DEPT_LEADER': 'Vedoucí oddělení',
-                'DEPT_DEPUTY': 'Zástupce oddělení',
-                'SECTION_LEADER': 'Vedoucí úseku',
-                'SECTION_DEPUTY': 'Zástupce úseku'
+                'SECTION_LEADER': 'Vedoucí úseku'
             };
 
             // 2. Seskupení podle kategorií

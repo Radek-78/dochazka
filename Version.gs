@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.8";
+const APP_VERSION = "2.10.9";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.9",
+    "date": "2026-04-30",
+    "changes": [
+      "Administrace oprávnění: GDPR viditelnost statusů omezena pouze na používané organizační role MEMBER, GROUP_LEADER, DEPT_LEADER a SECTION_LEADER"
+    ]
+  },
   {
     "version": "2.10.8",
     "date": "2026-04-30",
