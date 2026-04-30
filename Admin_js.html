@@ -1324,12 +1324,12 @@
             const activeMaskStatuses = maskStatuses.filter(s => s.active !== 'false');
             const invalidMaskMappings = normalStatuses.filter(s => {
                 if (s.active === 'false') return false;
-                if (!s.masked_status_id) return true;
+                if (!s.masked_status_id) return false;
                 const masked = maskById[s.masked_status_id];
                 return !masked || masked.active === 'false';
             });
             const maskingConfigWarning = privacyEnabled && (
-                activeMaskStatuses.length === 0 || invalidMaskMappings.length > 0
+                (activeMaskStatuses.length === 0 && normalStatuses.some(s => s.active !== 'false' && s.masked_status_id)) || invalidMaskMappings.length > 0
             );
             const retentionLabels = {
                 SHORT_TERM: 'Běžná retence',
@@ -1367,8 +1367,8 @@
         <div style="margin-top:12px; padding:12px 14px; border-radius:10px; background:#fffbeb; border:1px solid #fde68a; color:#92400e;">
             <div style="font-size:12px; font-weight:900; margin-bottom:4px;">Kontrola konfigurace maskování</div>
             <div style="font-size:11px; line-height:1.55; font-weight:700;">
-                ${activeMaskStatuses.length === 0 ? 'Není definovaný žádný aktivní maskovací status. Systém použije bezpečný fallback „Skrytý status“.' : ''}
-                ${invalidMaskMappings.length > 0 ? `${activeMaskStatuses.length === 0 ? '<br>' : ''}${invalidMaskMappings.length} aktivních docházkových statusů nemá přiřazený platný aktivní maskovací status.` : ''}
+                ${activeMaskStatuses.length === 0 ? 'Není definovaný žádný aktivní maskovací status pro statusy, které mají být maskované. Systém použije bezpečný fallback „Skrytý status“.' : ''}
+                ${invalidMaskMappings.length > 0 ? `${activeMaskStatuses.length === 0 ? '<br>' : ''}${invalidMaskMappings.length} aktivních docházkových statusů má přiřazený neplatný nebo neaktivní maskovací status.` : ''}
             </div>
             ${invalidMaskMappings.length > 0 ? `
             <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">

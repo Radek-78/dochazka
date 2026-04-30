@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.10";
+const APP_VERSION = "2.10.11";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.11",
+    "date": "2026-04-30",
+    "changes": [
+      "Oprava GDPR maskování: prázdné pole Maskováno jako nyní znamená nemaskovat daný status, ne použít první maskovací status"
+    ]
+  },
   {
     "version": "2.10.10",
     "date": "2026-04-30",

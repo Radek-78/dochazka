@@ -85,6 +85,7 @@ var Privacy = {
     var status = ctx && ctx.statusById ? ctx.statusById[statusId] : null;
     if (!status) return this.FALLBACK_MASK_STATUS_ID;
     if (String(status.status_kind || "NORMAL").toUpperCase() === "MASK") return status.status_id;
+    if (!status.masked_status_id) return status.status_id;
     var configuredMask = status.masked_status_id ? ctx.statusById[status.masked_status_id] : null;
     if (configuredMask &&
         configuredMask.active !== "false" &&
@@ -96,9 +97,11 @@ var Privacy = {
 
   maskAttendanceEntry: function(entry, targetUser, ctx) {
     if (!entry || this.canViewUnmasked(targetUser, ctx)) return entry;
+    var maskedStatusId = this.getMaskedStatusId(entry.status_id, ctx);
+    if (maskedStatusId === entry.status_id) return entry;
     var masked = {};
     Object.keys(entry).forEach(function(k) { masked[k] = entry[k]; });
-    masked.status_id = this.getMaskedStatusId(entry.status_id, ctx);
+    masked.status_id = maskedStatusId;
     masked.note = "";
     return masked;
   },
