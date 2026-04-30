@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.3";
+const APP_VERSION = "2.10.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.4",
+    "date": "2026-04-30",
+    "changes": [
+      "Administrace: přidáno vyhledávání uživatelů napříč všemi sloupci",
+      "Oprava zobrazení footeru při vstupu do Administrace"
+    ]
+  },
   {
     "version": "2.10.3",
     "date": "2026-04-27",

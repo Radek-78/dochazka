@@ -27,6 +27,7 @@
         statuses: [],
         showInactiveUsers: true,
         currentTab: 'users',
+        userSearchQuery: '',
         _expandedLocations: new Set(),
         _locationsInitialized: false,
         _sectionViewMode: {},       // { [sectionId]: 'structure' | 'config' }
@@ -167,13 +168,25 @@
             const deptMap = {}; if (this.data && this.data.departments) this.data.departments.forEach(d => deptMap[d.department_id] = d.name);
             const groupMap = {}; if (this.data && this.data.groups) this.data.groups.forEach(g => groupMap[g.group_id] = g.name);
             const posMap = {}; if (this.data && this.data.positions) this.data.positions.forEach(p => posMap[p.position_id] = p.name);
+            let renderedUserCount = 0;
 
             let tableHtml = `
 <div class="admin-card" style="padding:0; overflow:hidden;">
     <div class="admin-header-compact"
-        style="display:flex; justify-content:space-between; align-items:center; padding:10px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
-        <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900;">Správa uživatelů</h2>
-        <div style="display:flex; align-items:center; gap:12px;">
+        style="display:flex; justify-content:space-between; align-items:center; gap:16px; padding:10px 16px; background:#fff; border-bottom:1px solid #f1f5f9; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:14px; flex:1 1 420px; min-width:280px;">
+            <h2 style="margin:0; color:var(--primary); font-size:20px; font-weight:900; white-space:nowrap;">Správa uživatelů</h2>
+            <div class="admin-user-search">
+                <span class="admin-user-search-icon" aria-hidden="true">⌕</span>
+                <input id="admin-user-search-input" type="search" value="${escapeHtml(this.userSearchQuery)}"
+                    placeholder="Hledat ve všech sloupcích..."
+                    oninput="admin.setUserSearch(this.value)"
+                    autocomplete="off" aria-label="Hledat uživatele">
+                <button type="button" class="admin-user-search-clear" onclick="admin.clearUserSearch()" title="Vymazat hledání">×</button>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; flex:0 0 auto;">
+            <span id="admin-user-search-count" class="admin-user-search-count"></span>
             <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px;">
                 <input type="checkbox" ${this.showInactiveUsers ? 'checked' : ''}
                     onchange="admin.toggleInactiveUsers(this.checked)"> Zobrazit neaktivní
@@ -207,9 +220,17 @@
                 const isOptimistic = u._optimistic === true;
 
                 if (!isCurrentlyActive && !this.showInactiveUsers) return;
+                renderedUserCount++;
+                const authLabel = u.auth_status === 'APPROVED' ? 'Schváleno' : u.auth_status === 'PENDING' ? 'Čeká' : u.auth_status === 'REJECTED' ? 'Zamítnuto' : '';
+                const searchableText = [
+                    u.first_name, u.last_name, u.email, u.system_role, u.auth_status, authLabel,
+                    isCurrentlyActive ? 'Aktivní' : 'Neaktivní',
+                    sectionMap[u.section_id], deptMap[u.department_id], groupMap[u.group_id], posMap[u.position_id],
+                    this.formatDateCompact(u.date_start), this.formatDateCompact(u.date_end)
+                ].concat(Object.keys(u).map(k => u[k])).join(' ');
 
                 tableHtml += `
-                <tr class="${!isCurrentlyActive ? 'row-inactive' : ''}${isOptimistic ? ' row-optimistic' : ''}">
+                <tr class="${!isCurrentlyActive ? 'row-inactive' : ''}${isOptimistic ? ' row-optimistic' : ''}" data-user-row="true" data-search="${escapeHtml(searchableText)}">
                     <td>
                         <div style="font-weight:800;">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</div>
                         <div style="font-size:11px; color:#64748b;">${escapeHtml(u.email)}</div>
@@ -252,11 +273,50 @@
                 `;
             });
             tableHtml += `
+                <tr id="admin-user-search-empty" style="display:none;">
+                    <td colspan="8" style="padding:28px; text-align:center; color:#64748b; font-weight:700;">
+                        Nenalezen žádný uživatel odpovídající hledání.
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
 </div>`;
             panel.innerHTML = tableHtml;
+            this._lastRenderedUserCount = renderedUserCount;
+            this.applyUserSearchFilter();
+        },
+
+        setUserSearch: function (value) {
+            this.userSearchQuery = value || '';
+            this.applyUserSearchFilter();
+        },
+
+        clearUserSearch: function () {
+            this.userSearchQuery = '';
+            const input = document.getElementById('admin-user-search-input');
+            if (input) input.value = '';
+            this.applyUserSearchFilter();
+            if (input) input.focus();
+        },
+
+        applyUserSearchFilter: function () {
+            const query = String(this.userSearchQuery || '').trim().toLocaleLowerCase('cs-CZ');
+            const rows = document.querySelectorAll('#admin-panel-users tr[data-user-row="true"]');
+            let visible = 0;
+            rows.forEach(row => {
+                const haystack = (row.getAttribute('data-search') || '').toLocaleLowerCase('cs-CZ');
+                const match = !query || haystack.indexOf(query) !== -1;
+                row.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            const empty = document.getElementById('admin-user-search-empty');
+            if (empty) empty.style.display = visible === 0 ? '' : 'none';
+            const count = document.getElementById('admin-user-search-count');
+            if (count) {
+                const total = rows.length;
+                count.textContent = query ? (visible + ' / ' + total) : (total + ' uživatelů');
+            }
         },
 
         /**

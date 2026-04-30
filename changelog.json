@@ -1,5 +1,13 @@
 [
   {
+    "version": "2.10.4",
+    "date": "2026-04-30",
+    "changes": [
+      "Administrace: přidáno vyhledávání uživatelů napříč všemi sloupci",
+      "Oprava zobrazení footeru při vstupu do Administrace"
+    ]
+  },
+  {
     "version": "2.4.0",
     "date": "2026-03-28",
     "changes": [
