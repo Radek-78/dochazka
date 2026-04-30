@@ -522,8 +522,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.10.4</a>
-          | Vyhledávání uživatelů + oprava footeru administrace | Aktualizace: 30.04.2026 09:26
+            id="app-version-display">v2.10.5</a>
+          | Potvrzení mazání události přímo v modal okně | Aktualizace: 30.04.2026 09:51
         </div>
       </footer>
     </div>
@@ -783,7 +783,7 @@
           </div>
         </div>
       </div>
-      <div class="admin-modal-body" style="padding:24px;">
+      <div id="planner-event-body" class="admin-modal-body" style="padding:24px;">
         <div class="modal-section">
           <div class="form-group" id="pg-event-group-container">
             <label>Plánovací skupina *</label>
@@ -815,14 +815,23 @@
             </select>
           </div>
         </div>
+        <div id="planner-event-delete-confirm" class="planner-event-delete-confirm" aria-live="polite">
+          <div class="planner-event-delete-icon">!</div>
+          <h3>Smazat událost?</h3>
+          <p>Událost bude trvale odstraněna z plánovacího kalendáře.</p>
+        </div>
       </div>
-      <div class="modal-footer-brand" style="justify-content:space-between;">
+      <div id="planner-event-footer" class="modal-footer-brand" style="justify-content:space-between;">
         <button id="planner-event-delete-btn" class="btn-modal-cancel"
           style="color:#ef4444; border-color:#fee2e2; background:#fef2f2; display:none;"
           onclick="deletePlannerCurrentEvent()">SMAZAT</button>
-        <div style="display:flex; gap:10px; margin-left:auto;">
+        <div id="planner-event-edit-actions" style="display:flex; gap:10px; margin-left:auto;">
           <button class="btn-modal-cancel" onclick="closePlannerEventModal()">ZAVŘÍT</button>
           <button class="btn-modal-save" id="planner-event-save-btn" onclick="savePlannerCurrentEvent()">ULOŽIT</button>
+        </div>
+        <div id="planner-event-delete-actions" class="planner-event-delete-actions">
+          <button class="btn-modal-cancel" onclick="cancelPlannerEventDelete()">ZRUŠIT</button>
+          <button class="btn-modal-save planner-event-confirm-delete-btn" onclick="confirmPlannerEventDelete()">SMAZAT UDÁLOST</button>
         </div>
       </div>
     </div>

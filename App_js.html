@@ -4764,6 +4764,8 @@
 
     function openPlannerEventModal(dateStr, eventId) {
         const modal = document.getElementById('planner-event-modal');
+        const inner = document.getElementById('planner-event-modal-inner');
+        const body = document.getElementById('planner-event-body');
         const descInput = document.getElementById('planner-event-desc');
         const typeSelect = document.getElementById('planner-event-type');
         const delBtn = document.getElementById('planner-event-delete-btn');
@@ -4772,6 +4774,9 @@
         const saveBtn = document.getElementById('planner-event-save-btn');
 
         if (!modal || !descInput || !groupSelector) return;
+        if (inner) inner.style.height = '';
+        if (body) body.style.minHeight = '';
+        modal.classList.remove('planner-event-confirming-delete');
 
         const d = new Date(dateStr + 'T12:00:00');
         label.textContent = d.getDate() + '. ' + (d.getMonth() + 1) + '. ' + d.getFullYear();
@@ -4835,6 +4840,7 @@
 
     function closePlannerEventModal() {
         const modal = document.getElementById('planner-event-modal');
+        cancelPlannerEventDelete(true);
         if (modal) {
             modal.classList.remove('visible');
             setTimeout(() => modal.style.display = 'none', 200);
@@ -4875,26 +4881,48 @@
     function deletePlannerCurrentEvent() {
         if (!_currentPlannerEvent || !_currentPlannerEvent.event_id) return;
 
-        showCustomConfirm('Smazat událost', 'Opravdu smazat tuto událost?', async function () {
-            const eid = _currentPlannerEvent.event_id;
-            closePlannerEventModal();
-            showOpSpinner('Mažu událost...', 'Odstraňuji z plánovacího kalendáře');
+        const modal = document.getElementById('planner-event-modal');
+        const inner = document.getElementById('planner-event-modal-inner');
+        const body = document.getElementById('planner-event-body');
+        if (!modal) return;
 
-            try {
-                const res = await callServer('deletePlannerEvent', eid);
-                if (res && res.success) {
-                    updateOpSpinner('Aktualizuji kalendář...', 'Načítám aktuální data');
-                    await refreshApp({ full: true });
-                    hideOpSpinner();
-                } else {
-                    hideOpSpinner();
-                    alert('Chyba: ' + (res ? res.error : 'Neznámá chyba'));
-                }
-            } catch (e) {
+        if (inner && !inner.style.height) inner.style.height = inner.offsetHeight + 'px';
+        if (body && !body.style.minHeight) body.style.minHeight = body.offsetHeight + 'px';
+        modal.classList.add('planner-event-confirming-delete');
+    }
+
+    function cancelPlannerEventDelete(silent) {
+        const modal = document.getElementById('planner-event-modal');
+        const inner = document.getElementById('planner-event-modal-inner');
+        const body = document.getElementById('planner-event-body');
+        if (modal) modal.classList.remove('planner-event-confirming-delete');
+        if (!silent) {
+            if (inner) inner.style.height = '';
+            if (body) body.style.minHeight = '';
+        }
+    }
+
+    async function confirmPlannerEventDelete() {
+        if (!_currentPlannerEvent || !_currentPlannerEvent.event_id) return;
+
+        const eid = _currentPlannerEvent.event_id;
+        closePlannerEventModal();
+        showOpSpinner('Mažu událost...', 'Odstraňuji z plánovacího kalendáře');
+
+        try {
+            const res = await callServer('deletePlannerEvent', eid);
+            if (res && res.success) {
+                updateOpSpinner('Aktualizuji kalendář...', 'Načítám aktuální data');
+                await refreshApp({ full: true });
                 hideOpSpinner();
-                console.warn('deletePlannerEvent error:', e);
+            } else {
+                hideOpSpinner();
+                alert('Chyba: ' + (res ? res.error : 'Neznámá chyba'));
             }
-        });
+        } catch (e) {
+            hideOpSpinner();
+            console.warn('deletePlannerEvent error:', e);
+        }
     }
 
     // ─── PLANNER GROUPS MANAGEMENT ───────────────────────────────────

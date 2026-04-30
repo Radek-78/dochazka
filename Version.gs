@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.4";
+const APP_VERSION = "2.10.5";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.5",
+    "date": "2026-04-30",
+    "changes": [
+      "Plánovací kalendář: potvrzení smazání události se nyní zobrazuje přímo v původním modal okně bez změny jeho rozměru a pozice"
+    ]
+  },
   {
     "version": "2.10.4",
     "date": "2026-04-30",
