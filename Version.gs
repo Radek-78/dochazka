@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.12";
+const APP_VERSION = "2.10.13";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.13",
+    "date": "2026-05-04",
+    "changes": [
+      "Hotfix GDPR maskování: docházkové statusy se před maskováním i při vypnutém maskování kanonizují podle číselníku statusů",
+      "Doplněna diagnostika debugPrivacyStatusMapping pro kontrolu párování status_id mezi ATTENDANCE a číselníkem"
+    ]
+  },
   {
     "version": "2.10.12",
     "date": "2026-05-04",

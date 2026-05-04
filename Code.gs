@@ -522,9 +522,90 @@ function getMonthAttendance(year, month) {
       rbacConfig: rbacConfig
     });
 
-    return { success: true, data: Privacy.maskAttendanceEntries(filtered, userMap, privacyCtx) };
+    return { success: true, data: Privacy.prepareAttendanceEntries(filtered, userMap, privacyCtx) };
   } catch (e) {
     return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Diagnostika párování status_id mezi ATTENDANCE a číselníkem statusů.
+ * Volatelné ručně z Apps Scriptu nebo přes google.script.run pro administrátora.
+ */
+function debugPrivacyStatusMapping(year, month) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser || !Auth.hasAdminAccess(currentUser)) {
+      return { success: false, error: "Neautorizováno." };
+    }
+
+    const coreSS = DB.getCore();
+    const transSS = DB.getTransaction();
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    const privacyCtx = Privacy.createContext({
+      viewer: currentUser,
+      positions: positions,
+      statuses: statuses,
+      rbacConfig: rbacConfig
+    });
+
+    const statusMap = {};
+    statuses.forEach(function(s) {
+      statusMap[Privacy.normalizeStatusId(s.status_id)] = {
+        status_id: s.status_id,
+        name: s.name || "",
+        status_kind: s.status_kind || "NORMAL",
+        masked_status_id: s.masked_status_id || "",
+        active: s.active
+      };
+    });
+
+    const now = new Date();
+    const targetYear = year || now.getFullYear();
+    const targetMonth = month !== undefined && month !== null ? Number(month) : now.getMonth();
+    const prefix = String(targetYear) + "-" + String(targetMonth + 1).padStart(2, "0");
+    const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE)
+      .filter(function(a) {
+        return a.date && String(a.date).startsWith(prefix);
+      });
+
+    const rawCounts = {};
+    let unmatchedCount = 0;
+    const unmatched = [];
+    allAttendance.forEach(function(a) {
+      const rawStatusId = a.status_id;
+      const normalizedStatusId = Privacy.normalizeStatusId(rawStatusId);
+      rawCounts[normalizedStatusId] = (rawCounts[normalizedStatusId] || 0) + 1;
+      if (!statusMap[normalizedStatusId]) {
+        unmatchedCount++;
+        if (unmatched.length < 100) {
+          unmatched.push({
+            user_id: a.user_id,
+            date: String(a.date),
+            slot: a.slot || "ALL_DAY",
+            raw_status_id: rawStatusId,
+            normalized_status_id: normalizedStatusId
+          });
+        }
+      }
+    });
+
+    return {
+      success: true,
+      data: {
+        prefix: prefix,
+        masking_enabled: privacyCtx.enabled,
+        status_count: statuses.length,
+        attendance_count: allAttendance.length,
+        unmatched_count: unmatchedCount,
+        raw_status_counts: rawCounts,
+        unmatched_sample: unmatched
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e.toString(), stack: e.stack || "" };
   }
 }
 
@@ -1465,7 +1546,7 @@ function getDailyStats(dateStr) {
       }
       
       const primaryRaw = userAtt.find(a => a.slot === 'ALL_DAY') || userAtt.find(a => a.slot === 'AM') || userAtt[0];
-      const primary = Privacy.maskAttendanceEntry(primaryRaw, u, privacyCtx);
+      const primary = Privacy.prepareAttendanceEntry(primaryRaw, u, privacyCtx);
       const status = statusMap[primary.status_id];
       if (!status) {
         stats.unfilled.push(u.first_name + " " + u.last_name);
@@ -1891,9 +1972,10 @@ function getAttendanceLog(offset) {
       if (!sectionUserMap[uid]) return;
       var createdAt = catIdx !== -1 ? r[catIdx] : '';
       var rawStatusId = r[statIdx];
+      var canonicalStatusId = Privacy.getCanonicalStatusId(rawStatusId, privacyCtx);
       var statusId = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx)
-        ? rawStatusId
-        : Privacy.getMaskedStatusId(rawStatusId, privacyCtx);
+        ? canonicalStatusId
+        : Privacy.getMaskedStatusId(canonicalStatusId, privacyCtx);
       logEntries.push({
         attendance_id: r[aidIdx],
         user_id: uid,

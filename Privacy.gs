@@ -102,6 +102,22 @@ var Privacy = {
     return ctx.firstMaskStatusId || this.FALLBACK_MASK_STATUS_ID;
   },
 
+  getCanonicalStatusId: function(statusId, ctx) {
+    var normalizedStatusId = this.normalizeStatusId(statusId);
+    var status = ctx && ctx.statusById ? ctx.statusById[normalizedStatusId] : null;
+    return status ? status.status_id : statusId;
+  },
+
+  normalizeAttendanceEntry: function(entry, ctx) {
+    if (!entry) return entry;
+    var canonicalStatusId = this.getCanonicalStatusId(entry.status_id, ctx);
+    if (String(canonicalStatusId) === String(entry.status_id)) return entry;
+    var normalized = {};
+    Object.keys(entry).forEach(function(k) { normalized[k] = entry[k]; });
+    normalized.status_id = canonicalStatusId;
+    return normalized;
+  },
+
   maskAttendanceEntry: function(entry, targetUser, ctx) {
     if (!entry || this.canViewUnmasked(targetUser, ctx)) return entry;
     var maskedStatusId = this.getMaskedStatusId(entry.status_id, ctx);
@@ -116,12 +132,22 @@ var Privacy = {
     return masked;
   },
 
-  maskAttendanceEntries: function(entries, userMap, ctx) {
-    if (!ctx || !ctx.enabled || !Array.isArray(entries)) return entries;
+  prepareAttendanceEntry: function(entry, targetUser, ctx) {
+    var normalized = this.normalizeAttendanceEntry(entry, ctx);
+    if (!ctx || !ctx.enabled) return normalized;
+    return this.maskAttendanceEntry(normalized, targetUser, ctx);
+  },
+
+  prepareAttendanceEntries: function(entries, userMap, ctx) {
+    if (!Array.isArray(entries)) return entries;
     var self = this;
     return entries.map(function(entry) {
-      return self.maskAttendanceEntry(entry, userMap[entry.user_id], ctx);
+      return self.prepareAttendanceEntry(entry, userMap[entry.user_id], ctx);
     });
+  },
+
+  maskAttendanceEntries: function(entries, userMap, ctx) {
+    return this.prepareAttendanceEntries(entries, userMap, ctx);
   },
 
   ensureFallbackMaskStatus: function(statuses) {
