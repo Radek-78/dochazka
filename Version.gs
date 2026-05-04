@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.11";
+const APP_VERSION = "2.10.12";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.12",
+    "date": "2026-05-04",
+    "changes": [
+      "Hotfix GDPR maskování: status_id a masked_status_id se nyní trimují, aby skryté mezery nebo prázdné hodnoty nespouštěly fallback GDPR"
+    ]
+  },
   {
     "version": "2.10.11",
     "date": "2026-04-30",

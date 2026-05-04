@@ -1316,20 +1316,22 @@
             const currentView = this.statusView === 'mask' ? 'mask' : 'normal';
             const visibleStatuses = currentView === 'mask' ? maskStatuses : normalStatuses;
             const maskById = {};
-            maskStatuses.forEach(s => { maskById[s.status_id] = s; });
+            maskStatuses.forEach(s => { maskById[String(s.status_id || '').trim()] = s; });
             const usedMaskCounts = {};
             normalStatuses.forEach(s => {
-                if (s.masked_status_id) usedMaskCounts[s.masked_status_id] = (usedMaskCounts[s.masked_status_id] || 0) + 1;
+                const mappedId = String(s.masked_status_id || '').trim();
+                if (mappedId) usedMaskCounts[mappedId] = (usedMaskCounts[mappedId] || 0) + 1;
             });
             const activeMaskStatuses = maskStatuses.filter(s => s.active !== 'false');
             const invalidMaskMappings = normalStatuses.filter(s => {
                 if (s.active === 'false') return false;
-                if (!s.masked_status_id) return false;
-                const masked = maskById[s.masked_status_id];
+                const mappedId = String(s.masked_status_id || '').trim();
+                if (!mappedId) return false;
+                const masked = maskById[mappedId];
                 return !masked || masked.active === 'false';
             });
             const maskingConfigWarning = privacyEnabled && (
-                (activeMaskStatuses.length === 0 && normalStatuses.some(s => s.active !== 'false' && s.masked_status_id)) || invalidMaskMappings.length > 0
+                (activeMaskStatuses.length === 0 && normalStatuses.some(s => s.active !== 'false' && String(s.masked_status_id || '').trim())) || invalidMaskMappings.length > 0
             );
             const retentionLabels = {
                 SHORT_TERM: 'Běžná retence',
@@ -1417,7 +1419,7 @@
                     const deskRes = s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true;
                     const bgColor = safeCssColor(s.color);
                     const txtColor = safeCssColor(s.text_color || '#ffffff');
-                    const masked = s.masked_status_id ? maskById[s.masked_status_id] : null;
+                    const masked = s.masked_status_id ? maskById[String(s.masked_status_id || '').trim()] : null;
                     const retention = retentionLabels[s.retention_category || 'SHORT_TERM'] || s.retention_category || 'Běžná retence';
                     html += `
                 <tr class="${!isActive ? 'row-inactive' : ''}">

@@ -15,6 +15,10 @@ var Privacy = {
 
   ORG_ROLES: ["MEMBER", "GROUP_LEADER", "DEPT_LEADER", "SECTION_LEADER"],
 
+  normalizeStatusId: function(statusId) {
+    return String(statusId || "").trim();
+  },
+
   isMaskingEnabled: function() {
     try {
       return PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_PRIVACY_MASKING_ENABLED) === "true";
@@ -37,9 +41,10 @@ var Privacy = {
     var statusById = {};
     var firstMaskStatusId = "";
     statuses.forEach(function(s) {
-      statusById[s.status_id] = s;
+      var sid = Privacy.normalizeStatusId(s.status_id);
+      statusById[sid] = s;
       if (!firstMaskStatusId && String(s.status_kind || "NORMAL").toUpperCase() === "MASK" && s.active !== "false") {
-        firstMaskStatusId = s.status_id;
+        firstMaskStatusId = sid;
       }
     });
 
@@ -82,11 +87,13 @@ var Privacy = {
   },
 
   getMaskedStatusId: function(statusId, ctx) {
-    var status = ctx && ctx.statusById ? ctx.statusById[statusId] : null;
+    var normalizedStatusId = this.normalizeStatusId(statusId);
+    var status = ctx && ctx.statusById ? ctx.statusById[normalizedStatusId] : null;
     if (!status) return this.FALLBACK_MASK_STATUS_ID;
     if (String(status.status_kind || "NORMAL").toUpperCase() === "MASK") return status.status_id;
-    if (!status.masked_status_id) return status.status_id;
-    var configuredMask = status.masked_status_id ? ctx.statusById[status.masked_status_id] : null;
+    var configuredMaskId = this.normalizeStatusId(status.masked_status_id);
+    if (!configuredMaskId) return status.status_id;
+    var configuredMask = ctx.statusById[configuredMaskId] || null;
     if (configuredMask &&
         configuredMask.active !== "false" &&
         String(configuredMask.status_kind || "NORMAL").toUpperCase() === "MASK") {
@@ -98,11 +105,14 @@ var Privacy = {
   maskAttendanceEntry: function(entry, targetUser, ctx) {
     if (!entry || this.canViewUnmasked(targetUser, ctx)) return entry;
     var maskedStatusId = this.getMaskedStatusId(entry.status_id, ctx);
-    if (maskedStatusId === entry.status_id) return entry;
+    if (this.normalizeStatusId(maskedStatusId) === this.normalizeStatusId(entry.status_id) &&
+        String(maskedStatusId) === String(entry.status_id)) return entry;
     var masked = {};
     Object.keys(entry).forEach(function(k) { masked[k] = entry[k]; });
     masked.status_id = maskedStatusId;
-    masked.note = "";
+    if (this.normalizeStatusId(maskedStatusId) !== this.normalizeStatusId(entry.status_id)) {
+      masked.note = "";
+    }
     return masked;
   },
 
