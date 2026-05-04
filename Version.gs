@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.13";
+const APP_VERSION = "2.10.14";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.14",
+    "date": "2026-05-04",
+    "changes": [
+      "Hotfix GDPR maskování: backend nově odmítá uložit maskovací status jako reálný docházkový záznam",
+      "Diagnostika debugPrivacyStatusMapping nyní zapisuje výsledek do Logger.log a počítá fyzicky uložené maskovací statusy v ATTENDANCE"
+    ]
+  },
   {
     "version": "2.10.13",
     "date": "2026-05-04",

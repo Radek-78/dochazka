@@ -108,6 +108,12 @@ var Privacy = {
     return status ? status.status_id : statusId;
   },
 
+  isMaskStatusId: function(statusId, ctx) {
+    var normalizedStatusId = this.normalizeStatusId(statusId);
+    var status = ctx && ctx.statusById ? ctx.statusById[normalizedStatusId] : null;
+    return !!status && String(status.status_kind || "NORMAL").toUpperCase() === "MASK";
+  },
+
   normalizeAttendanceEntry: function(entry, ctx) {
     if (!entry) return entry;
     var canonicalStatusId = this.getCanonicalStatusId(entry.status_id, ctx);

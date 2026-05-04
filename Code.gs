@@ -536,7 +536,9 @@ function debugPrivacyStatusMapping(year, month) {
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser || !Auth.hasAdminAccess(currentUser)) {
-      return { success: false, error: "Neautorizováno." };
+      const denied = { success: false, error: "Neautorizováno.", active_user: Session.getActiveUser().getEmail() };
+      Logger.log(JSON.stringify(denied, null, 2));
+      return denied;
     }
 
     const coreSS = DB.getCore();
@@ -573,12 +575,27 @@ function debugPrivacyStatusMapping(year, month) {
 
     const rawCounts = {};
     let unmatchedCount = 0;
+    let maskStatusAttendanceCount = 0;
     const unmatched = [];
+    const maskStatusSample = [];
     allAttendance.forEach(function(a) {
       const rawStatusId = a.status_id;
       const normalizedStatusId = Privacy.normalizeStatusId(rawStatusId);
+      const statusInfo = statusMap[normalizedStatusId] || null;
       rawCounts[normalizedStatusId] = (rawCounts[normalizedStatusId] || 0) + 1;
-      if (!statusMap[normalizedStatusId]) {
+      if (statusInfo && String(statusInfo.status_kind || "NORMAL").toUpperCase() === "MASK") {
+        maskStatusAttendanceCount++;
+        if (maskStatusSample.length < 100) {
+          maskStatusSample.push({
+            user_id: a.user_id,
+            date: String(a.date),
+            slot: a.slot || "ALL_DAY",
+            raw_status_id: rawStatusId,
+            status_name: statusInfo.name
+          });
+        }
+      }
+      if (!statusInfo) {
         unmatchedCount++;
         if (unmatched.length < 100) {
           unmatched.push({
@@ -592,20 +609,26 @@ function debugPrivacyStatusMapping(year, month) {
       }
     });
 
-    return {
+    const result = {
       success: true,
       data: {
         prefix: prefix,
         masking_enabled: privacyCtx.enabled,
         status_count: statuses.length,
         attendance_count: allAttendance.length,
+        mask_status_attendance_count: maskStatusAttendanceCount,
         unmatched_count: unmatchedCount,
         raw_status_counts: rawCounts,
+        mask_status_sample: maskStatusSample,
         unmatched_sample: unmatched
       }
     };
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
   } catch (e) {
-    return { success: false, error: e.toString(), stack: e.stack || "" };
+    const errorResult = { success: false, error: e.toString(), stack: e.stack || "" };
+    Logger.log(JSON.stringify(errorResult, null, 2));
+    return errorResult;
   }
 }
 
@@ -685,13 +708,25 @@ function saveAttendanceEntries(entries) {
     const userMap = {};
     allUsers.forEach(function(u) { userMap[u.user_id] = u; });
     const statusMap = {};
-    allStatuses.forEach(function(s) { statusMap[s.status_id] = s; });
+    allStatuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
+
+    function _getWritableStatusId(statusId) {
+      const normalizedStatusId = Privacy.normalizeStatusId(statusId);
+      const st = statusMap[normalizedStatusId] || null;
+      if (!st) {
+        throw new Error("Neznámý docházkový status: " + statusId);
+      }
+      if (String(st.status_kind || "NORMAL").toUpperCase() === "MASK") {
+        throw new Error("Maskovací status nelze uložit jako docházku: " + (st.name || st.status_id));
+      }
+      return st.status_id;
+    }
 
     // Určí zda aktuální uživatel potřebuje schválení pro dovolené (ukládá sám sobě).
     // Schvalování je čistě organizační (org_role), system_role (ADMIN/SUPERADMIN) nemá vliv.
     function _isApprovalNeeded(statusId, targetUserId) {
       if (targetUserId !== currentUser.user_id) return false; // vedoucí zadává pro jiného → pre-approved
-      let st = statusMap[statusId];
+      let st = statusMap[Privacy.normalizeStatusId(statusId)];
       if (!st || st.requires_approval !== 'true') return false;
       if (curOrgRole === ROLES.ORG.SECTION_LEADER || curOrgRole === ROLES.ORG.SECTION_DEPUTY) return false;
       if (curOrgRole === ROLES.ORG.DEPT_LEADER || curOrgRole === ROLES.ORG.DEPT_DEPUTY) {
@@ -739,6 +774,7 @@ function saveAttendanceEntries(entries) {
 
     for (let i = 0; i < entries.length; i++) {
       let e = entries[i];
+      let statusId = _getWritableStatusId(e.status_id);
       let canEdit = e.user_id === currentUser.user_id || isAdminUser;
       if (!canEdit) {
         let tu = userMap[e.user_id] || null;
@@ -748,8 +784,8 @@ function saveAttendanceEntries(entries) {
 
       let slot = e.slot || 'ALL_DAY';
       let datePfx = _toPfx(e.date, transDB);
-      calSyncEntries.push({ user_id: e.user_id, date: datePfx, slot: slot, status_id: e.status_id });
-      let needsApproval = _isApprovalNeeded(e.status_id, e.user_id);
+      calSyncEntries.push({ user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
+      let needsApproval = _isApprovalNeeded(statusId, e.user_id);
       let approvedVal = needsApproval ? APPROVAL_STATUS.PENDING : APPROVAL_STATUS.NOT_REQUIRED;
 
       // O(1) lookup přes předpočítaný index místo O(n) průchodu celé tabulky
@@ -758,14 +794,14 @@ function saveAttendanceEntries(entries) {
 
       if (existIdx !== -1) {
         let existingAid = allRows[existIdx][aidIdx];
-        toUpdate.push({ row: existIdx + 2, statusId: e.status_id, note: e.note || '', approved: approvedVal });
-        allRows[existIdx][statIdx] = e.status_id;
+        toUpdate.push({ row: existIdx + 2, statusId: statusId, note: e.note || '', approved: approvedVal });
+        allRows[existIdx][statIdx] = statusId;
         allRows[existIdx][noteIdx] = e.note || '';
         allRows[existIdx][apprIdx] = approvedVal;
         if (catIdx !== -1) allRows[existIdx][catIdx] = new Date().toISOString();
         if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
         if (needsApproval) {
-          pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: e.status_id });
+          pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
         }
       } else {
         let newAid = Utilities.getUuid();
@@ -774,7 +810,7 @@ function saveAttendanceEntries(entries) {
         newRow[uidIdx]  = e.user_id;
         newRow[dateIdx] = "'" + datePfx;
         newRow[slotIdx] = slot;
-        newRow[statIdx] = e.status_id;
+        newRow[statIdx] = statusId;
         newRow[noteIdx] = e.note || '';
         newRow[apprIdx] = approvedVal;
         if (catIdx !== -1) newRow[catIdx] = new Date().toISOString();
@@ -783,7 +819,7 @@ function saveAttendanceEntries(entries) {
         attIndex[lookupKey] = allRows.length; // udržuj index aktuální pro případ duplicit ve vstupu
         allRows.push(newRow);
         if (needsApproval) {
-          pendingEntries.push({ attendance_id: newAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: e.status_id });
+          pendingEntries.push({ attendance_id: newAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
         }
       }
     }
