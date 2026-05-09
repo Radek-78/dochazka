@@ -23,6 +23,47 @@ function _toPfx(val, ss) {
   return s.substring(0, 10);
 }
 
+function _auditLog(action, details, actorUser) {
+  try {
+    const user = actorUser || Auth.getCurrentUser();
+    DB.insertRow(DB.getSystem(), DB_SHEETS.SYSTEM.AUDIT_LOG, {
+      timestamp: new Date().toISOString(),
+      user_email: user ? (user.email || user.user_id || "") : "",
+      action: action,
+      details: typeof details === "string" ? details : JSON.stringify(details || {})
+    });
+  } catch (e) {
+    console.warn("_auditLog failed: " + e.toString());
+  }
+}
+
+function _isRejectedAttendance(entry) {
+  return String(entry && entry.approved || "").toLowerCase() === APPROVAL_STATUS.REJECTED;
+}
+
+function _canManageTargetAttendance(currentUser, targetUser, positions, rbacConfig) {
+  if (!currentUser || !targetUser) return false;
+  if (currentUser.user_id === targetUser.user_id) return true;
+
+  const role = _resolveOrgRole(currentUser, positions);
+  if ((role === ROLES.ORG.SECTION_LEADER || role === ROLES.ORG.SECTION_DEPUTY) &&
+      currentUser.section_id && currentUser.section_id === targetUser.section_id) {
+    return true;
+  }
+  if ((role === ROLES.ORG.DEPT_LEADER || role === ROLES.ORG.DEPT_DEPUTY) &&
+      currentUser.department_id && currentUser.department_id === targetUser.department_id) {
+    return true;
+  }
+
+  return false;
+}
+
+function _isVacationStatusId(statusId, statusMap) {
+  const st = statusMap[Privacy.normalizeStatusId(statusId)];
+  if (!st) return false;
+  return st.is_vacation === "true" || st.is_vacation === true || String(st.name || "").indexOf("Dovolen") !== -1;
+}
+
 function doGet(e) {
   const isInitialized = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_INITIALIZED) === "true";
   const template = HtmlService.createTemplateFromFile("index");
@@ -133,7 +174,7 @@ function getPlannerData() {
     // Pro jednoduchost teď načteme celou tabulku a odfiltrujeme v JS
     const yearStart = new Date(currYearNum, 0, 1).toISOString().split('T')[0];
     const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
-    const yearAttendance = allAttendance.filter(a => a.date >= yearStart);
+    const yearAttendance = allAttendance.filter(a => a.date >= yearStart && !_isRejectedAttendance(a));
 
     // Přepsat org_role přihlášeného uživatele z pozice
     user.org_role = _resolveOrgRole(user, positions);
@@ -507,6 +548,7 @@ function getMonthAttendance(year, month) {
     const prefix = String(year) + '-' + monthStr;
 
     const filtered = allAttendance.filter(function(a) {
+      if (_isRejectedAttendance(a)) return false;
       if (!a.date || !String(a.date).startsWith(prefix)) return false;
       const targetUser = userMap[a.user_id];
       if (!targetUser) return false;
@@ -656,6 +698,18 @@ function saveAttendanceEntries(entries) {
     }
 
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var normalizedHeaders = headers.map(function(h) { return String(h || '').trim(); });
+    var headerSeen = {};
+    var duplicateHeaders = normalizedHeaders.filter(function(h) {
+      if (!h) return false;
+      if (headerSeen[h]) return true;
+      headerSeen[h] = true;
+      return false;
+    });
+    if (duplicateHeaders.length > 0) {
+      _auditLog("ATTENDANCE_SAVE_BLOCKED", { reason: "duplicate_headers", duplicates: duplicateHeaders }, currentUser);
+      return { success: false, error: "ATTENDANCE obsahuje duplicitní hlavičky. Zápis byl zastaven kvůli ochraně dat." };
+    }
 
     // Auto-migrace: pokud sloupec created_at v sheetu chybí, přidej ho
     if (headers.indexOf('created_at') === -1) {
@@ -680,6 +734,10 @@ function saveAttendanceEntries(entries) {
     const apprIdx = headers.indexOf('approved');
     const catIdx  = headers.indexOf('created_at');
     const wstIdx  = headers.indexOf('work_start_time');
+    if ([aidIdx, uidIdx, dateIdx, slotIdx, statIdx, noteIdx, apprIdx].some(function(idx) { return idx === -1; })) {
+      _auditLog("ATTENDANCE_SAVE_BLOCKED", { reason: "missing_headers", headers: headers }, currentUser);
+      return { success: false, error: "ATTENDANCE nemá očekávané hlavičky. Zápis byl zastaven." };
+    }
 
     const lastRow = sheet.getLastRow();
     const allRows = lastRow > 1
@@ -794,12 +852,12 @@ function saveAttendanceEntries(entries) {
 
       if (existIdx !== -1) {
         let existingAid = allRows[existIdx][aidIdx];
-        toUpdate.push({ row: existIdx + 2, statusId: statusId, note: e.note || '', approved: approvedVal });
         allRows[existIdx][statIdx] = statusId;
         allRows[existIdx][noteIdx] = e.note || '';
         allRows[existIdx][apprIdx] = approvedVal;
         if (catIdx !== -1) allRows[existIdx][catIdx] = new Date().toISOString();
         if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
+        toUpdate.push({ row: existIdx + 2, values: allRows[existIdx].slice() });
         if (needsApproval) {
           pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
         }
@@ -829,24 +887,22 @@ function saveAttendanceEntries(entries) {
       approverId = _findApproverId();
     }
 
-    // --- ROBUSTNÍ ATOMICKÝ ZÁPIS S DEDUPLIKACÍ ---
-    // Namísto prostého appendRow/setValues rekonstruujeme celou tabulku bez duplicit.
-    // To sice vyžaduje přepsání sheetu, ale garantuje to 100% čistá data bez "ghostů".
-    const finalData = [headers];
-    const seenKeys = new Set();
-    
-    allRows.forEach(function(r) {
-      const key = r[uidIdx] + '_' + _toPfx(r[dateIdx], transDB) + '_' + (r[slotIdx] || 'ALL_DAY');
-      if (!seenKeys.has(key)) {
-        finalData.push(r);
-        seenKeys.add(key);
-      }
+    // Zápis je cílený po řádcích. Záměrně nepřepisujeme celý ATTENDANCE sheet,
+    // aby běžný autosave nikdy nemohl při chybě smazat větší část databáze.
+    const updatedRows = new Set();
+    toUpdate.forEach(function(item) {
+      if (updatedRows.has(item.row)) return;
+      sheet.getRange(item.row, 1, 1, headers.length).setValues([item.values]);
+      updatedRows.add(item.row);
     });
-
-    sheet.clearContents();
-    if (finalData.length > 0) {
-      sheet.getRange(1, 1, finalData.length, headers.length).setValues(finalData);
+    if (toInsert.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, toInsert.length, headers.length).setValues(toInsert);
     }
+    _auditLog("ATTENDANCE_SAVE_BATCH", {
+      input_count: entries.length,
+      updated_count: updatedRows.size,
+      inserted_count: toInsert.length
+    }, currentUser);
 
     // Vytvořit notifikaci pro schvalovatele
     if (pendingEntries.length > 0 && approverId) {
@@ -954,20 +1010,32 @@ function approveVacationEntries(entryIds) {
     if (!Auth.canApproveVacation(currentUser)) return { success: false, error: "Nedostatečná oprávnění." };
     if (!Array.isArray(entryIds) || entryIds.length === 0) return { success: false, error: "Žádné záznamy." };
 
-    const sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    const transSS = DB.getTransaction();
+    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
     if (!sheet) return { success: false, error: "ATTENDANCE sheet nenalezen." };
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const aidIdx  = headers.indexOf('attendance_id');
     const apprIdx = headers.indexOf('approved');
     const uidIdx  = headers.indexOf('user_id');
+    const statIdx = headers.indexOf('status_id');
+    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
+    const userMap = {};
+    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const statusMap = {};
+    statuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
 
     // Sbíráme user_id požadatelů pro notifikace
     const requesterSet = new Set();
 
     for (let i = 1; i < data.length; i++) {
       if (entryIds.indexOf(data[i][aidIdx]) !== -1) {
-        sheet.getRange(i + 1, apprIdx + 1).setValue('true');
+        if (!_canManageTargetAttendance(currentUser, userMap[data[i][uidIdx]], positions, rbacConfig)) continue;
+        if (!_isVacationStatusId(data[i][statIdx], statusMap)) continue;
+        sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.APPROVED);
         requesterSet.add(data[i][uidIdx]);
       }
     }
@@ -982,6 +1050,7 @@ function approveVacationEntries(entryIds) {
     // Označit schvalovací notifikace jako přečtené
     _markVacationNotifsProcessed(ids);
 
+    _auditLog("VACATION_APPROVED", { count: ids.length, entry_ids: entryIds }, currentUser);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -991,7 +1060,7 @@ function approveVacationEntries(entryIds) {
 }
 
 /**
- * Zamítne (smaže) docházkové záznamy dovolené (batch). Volá vedoucí/admin.
+ * Zamítne docházkové záznamy dovolené (batch). Volá vedoucí/admin.
  * entryIds = pole attendance_id řetězců
  */
 function rejectVacationEntries(entryIds) {
@@ -1003,40 +1072,44 @@ function rejectVacationEntries(entryIds) {
     if (!Auth.canApproveVacation(currentUser)) return { success: false, error: "Nedostatečná oprávnění." };
     if (!Array.isArray(entryIds) || entryIds.length === 0) return { success: false, error: "Žádné záznamy." };
 
-    const sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    const transSS = DB.getTransaction();
+    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
     if (!sheet) return { success: false, error: "ATTENDANCE sheet nenalezen." };
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const aidIdx = headers.indexOf('attendance_id');
     const uidIdx = headers.indexOf('user_id');
+    const apprIdx = headers.indexOf('approved');
+    const statIdx = headers.indexOf('status_id');
+    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
+    const userMap = {};
+    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const statusMap = {};
+    statuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
 
-    let rowsToDelete = [];
     let requesterIds = [];
     for (let i = 1; i < data.length; i++) {
       if (entryIds.indexOf(data[i][aidIdx]) !== -1) {
-        rowsToDelete.push(i + 1); // 1-based
+        if (!_canManageTargetAttendance(currentUser, userMap[data[i][uidIdx]], positions, rbacConfig)) continue;
+        if (!_isVacationStatusId(data[i][statIdx], statusMap)) continue;
+        sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.REJECTED);
         let uid = data[i][uidIdx];
         if (requesterIds.indexOf(uid) === -1) requesterIds.push(uid);
       }
-    }
-    // Batch delete: filter v paměti + přepis (2 API volání vs. N deleteRow volání)
-    const rowsToDeleteSet = new Set(rowsToDelete);
-    const remaining = data.filter(function(row, idx) {
-      return !rowsToDeleteSet.has(idx + 1);
-    });
-    sheet.clearContents();
-    if (remaining.length > 0) {
-      sheet.getRange(1, 1, remaining.length, remaining[0].length).setValues(remaining);
     }
 
     // Notifikace zaměstnancům — zamítnutí
     requesterIds.forEach(function(uid) {
       _createUserNotification(uid, NOTIFICATION_TYPES.VACATION_REJECTED, 'Dovolená zamítnuta',
-        'Vaše žádost o dovolenou byla zamítnuta. Záznamy byly odstraněny z kalendáře.');
+        'Vaše žádost o dovolenou byla zamítnuta.');
     });
 
     _markVacationNotifsProcessed(requesterIds);
 
+    _auditLog("VACATION_REJECTED", { count: requesterIds.length, entry_ids: entryIds }, currentUser);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1102,7 +1175,8 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     rejectedIds = Array.isArray(rejectedIds) ? rejectedIds : [];
     if (approvedIds.length === 0 && rejectedIds.length === 0) return { success: true };
 
-    const sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    const transSS = DB.getTransaction();
+    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
     if (!sheet) return { success: false, error: 'ATTENDANCE sheet nenalezen.' };
 
     const data = sheet.getDataRange().getValues();
@@ -1112,17 +1186,45 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     const uidIdx  = headers.indexOf('user_id');
     const dateIdx = headers.indexOf('date');
     const slotIdx = headers.indexOf('slot');
+    const statIdx = headers.indexOf('status_id');
+
+    if ([aidIdx, apprIdx, uidIdx, dateIdx, slotIdx, statIdx].some(function(idx) { return idx === -1; })) {
+      _auditLog("VACATION_DECISION_BLOCKED", { reason: "missing_headers", headers: headers }, currentUser);
+      return { success: false, error: "ATTENDANCE nemá očekávané hlavičky." };
+    }
+
+    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
+    const userMap = {};
+    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const statusMap = {};
+    statuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    const approvedSet = new Set(approvedIds);
+    const rejectedSet = new Set(rejectedIds);
 
     // Per-user sbíráme schválené a zamítnuté záznamy pro notifikaci
     let userApproved = {};  // { uid: [date, ...] }
     let userRejected = {};  // { uid: [date, ...] }
+    let approvedCount = 0;
+    let rejectedCount = 0;
+    let skipped = [];
+    let rejectedCalendarDeletes = [];
 
     // --- Schválení ---
     for (let i = 1; i < data.length; i++) {
       let aid = data[i][aidIdx];
-      if (approvedIds.indexOf(aid) === -1) continue;
-      sheet.getRange(i + 1, apprIdx + 1).setValue('true');
+      if (!approvedSet.has(aid)) continue;
       let uid = data[i][uidIdx];
+      if (!_canManageTargetAttendance(currentUser, userMap[uid], positions, rbacConfig) ||
+          !_isVacationStatusId(data[i][statIdx], statusMap) ||
+          String(data[i][apprIdx]) !== APPROVAL_STATUS.PENDING) {
+        skipped.push({ attendance_id: aid, user_id: uid, decision: "approve" });
+        continue;
+      }
+      sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.APPROVED);
+      approvedCount++;
       let dateVal = data[i][dateIdx];
       let slot    = data[i][slotIdx] || 'ALL_DAY';
       let dateStr = dateVal instanceof Date
@@ -1134,31 +1236,27 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     }
 
     // --- Zamítnutí ---
-    // Znovu načteme data (schválení mohlo posunout jen hodnoty, ne řádky)
-    let data2 = sheet.getDataRange().getValues();
-    let rowsToDelete = [];
-    for (let j = 1; j < data2.length; j++) {
-      let aid2 = data2[j][aidIdx];
-      if (rejectedIds.indexOf(aid2) === -1) continue;
-      let uid2    = data2[j][uidIdx];
-      let dateVal2 = data2[j][dateIdx];
-      let slot2    = data2[j][slotIdx] || 'ALL_DAY';
+    for (let j = 1; j < data.length; j++) {
+      let aid2 = data[j][aidIdx];
+      if (!rejectedSet.has(aid2)) continue;
+      let uid2 = data[j][uidIdx];
+      if (!_canManageTargetAttendance(currentUser, userMap[uid2], positions, rbacConfig) ||
+          !_isVacationStatusId(data[j][statIdx], statusMap) ||
+          String(data[j][apprIdx]) !== APPROVAL_STATUS.PENDING) {
+        skipped.push({ attendance_id: aid2, user_id: uid2, decision: "reject" });
+        continue;
+      }
+      sheet.getRange(j + 1, apprIdx + 1).setValue(APPROVAL_STATUS.REJECTED);
+      rejectedCount++;
+      let dateVal2 = data[j][dateIdx];
+      let slot2    = data[j][slotIdx] || 'ALL_DAY';
+      rejectedCalendarDeletes.push({ user_id: uid2, date: _toPfx(dateVal2, transSS), slot: slot2 });
       let dateStr2 = dateVal2 instanceof Date
         ? Utilities.formatDate(dateVal2, Session.getScriptTimeZone(), 'dd.MM.yyyy')
         : String(dateVal2);
       if (slot2 !== 'ALL_DAY') dateStr2 += ' (' + slot2 + ')';
       if (!userRejected[uid2]) userRejected[uid2] = [];
       userRejected[uid2].push(dateStr2);
-      rowsToDelete.push(j + 1);
-    }
-    // Batch delete: filter v paměti + přepis (2 API volání vs. N deleteRow volání)
-    const rowsToDeleteSet2 = new Set(rowsToDelete);
-    const remaining2 = data2.filter(function(row, idx) {
-      return !rowsToDeleteSet2.has(idx + 1);
-    });
-    sheet.clearContents();
-    if (remaining2.length > 0) {
-      sheet.getRange(1, 1, remaining2.length, remaining2[0].length).setValues(remaining2);
     }
 
     // --- Jedna souhrnná notifikace per uživatel ---
@@ -1188,7 +1286,25 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     // Označit schvalovací notifikace jako zpracované
     _markVacationNotifsProcessed(allUids);
 
-    return { success: true };
+    try {
+      if (typeof CalendarSync !== 'undefined') {
+        rejectedCalendarDeletes.forEach(function(e) {
+          CalendarSync.deletePersonalEvent(e.user_id, e.date, e.slot);
+          CalendarSync.deleteTeamEvent(e.user_id, e.date, e.slot);
+        });
+      }
+    } catch (calErr) {
+      console.error("VACATION REJECT CALENDAR DELETE ERROR: " + calErr.toString());
+    }
+
+    _auditLog("VACATION_DECISIONS_PROCESSED", {
+      approved_count: approvedCount,
+      rejected_count: rejectedCount,
+      skipped_count: skipped.length,
+      skipped_sample: skipped.slice(0, 20)
+    }, currentUser);
+
+    return { success: true, approvedCount: approvedCount, rejectedCount: rejectedCount, skippedCount: skipped.length };
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
@@ -1232,12 +1348,11 @@ function clearAttendanceEntry(userId, date, slot) {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
 
-    let canEdit = userId === currentUser.user_id || Auth.hasAdminAccess(currentUser);
-    if (!canEdit) {
-      const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-      let tu = allUsers.find(function(u) { return u.user_id === userId; });
-      canEdit = tu ? Auth.canAccessUserData(tu) : false;
-    }
+    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
+    const targetUser = allUsers.find(function(u) { return u.user_id === userId; });
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    let canEdit = _canManageTargetAttendance(currentUser, targetUser, positions, rbacConfig);
     if (!canEdit) return { success: false, error: "Nedostatečná oprávnění." };
 
     const slotVal = slot || 'ALL_DAY';
@@ -1262,6 +1377,7 @@ function clearAttendanceEntry(userId, date, slot) {
         }
       }
     }
+    _auditLog("ATTENDANCE_DELETE_SINGLE", { user_id: userId, date: datePfx, slot: slotVal }, currentUser);
 
     // Pokud mažeme celý den nebo konkrétní slot, prověříme zda nezmizel nárok na stůl
     try {
@@ -1332,12 +1448,17 @@ function clearAttendanceEntries(entries) {
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
+    if (!Array.isArray(entries)) return { success: false, error: "Neplatný požadavek na mazání." };
+    if (entries.length > 100) {
+      _auditLog("ATTENDANCE_DELETE_BLOCKED", { reason: "too_many_entries", requested_count: entries.length }, currentUser);
+      return { success: false, error: "Příliš mnoho záznamů k mazání najednou. Akce byla z bezpečnostních důvodů zastavena." };
+    }
 
     const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
     const userMap = {};
     allUsers.forEach(function(u) { userMap[u.user_id] = u; });
-    
-    const isAdminUser = Auth.hasAdminAccess(currentUser);
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
 
     const transSS = DB.getTransaction();
     const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
@@ -1354,11 +1475,7 @@ function clearAttendanceEntries(entries) {
     const calSyncDeletes = [];
     
     entries.forEach(function(e) {
-      let canEdit = e.user_id === currentUser.user_id || isAdminUser;
-      if (!canEdit) {
-        let tu = userMap[e.user_id];
-        canEdit = tu ? Auth.canAccessUserData(tu) : false;
-      }
+      let canEdit = _canManageTargetAttendance(currentUser, userMap[e.user_id], positions, rbacConfig);
       if (canEdit) {
         let datePfx = _toPfx(e.date, transSS);
         let slotVal = e.slot || 'ALL_DAY';
@@ -1376,6 +1493,10 @@ function clearAttendanceEntries(entries) {
     });
 
     if (deleteKeys.size === 0) return { success: true };
+    if (deleteKeys.size > 150) {
+      _auditLog("ATTENDANCE_DELETE_BLOCKED", { reason: "too_many_keys", requested_count: entries.length, delete_key_count: deleteKeys.size }, currentUser);
+      return { success: false, error: "Mazání by zasáhlo příliš mnoho buněk. Akce byla zastavena." };
+    }
 
     let rowsToDelete = [];
     for (let i = 1; i < data.length; i++) {
@@ -1386,15 +1507,19 @@ function clearAttendanceEntries(entries) {
     }
 
     if (rowsToDelete.length > 0) {
-        // Hromadné smazání
-        const setOfRowsToDelete = new Set(rowsToDelete);
-        const remaining = data.filter(function(row, idx) { return !setOfRowsToDelete.has(idx + 1); });
-        
-        // Zabráníme chybě smazání prázdné oblasti, pokud mažeme úplně všechny záznamy (tj. zbude jen hlavička)
-        sheet.clearContents();
-        if (remaining.length > 0) {
-            sheet.getRange(1, 1, remaining.length, h.length).setValues(remaining);
+        if (rowsToDelete.length > 150 || rowsToDelete.length >= data.length - 1) {
+          _auditLog("ATTENDANCE_DELETE_BLOCKED", { reason: "unsafe_row_count", rows_to_delete: rowsToDelete.length, total_rows: data.length - 1 }, currentUser);
+          return { success: false, error: "Mazání by zasáhlo podezřele mnoho záznamů. Akce byla zastavena." };
         }
+
+        rowsToDelete.sort(function(a, b) { return b - a; }).forEach(function(rowNo) {
+          sheet.deleteRow(rowNo);
+        });
+        _auditLog("ATTENDANCE_DELETE_BATCH", {
+          requested_count: entries.length,
+          deleted_rows: rowsToDelete.length,
+          keys_sample: Array.from(deleteKeys).slice(0, 30)
+        }, currentUser);
         
         // Desk Sync
         try {
@@ -1530,6 +1655,7 @@ function getDailyStats(dateStr) {
     });
     
     const dayAttendance = allAttendance.filter(a => {
+        if (_isRejectedAttendance(a)) return false;
         const dStr = _toPfx(a.date, transSS);
         return dStr === isoDate;
     });

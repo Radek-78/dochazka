@@ -78,7 +78,8 @@ const AUTH_STATUS = {
 const APPROVAL_STATUS = {
   PENDING:      "pending",  // čeká na schválení
   APPROVED:     "true",     // schváleno
-  NOT_REQUIRED: "false"     // schválení není třeba
+  NOT_REQUIRED: "false",    // schválení není třeba
+  REJECTED:     "rejected"  // zamítnuto, v kalendáři se nezobrazuje
 };
 
 /** Typy notifikací (pole notifications.type) */

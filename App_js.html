@@ -3051,7 +3051,7 @@
         try {
             var res = await callServer('processVacationDecisions', approvedIds, rejectedIds);
             if (res && res.success) {
-                // Optimistický update: schválené → approved='true', zamítnuté → smazat z dat
+                // Optimistický update: schválené → approved='true', zamítnuté → lokálně skrýt
                 _approvalMode.entries.forEach(function (e) {
                     var aid = e.attendance_id;
                     if (!aid) return;
@@ -3065,7 +3065,6 @@
                                     // Schváleno → aktualizuj stav
                                     store[key].approved = 'true';
                                 } else {
-                                    // Zamítnuto → smaž záznam (server ho také maže)
                                     delete store[key];
                                 }
                             }
@@ -3105,22 +3104,36 @@
 
     function _persistQueues() {
         try {
-            localStorage.setItem('att_write_queue', JSON.stringify(_attWriteQueue));
-            localStorage.setItem('att_delete_queue', JSON.stringify(_attDeleteQueue));
+            localStorage.setItem('att_write_queue', JSON.stringify({ saved_at: Date.now(), items: _attWriteQueue }));
+            localStorage.setItem('att_delete_queue', JSON.stringify({ saved_at: Date.now(), items: _attDeleteQueue }));
         } catch (e) { console.warn('_persistQueues: localStorage write failed:', e); }
     }
 
     function _restoreQueues() {
         try {
+            var maxAgeMs = 10 * 60 * 1000;
             var saved = localStorage.getItem('att_write_queue');
             if (saved) {
                 var parsed = JSON.parse(saved);
-                if (parsed && typeof parsed === 'object') Object.assign(_attWriteQueue, parsed);
+                var writeItems = parsed && parsed.items ? parsed.items : parsed;
+                var writeSavedAt = parsed && parsed.saved_at ? Number(parsed.saved_at) : Date.now();
+                if (Date.now() - writeSavedAt <= maxAgeMs && writeItems && typeof writeItems === 'object') {
+                    Object.assign(_attWriteQueue, writeItems);
+                } else {
+                    localStorage.removeItem('att_write_queue');
+                }
             }
             var savedDel = localStorage.getItem('att_delete_queue');
             if (savedDel) {
                 var parsedDel = JSON.parse(savedDel);
-                if (parsedDel && typeof parsedDel === 'object') Object.assign(_attDeleteQueue, parsedDel);
+                var delItems = parsedDel && parsedDel.items ? parsedDel.items : parsedDel;
+                var delSavedAt = parsedDel && parsedDel.saved_at ? Number(parsedDel.saved_at) : 0;
+                if (delSavedAt && Date.now() - delSavedAt <= maxAgeMs && delItems && typeof delItems === 'object') {
+                    Object.assign(_attDeleteQueue, delItems);
+                } else {
+                    localStorage.removeItem('att_delete_queue');
+                    localStorage.removeItem('att_delete_in_flight');
+                }
             }
         } catch (e) { console.warn('_restoreQueues: localStorage read failed:', e); }
     }
@@ -3429,13 +3442,7 @@
             }
             var inFlightDel = localStorage.getItem('att_delete_in_flight');
             if (inFlightDel) {
-                var parsedDel = JSON.parse(inFlightDel);
-                if (Array.isArray(parsedDel)) {
-                    parsedDel.forEach(function (entry) {
-                        var k = entry.user_id + '_' + entry.date + '_' + (entry.slot || 'ALL_DAY');
-                        if (!_attDeleteQueue[k]) _attDeleteQueue[k] = entry;
-                    });
-                }
+                console.warn('[Queue] Delete in-flight found after reload; automatic replay disabled for data safety.');
                 localStorage.removeItem('att_delete_in_flight');
             }
         } catch (e) { console.warn('initializeApp: in-flight restore failed:', e); }
@@ -3457,7 +3464,11 @@
                 if (!_attLoadInProgress && plannerData) {
                     clearInterval(_restoreFlushCheck);
                     if (Object.keys(_attWriteQueue).length > 0) flushAttendanceQueue();
-                    if (Object.keys(_attDeleteQueue).length > 0) flushAttendanceDeleteQueue();
+                    if (Object.keys(_attDeleteQueue).length > 0) {
+                        console.warn('[Queue] Restored delete queue was cleared; automatic replay disabled for data safety.');
+                        _attDeleteQueue = {};
+                        _clearPersistedQueue('delete');
+                    }
                 }
             }, 500);
             // Safety: přestat čekat po 30s

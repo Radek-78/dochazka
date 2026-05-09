@@ -1,5 +1,15 @@
 [
   {
+    "version": "2.10.15",
+    "date": "2026-05-09",
+    "changes": [
+      "Bezpečnostní stabilizace docházky: schválení a zamítnutí dovolené už nepřepisuje celý ATTENDANCE list",
+      "Zamítnutá dovolená se nově uchovává jako stav rejected a ve frontendu ani výpočtech se nezobrazuje",
+      "Autosave docházky zapisuje cíleně konkrétní řádky, hromadné mazání má limity, audit logy a nevykonává plošný přepis databáze",
+      "Obnovené delete fronty z prohlížeče se už automaticky nepřehrávají a duplicitní hlavičky databázových listů jsou blokovány"
+    ]
+  },
+  {
     "version": "2.10.14",
     "date": "2026-05-04",
     "changes": [

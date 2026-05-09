@@ -185,7 +185,21 @@ const Setup = {
 
         var lastCol = sheet.getLastColumn();
         var currentHeaders = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
-        var currentSet = new Set(currentHeaders);
+        var normalizedHeaders = currentHeaders.map(function(h) { return String(h || '').trim(); });
+        var currentSet = new Set(normalizedHeaders);
+        var seenHeaders = {};
+        var duplicateHeaders = normalizedHeaders.filter(function(h) {
+          if (!h) return false;
+          if (seenHeaders[h]) return true;
+          seenHeaders[h] = true;
+          return false;
+        });
+        if (duplicateHeaders.length > 0) {
+          if (typeof _auditLog === 'function') {
+            _auditLog("DB_HEADER_DUPLICATES_DETECTED", { sheet: sheetName, duplicates: duplicateHeaders });
+          }
+          continue;
+        }
 
         expected.forEach(function(h) {
           if (!currentSet.has(h)) {
