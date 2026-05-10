@@ -52,7 +52,59 @@ var Backup = {
     }
     
     console.log("Backup: DennĂ­ zĂˇloha dokonÄŤena.");
+    this.runPostBackupMaintenance_();
     return true;
+  },
+
+  /**
+   * Servisní údržba po úspěšné denní záloze.
+   * Strukturální opravy DB běží až po vytvoření kopií, ne při startu aplikace.
+   */
+  runPostBackupMaintenance_: function() {
+    try {
+      const result = this.runDatabaseHeaderRepair();
+      console.log("Backup: Servisní oprava hlaviček dokončena: " + JSON.stringify(result));
+      return result;
+    } catch (e) {
+      console.warn("Backup: Servisní oprava hlaviček selhala: " + e.toString());
+      if (typeof _auditLog === 'function') {
+        _auditLog("DB_HEADER_REPAIR_AFTER_BACKUP_FAILED", { error: e.toString() }, { email: "SYSTEM_BACKUP" });
+      }
+      return { success: false, error: e.toString() };
+    }
+  },
+
+  /**
+   * Ručně spustitelná oprava hlaviček databázových listů.
+   * Používá se také po denní záloze.
+   */
+  runDatabaseHeaderRepair: function() {
+    const startedAt = Date.now();
+    if (typeof Setup === 'undefined' || !Setup.repairDatabaseHeaders) {
+      throw new Error("Setup.repairDatabaseHeaders není dostupná.");
+    }
+
+    const result = Setup.repairDatabaseHeaders();
+    const details = {
+      duration_ms: Date.now() - startedAt,
+      added_count: result && result.added ? result.added.length : 0,
+      added: result && result.added ? result.added : []
+    };
+
+    if (typeof DB !== 'undefined' && DB.clearCache) {
+      DB.clearCache();
+    }
+
+    if (typeof _auditLog === 'function') {
+      _auditLog("DB_HEADER_REPAIR_AFTER_BACKUP", details, { email: "SYSTEM_BACKUP" });
+    }
+
+    return {
+      success: true,
+      duration_ms: details.duration_ms,
+      added_count: details.added_count,
+      added: details.added
+    };
   },
 
   /**
@@ -127,3 +179,4 @@ var Backup = {
 function runDailyFullBackup() { Backup.runDailyFullBackup(); }
 function runAttendanceSafetySnapshot() { Backup.runAttendanceSafetySnapshot(); }
 function setupBackupTriggers() { Backup.setupTriggers(); }
+function runDatabaseHeaderRepair() { return Backup.runDatabaseHeaderRepair(); }

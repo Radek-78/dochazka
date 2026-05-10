@@ -151,12 +151,9 @@ function getPlannerData() {
   }
 
   try {
-    // Auto-repair: přidá chybějící sloupce při prvním načtení
+    // Strukturální oprava DB se nespouští při startu aplikace.
+    // Běží jako servisní údržba po noční záloze, aby neblokovala uživatele.
     let perfStage = _startPerfStage();
-    try { Setup.repairDatabaseHeaders(); } catch(e) { /* tiché selhání */ }
-    _endPerfStage("repairDatabaseHeaders", perfStage);
-
-    perfStage = _startPerfStage();
     const email = Session.getActiveUser().getEmail().toLowerCase();
     _endPerfStage("auth.getActiveUserEmail", perfStage);
 

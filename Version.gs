@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.16";
+const APP_VERSION = "2.10.17";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.17",
+    "date": "2026-05-10",
+    "changes": [
+      "Optimalizace startu: strukturální oprava hlaviček databáze se už nespouští při každém otevření aplikace",
+      "Oprava hlaviček DB nově běží jako servisní údržba po úspěšné denní záloze a lze ji spustit ručně přes runDatabaseHeaderRepair"
+    ]
+  },
   {
     "version": "2.10.16",
     "date": "2026-05-10",
