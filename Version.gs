@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.15";
+const APP_VERSION = "2.10.16";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.16",
+    "date": "2026-05-10",
+    "changes": [
+      "Diagnostika pomalého startu aplikace: backend getPlannerData nově vrací časování jednotlivých načítacích kroků a počty načtených záznamů",
+      "Frontend zapisuje do konzole čas volání serveru, přípravy profilu, vykreslení kalendáře a dobu do skrytí úvodní obrazovky"
+    ]
+  },
   {
     "version": "2.10.15",
     "date": "2026-05-09",

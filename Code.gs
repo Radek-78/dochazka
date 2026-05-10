@@ -124,25 +124,61 @@ function isAdmin() {
  * Vrací errorCode pro neregistrované / neschválené uživatele.
  */
 function getPlannerData() {
+  const startupPerf = {
+    scope: "getPlannerData",
+    started_at: new Date().toISOString(),
+    stages: [],
+    counts: {}
+  };
+  const startupPerfStart = Date.now();
+  function _startPerfStage() {
+    return Date.now();
+  }
+  function _endPerfStage(name, startedAt, extra) {
+    const stage = { name: name, ms: Date.now() - startedAt };
+    if (extra) stage.extra = extra;
+    startupPerf.stages.push(stage);
+    return stage.ms;
+  }
+  function _finishStartupPerf() {
+    startupPerf.total_ms = Date.now() - startupPerfStart;
+    try {
+      console.log("[STARTUP PERF] " + JSON.stringify(startupPerf));
+    } catch (logError) {
+      // Diagnostika nesmí nikdy ovlivnit odpověď aplikace.
+    }
+    return startupPerf;
+  }
+
   try {
     // Auto-repair: přidá chybějící sloupce při prvním načtení
+    let perfStage = _startPerfStage();
     try { Setup.repairDatabaseHeaders(); } catch(e) { /* tiché selhání */ }
+    _endPerfStage("repairDatabaseHeaders", perfStage);
 
+    perfStage = _startPerfStage();
     const email = Session.getActiveUser().getEmail().toLowerCase();
+    _endPerfStage("auth.getActiveUserEmail", perfStage);
+
+    perfStage = _startPerfStage();
     const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
     const user = allUsers.find(u => u.email && u.email.toLowerCase() === email) || null;
+    startupPerf.counts.users_total = allUsers.length;
+    _endPerfStage("core.users.loadForAuth", perfStage, { rows: allUsers.length });
 
     if (!user) {
+      perfStage = _startPerfStage();
       const departments = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS).filter(d => d.active === "true");
-      return { success: false, errorCode: "USER_NOT_FOUND", email: email, departments: departments };
+      _endPerfStage("core.departments.loadForRegistration", perfStage, { rows: departments.length });
+      return { success: false, errorCode: "USER_NOT_FOUND", email: email, departments: departments, startupPerf: _finishStartupPerf() };
     }
 
     if (user.auth_status === AUTH_STATUS.PENDING) {
-      return { success: false, errorCode: "USER_PENDING", email: email };
+      return { success: false, errorCode: "USER_PENDING", email: email, startupPerf: _finishStartupPerf() };
     }
 
     if (user.auth_status === AUTH_STATUS.REJECTED) {
-      return { success: false, errorCode: "USER_REJECTED", email: email };
+      return { success: false, errorCode: "USER_REJECTED", email: email, startupPerf: _finishStartupPerf() };
     }
 
     // Prázdný auth_status = legacy záznam nebo admin-vytvořený bez statusu → pustit dál
@@ -150,15 +186,34 @@ function getPlannerData() {
 
     const coreSS = DB.getCore();
     const transSS = DB.getTransaction();
+    perfStage = _startPerfStage();
     const departments = DB.getTable(coreSS, DB_SHEETS.CORE.DEPARTMENTS).filter(d => d.active === "true");
+    _endPerfStage("core.departments", perfStage, { rows: departments.length });
+    perfStage = _startPerfStage();
     const sections = DB.getTable(coreSS, DB_SHEETS.CORE.SECTIONS).filter(s => s.active !== "false");
+    _endPerfStage("core.sections", perfStage, { rows: sections.length });
+    perfStage = _startPerfStage();
     const allEmployees = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
+    _endPerfStage("core.users.loadEmployees", perfStage, { rows: allEmployees.length });
+    perfStage = _startPerfStage();
     const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+    _endPerfStage("core.positions", perfStage, { rows: positions.length });
+    perfStage = _startPerfStage();
     const groups = DB.getTable(coreSS, DB_SHEETS.CORE.GROUPS);
+    _endPerfStage("core.groups", perfStage, { rows: groups.length });
+    perfStage = _startPerfStage();
     const statuses = Privacy.ensureFallbackMaskStatus(
       DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES).filter(s => s.active !== "false")
     );
+    _endPerfStage("core.attendanceStatuses", perfStage, { rows: statuses.length });
+    perfStage = _startPerfStage();
     const vacationConfig = Admin.getVacationConfig ? Admin.getVacationConfig() : { system_type: VACATION_SYSTEM_TYPE.GLOBAL, global_days: 30 };
+    _endPerfStage("admin.vacationConfig", perfStage);
+    startupPerf.counts.departments = departments.length;
+    startupPerf.counts.sections = sections.length;
+    startupPerf.counts.positions = positions.length;
+    startupPerf.counts.groups = groups.length;
+    startupPerf.counts.statuses = statuses.length;
 
     const today = new Date();
     const currYearNum = today.getFullYear();
@@ -173,12 +228,19 @@ function getPlannerData() {
     // Načíst docházku pro tento rok (optimalizace: načteme jen co potřebujeme)
     // Pro jednoduchost teď načteme celou tabulku a odfiltrujeme v JS
     const yearStart = new Date(currYearNum, 0, 1).toISOString().split('T')[0];
+    perfStage = _startPerfStage();
     const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
+    _endPerfStage("transaction.attendance.readAll", perfStage, { rows: allAttendance.length });
+    perfStage = _startPerfStage();
     const yearAttendance = allAttendance.filter(a => a.date >= yearStart && !_isRejectedAttendance(a));
+    _endPerfStage("transaction.attendance.filterCurrentYear", perfStage, { rows: yearAttendance.length });
+    startupPerf.counts.attendance_total = allAttendance.length;
+    startupPerf.counts.attendance_current_year = yearAttendance.length;
 
     // Přepsat org_role přihlášeného uživatele z pozice
     user.org_role = _resolveOrgRole(user, positions);
 
+    perfStage = _startPerfStage();
     const employees = allEmployees.filter(u => u.active === "true" && u.section_id === user.section_id).map(u => {
       // 0. Efektivní org_role z pozice
       u.org_role = _resolveOrgRole(u, positions);
@@ -240,18 +302,26 @@ function getPlannerData() {
         vacation_used: used
       };
     });
+    _endPerfStage("employees.buildVisibleAndVacationBalances", perfStage, { rows: employees.length });
+    startupPerf.counts.employees_returned = employees.length;
 
+    perfStage = _startPerfStage();
     const sectionViewConfig = Admin.getSectionViewConfig(user.section_id);
+    _endPerfStage("admin.sectionViewConfig", perfStage);
 
     // Načti první aktivní mapu kanceláře pro úsek uživatele (jen pokud má úsek povolené rezervace)
     const userSection = sections.find(function(s) { return s.section_id === user.section_id; });
     const deskEnabled = userSection && String(userSection.desk_reservation_enabled).toLowerCase() === 'true';
+    perfStage = _startPerfStage();
     const officeMaps = deskEnabled ? Admin.getOfficeMaps(user.section_id) : [];
     const officeMap = officeMaps.length > 0 ? officeMaps[0] : null;
+    _endPerfStage("admin.officeMaps", perfStage, { deskEnabled: !!deskEnabled, rows: officeMaps.length });
 
     // Plánovací skupiny
+    perfStage = _startPerfStage();
     const allPlannerGroups = DB.getTable(coreSS, DB_SHEETS.CORE.PLANNER_GROUPS);
     const allMemberships = DB.getTable(coreSS, DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
+    _endPerfStage("planner.groupsAndMemberships", perfStage, { groups: allPlannerGroups.length, memberships: allMemberships.length });
     
     // Skupiny, kde je uživatel členem
     const userMemberships = allMemberships.filter(m => String(m.user_id) === String(user.user_id));
@@ -271,8 +341,26 @@ function getPlannerData() {
     });
     
     // Načti a vyfiltruj události plánovače
+    perfStage = _startPerfStage();
     const allEvents = DB.getTable(transSS, DB_SHEETS.TRANSACTION.PLANNER_EVENTS);
     const plannerEvents = allEvents.filter(e => userGroupIds.includes(String(e.group_id)));
+    _endPerfStage("planner.events.readAndFilter", perfStage, { total: allEvents.length, returned: plannerEvents.length });
+    startupPerf.counts.planner_groups_total = allPlannerGroups.length;
+    startupPerf.counts.planner_groups_returned = accessibleGroups.length;
+    startupPerf.counts.planner_events_total = allEvents.length;
+    startupPerf.counts.planner_events_returned = plannerEvents.length;
+
+    perfStage = _startPerfStage();
+    const anniversaryMilestones = (function() { try { return JSON.parse(vacationConfig.anniversary_milestones || '[]'); } catch(e) { return [10,15,20,40]; } })();
+    const isAdminResult = Auth.hasAdminAccess(user);
+    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+    const namedDays = Admin.getNamedDays ? Admin.getNamedDays() : CalendarData.NAMED_DAYS;
+    const holidays = CalendarData.getHolidaysForYear(currYearNum);
+    const marketingWeeks = (function () { try { return DB.getTable(coreSS, DB_SHEETS.CORE.MARKETING_WEEKS) || []; } catch (e) { return []; } })();
+    _endPerfStage("payload.supportingConfig", perfStage, {
+      holidays: holidays.length || 0,
+      marketingWeeks: marketingWeeks.length || 0
+    });
 
     return {
       success: true,
@@ -284,20 +372,22 @@ function getPlannerData() {
       groups: groups,
       statuses: statuses,
       vacationConfig: vacationConfig,
-      anniversaryMilestones: (function() { try { return JSON.parse(vacationConfig.anniversary_milestones || '[]'); } catch(e) { return [10,15,20,40]; } })(),
-      isAdmin: Auth.hasAdminAccess(user),
+      anniversaryMilestones: anniversaryMilestones,
+      isAdmin: isAdminResult,
       sectionViewConfig: sectionViewConfig,
       officeMap: officeMap,
-      rbacConfig: Admin.getRbacConfig ? Admin.getRbacConfig() : {},
-      namedDays: Admin.getNamedDays ? Admin.getNamedDays() : CalendarData.NAMED_DAYS,
-      holidays: CalendarData.getHolidaysForYear(currYearNum),
-      marketingWeeks: (function () { try { return DB.getTable(coreSS, DB_SHEETS.CORE.MARKETING_WEEKS) || []; } catch (e) { return []; } })(),
+      rbacConfig: rbacConfig,
+      namedDays: namedDays,
+      holidays: holidays,
+      marketingWeeks: marketingWeeks,
       plannerEvents: plannerEvents,
       plannerGroups: accessibleGroups,
-      plannerPermissions: userGroupsMap
+      plannerPermissions: userGroupsMap,
+      startupPerf: _finishStartupPerf()
     };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    startupPerf.error = e.toString();
+    return { success: false, error: e.toString(), startupPerf: _finishStartupPerf() };
   }
 }
 

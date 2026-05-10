@@ -16,6 +16,42 @@
     let statsUpdateTimer = null;
     let heartbeatTimer = null;
 
+    function _startupPerfNow() {
+        return (window.performance && performance.now) ? performance.now() : Date.now();
+    }
+
+    function _startupPerfMs(startedAt) {
+        return Math.round(_startupPerfNow() - startedAt);
+    }
+
+    function _startupPerfLog(label, startedAt, extra) {
+        const ms = _startupPerfMs(startedAt);
+        if (extra !== undefined) {
+            console.log('[STARTUP PERF] ' + label + ': ' + ms + ' ms', extra);
+        } else {
+            console.log('[STARTUP PERF] ' + label + ': ' + ms + ' ms');
+        }
+        return ms;
+    }
+
+    function _startupPerfLogBackend(perf) {
+        if (!perf) return;
+        try {
+            const title = '[STARTUP PERF] backend getPlannerData: ' + (perf.total_ms || 0) + ' ms';
+            if (console.groupCollapsed) console.groupCollapsed(title);
+            else console.log(title);
+
+            console.log('[STARTUP PERF] backend counts', perf.counts || {});
+            (perf.stages || []).forEach(function (stage) {
+                console.log('[STARTUP PERF] backend.' + stage.name + ': ' + stage.ms + ' ms', stage.extra || '');
+            });
+
+            if (console.groupEnd) console.groupEnd();
+        } catch (e) {
+            console.log('[STARTUP PERF] backend raw', perf);
+        }
+    }
+
     // ─── DOCHÁZKOVÝ SYSTÉM ────────────────────────────────────────────────────
 
     let _attendanceData = {}; // key: `${userId}_${date}_${slot}` → entry
@@ -3664,20 +3700,38 @@
      * Načtení reálných dat ze serveru (Uživatelé, Oddělení, Role)
      */
     async function loadData() {
+        const loadDataStart = _startupPerfNow();
         try {
             setSplashMsg("Načítám konfiguraci a data...");
+            const serverCallStart = _startupPerfNow();
             const response = await callServer('getPlannerData');
+            _startupPerfLog('frontend.callServer.getPlannerData', serverCallStart);
+            if (response && response.startupPerf) {
+                _startupPerfLogBackend(response.startupPerf);
+            }
 
             if (response && response.success) {
                 plannerData = response;
+                console.log('[STARTUP PERF] payload counts', {
+                    employees: (response.employees || []).length,
+                    statuses: (response.statuses || []).length,
+                    sections: (response.sections || []).length,
+                    plannerEvents: (response.plannerEvents || []).length,
+                    plannerGroups: (response.plannerGroups || []).length
+                });
 
                 setSplashMsg("Ověřuji přístupová práva...");
+                const profileStart = _startupPerfNow();
                 updateUserProfile(response.user);
+                _startupPerfLog('frontend.updateUserProfile', profileStart);
                 
                 // Inicializace marketingového modulu v topbaru
+                const marketingStart = _startupPerfNow();
                 _renderMarketingWeeks();
+                _startupPerfLog('frontend.renderMarketingWeeks', marketingStart);
 
                 // Admin icon visibility based on RBAC 'access_admin'
+                const chromeStart = _startupPerfNow();
                 const adminIcon = document.getElementById('admin-icon-btn');
                 if (adminIcon) {
                     if (hasPermission('access_admin')) {
@@ -3692,14 +3746,20 @@
                 if (footerMapBtn) {
                     footerMapBtn.style.display = plannerData.officeMap ? '' : 'none';
                 }
+                _startupPerfLog('frontend.applyHeaderFooterVisibility', chromeStart);
 
                 setSplashMsg("Vykresluji kalendář...");
+                const renderStart = _startupPerfNow();
                 renderPlanner();
+                _startupPerfLog('frontend.renderPlanner.call', renderStart);
 
+                const paintStart = _startupPerfNow();
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
+                        _startupPerfLog('frontend.waitTwoFramesBeforeHideSplash', paintStart);
                         setSplashMsg("Hotovo...");
                         hideSplash();
+                        _startupPerfLog('frontend.loadData.totalUntilHideSplash', loadDataStart);
                         loadNotifications();
                     });
                 });
@@ -3718,11 +3778,13 @@
                     const err = response ? response.error : "Odpověď ze serveru je null.";
                     console.error("Chyba při načítání dat:", err);
                     setSplashMsg("Chyba: " + err);
+                    _startupPerfLog('frontend.loadData.failed', loadDataStart, { errorCode: code || null });
                 }
             }
         } catch (e) {
             console.error("Chyba loadData (catch):", e);
             setSplashMsg("Kritická chyba systému.");
+            _startupPerfLog('frontend.loadData.exception', loadDataStart);
         }
     }
 
@@ -3749,14 +3811,18 @@
 
     function renderPlanner() {
         if (!plannerData) return;
+        const renderPlannerStart = _startupPerfNow();
 
         const plannerWrapper = document.getElementById('planner-view');
         const monthlyWrapper = document.getElementById('monthly-planner-view');
 
         if (currentView === 'planner') {
+            const monthlyStart = _startupPerfNow();
             if (plannerWrapper) plannerWrapper.style.display = 'none';
             if (monthlyWrapper) monthlyWrapper.style.display = 'block';
             renderMonthlyPlanner();
+            _startupPerfLog('frontend.renderPlanner.monthlyView', monthlyStart);
+            _startupPerfLog('frontend.renderPlanner.total', renderPlannerStart);
             return;
         } else {
             if (plannerWrapper) plannerWrapper.style.display = 'block';
@@ -3780,11 +3846,24 @@
         const dayCount = lastDay.getDate();
         const today = new Date();
 
+        const headerStart = _startupPerfNow();
         renderHeaders(currYear, currMonth, dayCount, today);
+        _startupPerfLog('frontend.renderHeaders', headerStart, { dayCount: dayCount });
+        const sectionNameStart = _startupPerfNow();
         renderSectionNameRow();
+        _startupPerfLog('frontend.renderSectionNameRow', sectionNameStart);
+        const employeesStart = _startupPerfNow();
         renderEmployees(currYear, currMonth, dayCount, today);
+        _startupPerfLog('frontend.renderEmployees', employeesStart, { employees: (plannerData.employees || []).length });
+        const attendanceGridStart = _startupPerfNow();
         renderAttendanceInGrid(); // Okamžité vykreslení z cache (proti probliknutí)
+        _startupPerfLog('frontend.renderAttendanceInGrid.cached', attendanceGridStart);
         loadAttendance(); // Refresh dat ze serveru na pozadí
+        _startupPerfLog('frontend.renderPlanner.total', renderPlannerStart, {
+            employees: (plannerData.employees || []).length,
+            dayCount: dayCount,
+            view: currentView
+        });
     }
 
 
