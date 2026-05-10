@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.18";
+const APP_VERSION = "2.10.19";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.19",
+    "date": "2026-05-10",
+    "changes": [
+      "Dovolenkový pohled používá samostatný autoritativní výpočet bilancí přes getVacationBalances",
+      "Při načítání nebo změně dovolené se místo dočasně zavádějících hodnot zobrazí čekací stav a přesná bilance se doplní po odpovědi serveru"
+    ]
+  },
   {
     "version": "2.10.18",
     "date": "2026-05-10",

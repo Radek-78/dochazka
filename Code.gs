@@ -64,6 +64,39 @@ function _isVacationStatusId(statusId, statusMap) {
   return st.is_vacation === "true" || st.is_vacation === true || String(st.name || "").indexOf("Dovolen") !== -1;
 }
 
+function _calculateVacationEntitlement(user, vacationConfig, yearNum) {
+  let baseEntitlement = 30;
+  if (vacationConfig.system_type === VACATION_SYSTEM_TYPE.GLOBAL) {
+    baseEntitlement = Number(vacationConfig.global_days || 30);
+  } else {
+    let years = 0;
+    if (user.date_start) {
+      const start = new Date(user.date_start);
+      if (!isNaN(start.getTime())) {
+        years = yearNum - start.getFullYear();
+        if (years < 0) years = 0;
+      }
+    }
+    baseEntitlement = Number(vacationConfig.base_days || 25) + Math.min(years, Number(vacationConfig.max_extra_days || 5));
+  }
+
+  let entitlement = baseEntitlement;
+  if (user.date_start) {
+    const startDate = new Date(user.date_start);
+    if (!isNaN(startDate.getTime()) && startDate.getFullYear() === yearNum) {
+      const monthsNotWorked = startDate.getMonth();
+      if (monthsNotWorked > 0) {
+        const reduction = (baseEntitlement / 12) * monthsNotWorked;
+        entitlement = baseEntitlement - reduction;
+        entitlement = Math.round(entitlement * 2) / 2;
+      }
+    }
+  }
+
+  entitlement += Number(user.vacation_days_carried_over || 0);
+  return entitlement;
+}
+
 function doGet(e) {
   const isInitialized = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_INITIALIZED) === "true";
   const template = HtmlService.createTemplateFromFile("index");
@@ -233,40 +266,7 @@ function getPlannerData() {
         if (!isNaN(endDate.getTime()) && endDate < today) isDerivedActive = false;
       }
 
-      // 2. Nárok na dovolenou
-      let baseEntitlement = 30;
-      if (vacationConfig.system_type === VACATION_SYSTEM_TYPE.GLOBAL) {
-        baseEntitlement = Number(vacationConfig.global_days || 30);
-      } else {
-        let years = 0;
-        if (u.date_start) {
-          const start = new Date(u.date_start);
-          if (!isNaN(start.getTime())) {
-            years = currYearNum - start.getFullYear();
-            if (years < 0) years = 0;
-          }
-        }
-        baseEntitlement = Number(vacationConfig.base_days || 25) + Math.min(years, Number(vacationConfig.max_extra_days || 5));
-      }
-
-      // Poměrové krácení: za každý neodpracovaný celý měsíc se krátí o 1/12 fondu
-      // Platí jen pro zaměstnance nastoupivší v aktuálním kalendářním roce
-      let entitlement = baseEntitlement;
-      if (u.date_start) {
-        const startDate = new Date(u.date_start);
-        if (!isNaN(startDate.getTime()) && startDate.getFullYear() === currYearNum) {
-          const monthsNotWorked = startDate.getMonth(); // počet celých neodpracovaných měsíců (0=leden → žádné)
-          if (monthsNotWorked > 0) {
-            const reduction = (baseEntitlement / 12) * monthsNotWorked;
-            entitlement = baseEntitlement - reduction;
-            entitlement = Math.round(entitlement * 2) / 2; // zaokrouhlit na půl dne
-          }
-        }
-      }
-
-      // Přičíst přenesenou dovolenou z předchozího roku ("Stará dovolená")
-      const carriedOver = Number(u.vacation_days_carried_over || 0);
-      entitlement += carriedOver;
+      const entitlement = _calculateVacationEntitlement(u, vacationConfig, currYearNum);
 
       return { 
         ...u, 
@@ -628,6 +628,92 @@ function getMonthAttendance(year, month) {
     });
 
     return { success: true, data: Privacy.prepareAttendanceEntries(filtered, userMap, privacyCtx) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Vrátí autoritativní roční a měsíční bilance dovolené pro viditelné uživatele.
+ * Volá se mimo úvodní getPlannerData, aby první vykreslení nečekalo na čtení ATTENDANCE.
+ */
+function getVacationBalances(year) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+
+    if (Auth._rbacCache !== undefined) Auth._rbacCache = null;
+
+    const targetYear = Number(year) || new Date().getFullYear();
+    const yearPrefix = String(targetYear) + "-";
+    const coreSS = DB.getCore();
+    const transSS = DB.getTransaction();
+    const rbacConfig = Admin.getRbacConfig();
+    const vacationConfig = Admin.getVacationConfig ? Admin.getVacationConfig() : { system_type: VACATION_SYSTEM_TYPE.GLOBAL, global_days: 30 };
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
+    const allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
+    const visibleUsers = allUsers.filter(function(u) {
+      if (u.active !== "true") return false;
+      u.org_role = _resolveOrgRole(u, positions);
+      return Auth.canAccessUserData(u, rbacConfig);
+    });
+    const visibleUserIds = {};
+    visibleUsers.forEach(function(u) {
+      visibleUserIds[String(u.user_id)] = true;
+    });
+
+    const statusMap = {};
+    statuses.forEach(function(st) {
+      statusMap[Privacy.normalizeStatusId(st.status_id)] = st;
+    });
+
+    const byUser = {};
+    visibleUsers.forEach(function(u) {
+      const entitlement = _calculateVacationEntitlement(u, vacationConfig, targetYear);
+      byUser[String(u.user_id)] = {
+        user_id: u.user_id,
+        entitlement: entitlement,
+        used_year: 0,
+        remaining: entitlement,
+        used_by_month: {}
+      };
+    });
+
+    const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
+    allAttendance.forEach(function(entry) {
+      const userId = String(entry.user_id || "");
+      if (!visibleUserIds[userId]) return;
+      if (_isRejectedAttendance(entry)) return;
+      const dateStr = String(entry.date || "");
+      if (!dateStr.startsWith(yearPrefix)) return;
+      if (!_isVacationStatusId(entry.status_id, statusMap)) return;
+
+      const monthIdx = Number(dateStr.substring(5, 7)) - 1;
+      if (monthIdx < 0 || monthIdx > 11) return;
+      const value = (entry.slot === "ALL_DAY" || !entry.slot) ? 1 : 0.5;
+      const balance = byUser[userId];
+      if (!balance) return;
+
+      balance.used_year += value;
+      balance.used_by_month[monthIdx] = (balance.used_by_month[monthIdx] || 0) + value;
+    });
+
+    Object.keys(byUser).forEach(function(userId) {
+      const balance = byUser[userId];
+      balance.used_year = Math.round(balance.used_year * 2) / 2;
+      Object.keys(balance.used_by_month).forEach(function(monthKey) {
+        balance.used_by_month[monthKey] = Math.round(balance.used_by_month[monthKey] * 2) / 2;
+      });
+      balance.remaining = Math.round((balance.entitlement - balance.used_year) * 2) / 2;
+    });
+
+    return {
+      success: true,
+      year: targetYear,
+      generated_at: new Date().toISOString(),
+      data: byUser
+    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

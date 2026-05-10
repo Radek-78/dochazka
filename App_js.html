@@ -75,6 +75,8 @@
     // --- BACKGROUND PREFETCH CACHE ---
     // key: `year_month` (např. '2026_0')
     let _attendanceCache = {};
+    let _vacationBalanceCache = {}; // key: year -> { userId: balance }
+    let _vacationBalancePromises = {}; // key: year -> Promise
 
     // ─── REZERVACE STOLŮ ─────────────────────────────────────────────────────
     // key: `${userId}_${date}` → { reservation_id, map_id, cell_id, date }
@@ -384,6 +386,57 @@
         } finally {
             _attLoadInProgress = false;
             if (spinner) spinner.style.display = 'none';
+        }
+    }
+
+    async function loadVacationBalances(year, force) {
+        if (!plannerData) return null;
+        const key = String(year || currYear);
+        if (!force && _vacationBalanceCache[key]) return _vacationBalanceCache[key];
+        if (!force && _vacationBalancePromises[key]) return _vacationBalancePromises[key];
+
+        _vacationBalancePromises[key] = callServer('getVacationBalances', Number(key)).then(function (res) {
+            if (res && res.success) {
+                _vacationBalanceCache[key] = res.data || {};
+                if (plannerData && plannerData.employees) {
+                    plannerData.employees.forEach(function (emp) {
+                        const balance = _vacationBalanceCache[key][String(emp.user_id)];
+                        if (!balance) return;
+                        emp.vacation_entitlement = balance.entitlement;
+                        emp.vacation_used = balance.used_year;
+                        emp.vacation_remaining = balance.remaining;
+                    });
+                }
+                if (currentView === 'vacation' && String(currYear) === key) {
+                    renderPlanner();
+                }
+                return _vacationBalanceCache[key];
+            }
+            console.warn('loadVacationBalances failed:', res);
+            return null;
+        }).catch(function (e) {
+            console.warn('loadVacationBalances error:', e);
+            return null;
+        }).finally(function () {
+            delete _vacationBalancePromises[key];
+        });
+
+        if (currentView === 'vacation') renderPlanner();
+        return _vacationBalancePromises[key];
+    }
+
+    function _invalidateVacationBalancesForEntries(entries, reload) {
+        const years = new Set();
+        (entries || []).forEach(function (entry) {
+            const d = new Date(entry.date);
+            if (!isNaN(d.getTime())) years.add(String(d.getFullYear()));
+        });
+        years.forEach(function (yearKey) {
+            delete _vacationBalanceCache[yearKey];
+            delete _vacationBalancePromises[yearKey];
+        });
+        if (reload && currentView === 'vacation') {
+            loadVacationBalances(currYear, true);
         }
     }
 
@@ -2645,63 +2698,14 @@
      */
     function _refreshVacationBalance(userId) {
         if (currentView !== 'vacation') return;
-        const safeId = userId.replace(/[^a-zA-Z0-9]/g, '_');
+        delete _vacationBalanceCache[String(currYear)];
+        const safeId = String(userId || '').replace(/[^a-zA-Z0-9]/g, '_');
         const badgesEl = document.getElementById('vac-badges-' + safeId);
         if (!badgesEl) return;
-
-        const emp = plannerData && plannerData.employees
-            ? plannerData.employees.find(e => e.user_id === userId)
-            : null;
-        if (!emp) return;
-
-        const vacStatIds = (plannerData.statuses || [])
-            .filter(s => s.is_vacation === 'true' || s.is_vacation === true || s.name.includes('Dovolená'))
-            .map(s => s.status_id);
-        const yearPrefix = String(currYear) + '-';
-        const monthPrefix = yearPrefix + String(currMonth + 1).padStart(2, '0') + '-';
-        const monthShorts = ["Led", "Úno", "Bře", "Dub", "Kvě", "Čvn", "Čvc", "Srp", "Zář", "Říj", "Lis", "Pro"];
-
-        // Pro aktuální měsíc čti VÝHRADNĚ z _attendanceData (freshest po kliknutí/mazání)
-        // Pro ostatní měsíce v roce čti z _globalAttendanceData
-        let usedYear = 0;
-        let usedMonth = 0;
-
-        // 1) Spočítej ostatní měsíce z _globalAttendanceData
-        Object.values(_globalAttendanceData).forEach(entry => {
-            if (!entry || entry.user_id !== userId) return;
-            if (!vacStatIds.includes(entry.status_id)) return;
-            const dateStr = String(entry.date);
-            if (dateStr.startsWith(monthPrefix)) return; // aktuální měsíc přeskočit
-            const val = (entry.slot === 'ALL_DAY' || !entry.slot) ? 1 : 0.5;
-            if (dateStr.startsWith(yearPrefix)) usedYear += val;
+        badgesEl.title = 'Čekám na potvrzení změny a přepočet dovolené';
+        badgesEl.querySelectorAll('.vac-stat-num').forEach(function (el) {
+            el.textContent = '...';
         });
-
-        // 2) Spočítej aktuální měsíc z _attendanceData (vždy aktuální po mazání/přidání)
-        Object.values(_attendanceData).forEach(entry => {
-            if (!entry || entry.user_id !== userId) return;
-            if (!vacStatIds.includes(entry.status_id)) return;
-            const dateStr = String(entry.date);
-            if (!dateStr.startsWith(monthPrefix)) return; // jen aktuální měsíc
-            const val = (entry.slot === 'ALL_DAY' || !entry.slot) ? 1 : 0.5;
-            usedMonth += val;
-            usedYear += val;
-        });
-
-        usedYear = Math.round(usedYear * 2) / 2;
-        usedMonth = Math.round(usedMonth * 2) / 2;
-        const remaining = (emp.vacation_entitlement || 0) - usedYear;
-
-        const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
-        badgesEl.innerHTML = `
-            <div class="vac-line">
-                <span class="emp-name clickable-name">${emp.first_name} ${emp.last_name}</span>
-                <span class="vac-stat vac-stat-remaining"><span class="vac-stat-label">Zůstatek</span><span class="vac-stat-num">${remaining}</span></span>
-            </div>
-            <div class="vac-line">
-                <span class="vac-stat vac-stat-month"><span class="vac-stat-label">${monthNames[currMonth]}</span><span class="vac-stat-num">${usedMonth}</span></span>
-                <span class="vac-center-label">← Vybráno →</span>
-                <span class="vac-stat vac-stat-year"><span class="vac-stat-label">Celkem</span><span class="vac-stat-num">${usedYear}</span></span>
-            </div>`;
     }
 
     function saveAndReflectEntry(entry) {
@@ -2712,8 +2716,7 @@
             var chip = cell.querySelector('[data-slot="' + entry.slot + '"]');
             if (chip) chip.classList.add('saving');
         }
-        // Okamžitá aktualizace konta dovolené a statistik
-        _refreshVacationBalance(entry.user_id);
+        // Přesná dovolenková bilance se obnoví po potvrzení zápisu serverem.
         updateDailyStats();
     }
 
@@ -3108,11 +3111,13 @@
                     });
                 });
 
+                var processedApprovalEntries = _approvalMode.entries.slice();
                 stopVacationApprovalMode();
 
                 // Invalidace cache pro aktuální měsíc → fresh data při dalším loadAttendance
                 var cacheKey = currYear + '_' + currMonth;
                 delete _attendanceCache[cacheKey];
+                _invalidateVacationBalancesForEntries(processedApprovalEntries, true);
 
                 loadNotifications();
             } else {
@@ -3285,9 +3290,7 @@
                         var cell = getCellElement(pe.user_id, dk);
                         if (cell) renderAttendanceCell(cell, pe.user_id, dk);
                     });
-                    // Refresh vacation balance
-                    var affectedUsers = new Set(result.pendingEntries.map(function (pe) { return pe.user_id; }));
-                    affectedUsers.forEach(function (uid) { _refreshVacationBalance(uid); });
+                    // Přesná dovolenková bilance se obnoví společně po invalidaci níže.
                 }
 
                 // Invalidace cache pro všechny ovlivněné měsíce
@@ -3301,6 +3304,7 @@
                         console.log(`[Save] Invalidated cache for month: ${mKey}`);
                     }
                 });
+                _invalidateVacationBalancesForEntries(toSend, true);
 
                 updateDailyStats();
                 hideSyncToast('SAVE', toSend.length);
@@ -3401,6 +3405,7 @@
                         console.log(`[Delete] Invalidated cache for month: ${mKey}`);
                     }
                 });
+                _invalidateVacationBalancesForEntries(toSend, true);
 
                 updateDailyStats();
                 hideSyncToast('DELETE', toSend.length);
@@ -3859,6 +3864,9 @@
         renderAttendanceInGrid(); // Okamžité vykreslení z cache (proti probliknutí)
         _startupPerfLog('frontend.renderAttendanceInGrid.cached', attendanceGridStart);
         loadAttendance(); // Refresh dat ze serveru na pozadí
+        if (currentView === 'vacation') {
+            loadVacationBalances(currYear);
+        }
         _startupPerfLog('frontend.renderPlanner.total', renderPlannerStart, {
             employees: (plannerData.employees || []).length,
             dayCount: dayCount,
@@ -4056,40 +4064,35 @@
 
             let r = '';
             if (currentView === 'vacation') {
-                const vacStatIds = (plannerData.statuses || [])
-                    .filter(s => s.is_vacation === 'true' || s.is_vacation === true || s.name.includes('Dovolená'))
-                    .map(s => s.status_id);
-                const yearPrefix = String(year) + '-';
-                const monthPrefix = yearPrefix + String(month + 1).padStart(2, '0') + '-';
                 const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
+                const vacationBalances = _vacationBalanceCache[String(year)] || null;
+                const serverBalance = vacationBalances ? vacationBalances[String(emp.user_id)] : null;
+                const balanceLoading = !serverBalance;
 
                 let usedYear = 0;
                 let usedMonth = 0;
-                Object.values(_globalAttendanceData).forEach(entry => {
-                    if (entry.user_id !== emp.user_id) return;
-                    if (!vacStatIds.includes(entry.status_id)) return;
-
-                    const dateStr = String(entry.date);
-                    const val = (entry.slot === 'ALL_DAY' || !entry.slot) ? 1 : 0.5;
-
-                    if (dateStr.startsWith(yearPrefix)) usedYear += val;
-                    if (dateStr.startsWith(monthPrefix)) usedMonth += val;
-                });
-                usedYear = Math.round(usedYear * 2) / 2;
-                usedMonth = Math.round(usedMonth * 2) / 2;
-                const remaining = (emp.vacation_entitlement || 0) - usedYear;
+                let remaining = 0;
+                if (serverBalance) {
+                    usedYear = serverBalance.used_year || 0;
+                    usedMonth = (serverBalance.used_by_month && serverBalance.used_by_month[month]) || 0;
+                    remaining = serverBalance.remaining || 0;
+                }
+                const remainingText = balanceLoading ? '...' : remaining;
+                const usedMonthText = balanceLoading ? '...' : usedMonth;
+                const usedYearText = balanceLoading ? '...' : usedYear;
+                const balanceTitle = balanceLoading ? 'Načítám přesnou bilanci dovolené' : 'Přesná bilance dovolené';
 
                 r = `<div class="cell sticky-label row-emp${ownCls}${highCls}" data-user-id="${emp.user_id}" onclick="toggleRowHighlight('${emp.user_id}')">
                     <div class="emp-label-container emp-vac-layout">
-                        <div class="vac-row" id="vac-badges-${emp.user_id.replace(/[^a-zA-Z0-9]/g, '_')}">
+                        <div class="vac-row" id="vac-badges-${emp.user_id.replace(/[^a-zA-Z0-9]/g, '_')}" title="${balanceTitle}">
                             <div class="vac-line">
                                 <span class="emp-name clickable-name">${emp.first_name} ${emp.last_name}</span>
-                                <span class="vac-stat vac-stat-remaining"><span class="vac-stat-label">Zůstatek</span><span class="vac-stat-num">${remaining}</span></span>
+                                <span class="vac-stat vac-stat-remaining"><span class="vac-stat-label">Zůstatek</span><span class="vac-stat-num">${remainingText}</span></span>
                             </div>
                             <div class="vac-line">
-                                <span class="vac-stat vac-stat-month"><span class="vac-stat-label">${monthNames[month]}</span><span class="vac-stat-num">${usedMonth}</span></span>
+                                <span class="vac-stat vac-stat-month"><span class="vac-stat-label">${monthNames[month]}</span><span class="vac-stat-num">${usedMonthText}</span></span>
                                 <span class="vac-center-label">← Vybráno →</span>
-                                <span class="vac-stat vac-stat-year"><span class="vac-stat-label">Celkem</span><span class="vac-stat-num">${usedYear}</span></span>
+                                <span class="vac-stat vac-stat-year"><span class="vac-stat-label">Celkem</span><span class="vac-stat-num">${usedYearText}</span></span>
                             </div>
                         </div>
                     </div>
