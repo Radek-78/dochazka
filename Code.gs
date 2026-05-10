@@ -216,23 +216,7 @@ function getPlannerData() {
     const currYearNum = today.getFullYear();
     today.setHours(0, 0, 0, 0);
 
-    // Najít ID statusů pro dovolenou: primárně pole is_vacation, fallback na název
-    // Volno a jiné absence se DO konta dovolené NEZAPOČÍTÁVAJÍ
-    const vacationStatusIds = statuses
-      .filter(s => s.is_vacation === 'true' || s.is_vacation === true || s.name.includes('Dovolená'))
-      .map(s => s.status_id);
-
-    // Načíst docházku pro tento rok (optimalizace: načteme jen co potřebujeme)
-    // Pro jednoduchost teď načteme celou tabulku a odfiltrujeme v JS
-    const yearStart = new Date(currYearNum, 0, 1).toISOString().split('T')[0];
-    perfStage = _startPerfStage();
-    const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
-    _endPerfStage("transaction.attendance.readAll", perfStage, { rows: allAttendance.length });
-    perfStage = _startPerfStage();
-    const yearAttendance = allAttendance.filter(a => a.date >= yearStart && !_isRejectedAttendance(a));
-    _endPerfStage("transaction.attendance.filterCurrentYear", perfStage, { rows: yearAttendance.length });
-    startupPerf.counts.attendance_total = allAttendance.length;
-    startupPerf.counts.attendance_current_year = yearAttendance.length;
+    startupPerf.counts.attendance_skipped_in_initial_payload = true;
 
     // Přepsat org_role přihlášeného uživatele z pozice
     user.org_role = _resolveOrgRole(user, positions);
@@ -284,19 +268,11 @@ function getPlannerData() {
       const carriedOver = Number(u.vacation_days_carried_over || 0);
       entitlement += carriedOver;
 
-      // 3. Vyčerpáno
-      const userAnnAttendance = yearAttendance.filter(a => a.user_id === u.user_id && vacationStatusIds.includes(a.status_id));
-      let used = 0;
-      userAnnAttendance.forEach(a => {
-        if (a.slot === 'ALL_DAY' || !a.slot) used += 1;
-        else used += 0.5; // AM nebo PM
-      });
-
       return { 
         ...u, 
         is_derived_active: isDerivedActive,
         vacation_entitlement: entitlement,
-        vacation_used: used
+        vacation_used: 0
       };
     });
     _endPerfStage("employees.buildVisibleAndVacationBalances", perfStage, { rows: employees.length });

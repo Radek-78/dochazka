@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.17";
+const APP_VERSION = "2.10.18";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.18",
+    "date": "2026-05-10",
+    "changes": [
+      "Optimalizace startu: úvodní getPlannerData už nenačítá celý ATTENDANCE list jen kvůli dovolenkovým bilancím",
+      "Docházková data zůstávají načítaná samostatně až po prvním vykreslení kalendáře"
+    ]
+  },
   {
     "version": "2.10.17",
     "date": "2026-05-10",
