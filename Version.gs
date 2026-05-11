@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.19";
+const APP_VERSION = "2.10.20";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.20",
+    "date": "2026-05-11",
+    "changes": [
+      "Hotfix docházky: při přepnutí mezi půldnem a celým dnem se z pending save fronty odstraní kolidující sloty",
+      "Backend saveAttendanceEntries nově atomicky hlídá, aby pro jeden den nevznikl současně ALL_DAY a AM/PM záznam"
+    ]
+  },
   {
     "version": "2.10.19",
     "date": "2026-05-10",

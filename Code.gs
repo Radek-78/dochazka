@@ -973,11 +973,50 @@ function saveAttendanceEntries(entries) {
 
     const toUpdate = [];
     const toInsert = [];
+    const rowsToDelete = new Set();
+    const calSyncDeletes = [];
     // Sbírá pending záznamy pro vytvoření notifikace po uložení
     let pendingEntries = []; // { attendance_id, date, slot, status_id }
     let approverId = null;
     // Sbírá úspěšně uložené záznamy pro CalendarSync
     const calSyncEntries = [];
+
+    function _normalizeSlotConflicts(rawEntries) {
+      const byKey = {};
+      const orderedKeys = [];
+      rawEntries.forEach(function(e) {
+        const datePfx = _toPfx(e.date, transDB);
+        const slot = e.slot || 'ALL_DAY';
+        const dayKey = e.user_id + '_' + datePfx;
+        const entryKey = dayKey + '_' + slot;
+
+        if (slot === 'ALL_DAY') {
+          delete byKey[dayKey + '_AM'];
+          delete byKey[dayKey + '_PM'];
+        } else {
+          delete byKey[dayKey + '_ALL_DAY'];
+        }
+
+        if (!byKey[entryKey]) orderedKeys.push(entryKey);
+        byKey[entryKey] = Object.assign({}, e, { date: datePfx, slot: slot });
+      });
+      return orderedKeys.filter(function(key) { return !!byKey[key]; }).map(function(key) { return byKey[key]; });
+    }
+
+    const originalInputCount = entries.length;
+    entries = _normalizeSlotConflicts(entries);
+
+    function _markConflictingRowsForDelete(userId, datePfx, slot) {
+      const conflictSlots = slot === 'ALL_DAY' ? ['AM', 'PM'] : ['ALL_DAY'];
+      conflictSlots.forEach(function(conflictSlot) {
+        const conflictKey = userId + '_' + datePfx + '_' + conflictSlot;
+        const rowIdx = attIndex[conflictKey];
+        if (rowIdx === undefined) return;
+        rowsToDelete.add(rowIdx);
+        delete attIndex[conflictKey];
+        calSyncDeletes.push({ user_id: userId, date: datePfx, slot: conflictSlot });
+      });
+    }
 
     for (let i = 0; i < entries.length; i++) {
       let e = entries[i];
@@ -991,6 +1030,7 @@ function saveAttendanceEntries(entries) {
 
       let slot = e.slot || 'ALL_DAY';
       let datePfx = _toPfx(e.date, transDB);
+      _markConflictingRowsForDelete(e.user_id, datePfx, slot);
       calSyncEntries.push({ user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
       let needsApproval = _isApprovalNeeded(statusId, e.user_id);
       let approvedVal = needsApproval ? APPROVAL_STATUS.PENDING : APPROVAL_STATUS.NOT_REQUIRED;
@@ -1040,6 +1080,7 @@ function saveAttendanceEntries(entries) {
     // aby běžný autosave nikdy nemohl při chybě smazat větší část databáze.
     const updatedRows = new Set();
     toUpdate.forEach(function(item) {
+      if (rowsToDelete.has(item.row - 2)) return;
       if (updatedRows.has(item.row)) return;
       sheet.getRange(item.row, 1, 1, headers.length).setValues([item.values]);
       updatedRows.add(item.row);
@@ -1047,10 +1088,15 @@ function saveAttendanceEntries(entries) {
     if (toInsert.length > 0) {
       sheet.getRange(sheet.getLastRow() + 1, 1, toInsert.length, headers.length).setValues(toInsert);
     }
+    Array.from(rowsToDelete).sort(function(a, b) { return b - a; }).forEach(function(rowIdx) {
+      sheet.deleteRow(rowIdx + 2);
+    });
     _auditLog("ATTENDANCE_SAVE_BATCH", {
-      input_count: entries.length,
+      input_count: originalInputCount,
+      normalized_input_count: entries.length,
       updated_count: updatedRows.size,
-      inserted_count: toInsert.length
+      inserted_count: toInsert.length,
+      conflict_deleted_count: rowsToDelete.size
     }, currentUser);
 
     // Vytvořit notifikaci pro schvalovatele
@@ -1116,7 +1162,11 @@ function saveAttendanceEntries(entries) {
 
     // --- CALENDAR SYNC ---
     try {
-      if (typeof CalendarSync !== 'undefined' && calSyncEntries.length > 0) {
+      if (typeof CalendarSync !== 'undefined' && (calSyncEntries.length > 0 || calSyncDeletes.length > 0)) {
+        calSyncDeletes.forEach(function(ce) {
+          CalendarSync.deletePersonalEvent(ce.user_id, ce.date, ce.slot);
+          CalendarSync.deleteTeamEvent(ce.user_id, ce.date, ce.slot);
+        });
         calSyncEntries.forEach(function(ce) {
           var st = statusMap[ce.status_id];
           if (!st) return;

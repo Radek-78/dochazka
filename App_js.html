@@ -1380,6 +1380,21 @@
                 var status = findStatusById(_batchMode.statusId);
                 if (!status) return;
                 var entry = { user_id: userId, date: date, slot: slot, status_id: _batchMode.statusId, note: '' };
+                if (slot === 'ALL_DAY') {
+                    _dropPendingAttendanceSave(userId, date, 'AM');
+                    _dropPendingAttendanceSave(userId, date, 'PM');
+                    delete _attendanceData[userId + '_' + date + '_AM'];
+                    delete _attendanceData[userId + '_' + date + '_PM'];
+                    delete _globalAttendanceData[userId + '_' + date + '_AM'];
+                    delete _globalAttendanceData[userId + '_' + date + '_PM'];
+                    queueAttendanceDelete(userId, date, 'AM');
+                    queueAttendanceDelete(userId, date, 'PM');
+                } else {
+                    _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
+                    delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
+                    delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
+                    queueAttendanceDelete(userId, date, 'ALL_DAY');
+                }
                 // Automaticky přidat výchozí čas příchodu pro vlastní Kancelář záznamy
                 if (userId === plannerData.user.user_id &&
                     plannerData.user.show_work_start_time === 'true' &&
@@ -1686,6 +1701,8 @@
 
             // Smazat případné opačné sloty lokálně i na serveru
             if (slot === 'ALL_DAY') {
+                _dropPendingAttendanceSave(userId, date, 'AM');
+                _dropPendingAttendanceSave(userId, date, 'PM');
                 if (_attendanceData[userId + '_' + date + '_AM']) queueAttendanceDelete(userId, date, 'AM');
                 if (_attendanceData[userId + '_' + date + '_PM']) queueAttendanceDelete(userId, date, 'PM');
                 delete _attendanceData[userId + '_' + date + '_AM'];
@@ -1693,6 +1710,7 @@
                 delete _globalAttendanceData[userId + '_' + date + '_AM'];
                 delete _globalAttendanceData[userId + '_' + date + '_PM'];
             } else {
+                _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
                 if (_attendanceData[userId + '_' + date + '_ALL_DAY']) queueAttendanceDelete(userId, date, 'ALL_DAY');
                 delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
                 delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
@@ -1724,6 +1742,8 @@
             // Smazat případné půldenní, pokud zadáváme celodenní → i na serveru!
             var hadAm = !!_attendanceData[userId + '_' + date + '_AM'];
             var hadPm = !!_attendanceData[userId + '_' + date + '_PM'];
+            _dropPendingAttendanceSave(userId, date, 'AM');
+            _dropPendingAttendanceSave(userId, date, 'PM');
             delete _attendanceData[userId + '_' + date + '_AM'];
             delete _attendanceData[userId + '_' + date + '_PM'];
             delete _globalAttendanceData[userId + '_' + date + '_AM'];
@@ -1745,6 +1765,7 @@
 
             // Smazat celodenní, pokud zadáváme půldenní → i na serveru!
             var hadAllDay = !!_attendanceData[userId + '_' + date + '_ALL_DAY'];
+            _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
             delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
             delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
             if (hadAllDay) queueAttendanceDelete(userId, date, 'ALL_DAY');
@@ -3790,6 +3811,14 @@
             console.error("Chyba loadData (catch):", e);
             setSplashMsg("Kritická chyba systému.");
             _startupPerfLog('frontend.loadData.exception', loadDataStart);
+        }
+    }
+
+    function _dropPendingAttendanceSave(userId, date, slot) {
+        var key = userId + '_' + String(date).substring(0, 10) + '_' + (slot || 'ALL_DAY');
+        if (_attWriteQueue[key]) {
+            delete _attWriteQueue[key];
+            _persistQueues();
         }
     }
 
