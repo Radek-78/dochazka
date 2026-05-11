@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.20";
+const APP_VERSION = "2.10.21";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.21",
+    "date": "2026-05-11",
+    "changes": [
+      "Doplněna diagnostika debugAttendanceSlotCollisions pro vyhledání dnů, kde se současně vyskytuje ALL_DAY a AM/PM docházka",
+      "Diagnostika vypisuje dotčené uživatele, datum, sloty, statusy, attendance_id, created_at a návrh ručního vyhodnocení bez úprav dat"
+    ]
+  },
   {
     "version": "2.10.20",
     "date": "2026-05-11",

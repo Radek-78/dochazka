@@ -824,6 +824,130 @@ function debugPrivacyStatusMapping(year, month) {
 }
 
 /**
+ * Diagnostika kolizí slotů v ATTENDANCE.
+ * Hledá dny, kde pro stejného uživatele a datum existuje současně ALL_DAY a AM/PM.
+ * Funkce nic nemaže ani neopravuje; výsledek vrací a zapisuje do Logger.log.
+ */
+function debugAttendanceSlotCollisions(year, month) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser || !Auth.hasAdminAccess(currentUser)) {
+      const denied = { success: false, error: "Neautorizováno.", active_user: Session.getActiveUser().getEmail() };
+      Logger.log(JSON.stringify(denied, null, 2));
+      return denied;
+    }
+
+    const targetYear = year ? Number(year) : null;
+    const targetMonth = month !== undefined && month !== null && month !== "" ? Number(month) : null;
+    const prefix = targetYear
+      ? String(targetYear) + (targetMonth !== null ? "-" + String(targetMonth + 1).padStart(2, "0") : "")
+      : "";
+
+    const coreSS = DB.getCore();
+    const transSS = DB.getTransaction();
+    const users = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const attendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE).filter(function(entry) {
+      if (!prefix) return true;
+      return String(entry.date || "").startsWith(prefix);
+    });
+
+    const userMap = {};
+    users.forEach(function(u) {
+      userMap[String(u.user_id)] = u;
+    });
+
+    const statusMap = {};
+    statuses.forEach(function(s) {
+      statusMap[Privacy.normalizeStatusId(s.status_id)] = s;
+    });
+
+    const grouped = {};
+    attendance.forEach(function(entry) {
+      const userId = String(entry.user_id || "");
+      const datePfx = String(entry.date || "").substring(0, 10);
+      if (!userId || !datePfx) return;
+      const slot = entry.slot || "ALL_DAY";
+      const key = userId + "_" + datePfx;
+      if (!grouped[key]) {
+        grouped[key] = { user_id: userId, date: datePfx, entries: [] };
+      }
+      grouped[key].entries.push(Object.assign({}, entry, { slot: slot, date: datePfx }));
+    });
+
+    const items = [];
+    Object.keys(grouped).forEach(function(key) {
+      const group = grouped[key];
+      const hasAllDay = group.entries.some(function(e) { return (e.slot || "ALL_DAY") === "ALL_DAY"; });
+      const hasHalfDay = group.entries.some(function(e) { return e.slot === "AM" || e.slot === "PM"; });
+      if (!hasAllDay || !hasHalfDay) return;
+
+      const user = userMap[String(group.user_id)] || {};
+      const sortedEntries = group.entries.slice().sort(function(a, b) {
+        return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+      });
+      const allDayEntries = sortedEntries.filter(function(e) { return (e.slot || "ALL_DAY") === "ALL_DAY"; });
+      const halfDayEntries = sortedEntries.filter(function(e) { return e.slot === "AM" || e.slot === "PM"; });
+      const latestAllDay = allDayEntries.length ? allDayEntries[allDayEntries.length - 1] : null;
+      const latestHalfDay = halfDayEntries.length ? halfDayEntries[halfDayEntries.length - 1] : null;
+
+      let suggestedResolution = "manual_review";
+      if (latestAllDay && latestHalfDay && latestAllDay.created_at && latestHalfDay.created_at) {
+        const allDayTime = new Date(latestAllDay.created_at).getTime();
+        const halfDayTime = new Date(latestHalfDay.created_at).getTime();
+        if (!isNaN(allDayTime) && !isNaN(halfDayTime)) {
+          if (allDayTime > halfDayTime) suggestedResolution = "latest_wins_all_day";
+          else if (halfDayTime > allDayTime) suggestedResolution = "latest_wins_half_day";
+        }
+      }
+
+      items.push({
+        user_id: group.user_id,
+        user_name: ((user.first_name || "") + " " + (user.last_name || "")).trim() || group.user_id,
+        date: group.date,
+        suggested_resolution: suggestedResolution,
+        entries: sortedEntries.map(function(e) {
+          const status = statusMap[Privacy.normalizeStatusId(e.status_id)] || {};
+          return {
+            attendance_id: e.attendance_id || "",
+            slot: e.slot || "ALL_DAY",
+            status_id: e.status_id || "",
+            status_name: status.name || "",
+            approved: e.approved || "",
+            created_at: e.created_at || "",
+            note: e.note || ""
+          };
+        })
+      });
+    });
+
+    const affectedUsers = {};
+    items.forEach(function(item) {
+      affectedUsers[item.user_id] = true;
+    });
+
+    const result = {
+      success: true,
+      scope: {
+        year: targetYear,
+        month: targetMonth,
+        prefix: prefix || "ALL"
+      },
+      checked_attendance_rows: attendance.length,
+      collision_days: items.length,
+      affected_users: Object.keys(affectedUsers).length,
+      items: items
+    };
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
+  } catch (e) {
+    const errorResult = { success: false, error: e.toString(), stack: e.stack || "" };
+    Logger.log(JSON.stringify(errorResult, null, 2));
+    return errorResult;
+  }
+}
+
+/**
  * Uloží dávku docházkových záznamů (upsert dle user_id + date + slot).
  * Celý batch se zpracuje v jednom volání — žádné race conditions.
  */
