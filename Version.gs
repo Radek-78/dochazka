@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.25";
+const APP_VERSION = "2.10.26";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.26",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava zalomení čísla dne v hlavičce: přidáno white-space nowrap a overflow hidden pro zaručení jednoho řádku"
+    ]
+  },
   {
     "version": "2.10.25",
     "date": "2026-05-12",
