@@ -1346,7 +1346,8 @@
 
     /* DEN INFO (Číslo + Název) */
     .day-info {
-        flex-direction: column;
+        flex-direction: row;
+        align-items: center;
         gap: 2px;
         transition: background 0.15s;
     }
@@ -1392,12 +1393,12 @@
     }
 
     .d-num {
-        font-size: 16px;
+        font-size: 10px;
         font-weight: 800;
     }
 
     .d-name {
-        font-size: 10px;
+        font-size: 8px;
         font-weight: 700;
         color: #94a3b8;
     }
@@ -3864,18 +3865,21 @@
 
     .chip-time-tag {
         position: absolute;
-        bottom: 2px;
-        right: 3px;
-        font-size: 7px;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        font-size: 8px;
         font-weight: 700;
-        opacity: 0.8;
         line-height: 1;
         letter-spacing: 0;
+        padding: 2px 0;
+        border-radius: 0 0 4px 4px;
         pointer-events: none;
+        text-align: center;
     }
 
     .att-cell-chip.has-time-tag {
-        padding-bottom: 10px;
+        padding-bottom: 12px;
     }
 
     @keyframes att-pulse {

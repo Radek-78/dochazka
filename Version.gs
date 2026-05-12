@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.24";
+const APP_VERSION = "2.10.25";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.25",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava hlavičky dnů: číslo a zkratka dne vždy na jednom řádku (flex-direction row, zmenšené fonty)",
+      "Oprava time tagu v chipu statusu: pruh je celošířkový, na spodním okraji, vyšší a čitelnější"
+    ]
+  },
   {
     "version": "2.10.24",
     "date": "2026-05-12",
