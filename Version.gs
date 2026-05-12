@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.27";
+const APP_VERSION = "2.10.28";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.28",
+    "date": "2026-05-12",
+    "changes": [
+      "Červený okraj chipu (chybějící rezervace stolu) se nyní zobrazuje nad pruhem s časem příchodu"
+    ]
+  },
   {
     "version": "2.10.27",
     "date": "2026-05-12",
