@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.22";
+const APP_VERSION = "2.10.23";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.23",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava šířky modálního okna detailu statusu: přidáno !important pro přepsání výchozí šířky admin-modal-compact"
+    ]
+  },
   {
     "version": "2.10.22",
     "date": "2026-05-12",
