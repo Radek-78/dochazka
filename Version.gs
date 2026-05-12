@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.26";
+const APP_VERSION = "2.10.27";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.27",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava vodoznaku dne v buňkách uživatelů: white-space nowrap zabraňuje zalomení dvouciferných čísel dnů"
+    ]
+  },
   {
     "version": "2.10.26",
     "date": "2026-05-12",

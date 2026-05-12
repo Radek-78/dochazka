@@ -1,5 +1,12 @@
 [
   {
+    "version": "2.10.27",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava vodoznaku dne v buňkách uživatelů: white-space nowrap zabraňuje zalomení dvouciferných čísel dnů"
+    ]
+  },
+  {
     "version": "2.10.26",
     "date": "2026-05-12",
     "changes": [
