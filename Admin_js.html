@@ -1500,10 +1500,15 @@
             const modalBody = document.getElementById('modal-body');
             modal.classList.remove('step-hidden');
             modal.style.display = 'flex';
-            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact';
+            modal.querySelector('.modal-content').className = 'modal-content admin-modal-compact status-editor-modal';
 
-            const bgColor = (item && item.color) ? item.color : (isMaskStatus ? '#64748b' : '#4CAF50');
-            const txtColor = (item && item.text_color) ? item.text_color : '#ffffff';
+            const colorValue = function(value, fallback) {
+                return /^#[0-9a-fA-F]{6}$/.test(String(value || '')) ? value : fallback;
+            };
+            const bgColor = colorValue(item && item.color, isMaskStatus ? '#64748b' : '#4CAF50');
+            const txtColor = colorValue(item && item.text_color, '#ffffff');
+            const timeBgColor = colorValue(item && item.work_time_bg_color, '#1f2937');
+            const timeTxtColor = colorValue(item && item.work_time_text_color, '#ffffff');
             const abbr = item ? (item.abbreviation || '') : '';
             const retention = item && item.retention_category ? item.retention_category : (item && String(item.is_vacation) === 'true' ? 'YEAR_END' : 'SHORT_TERM');
 
@@ -1542,10 +1547,12 @@
         </span>
     </div>
 </div>
-<div class="modal-body-padded" style="padding:24px 32px;">
+<div class="modal-body-padded">
     <form id="status-form" autocomplete="off">
         <input type="hidden" name="status_id" value="${id || ''}">
         <input type="hidden" name="status_kind" value="${statusKind}">
+        <div class="status-editor-grid">
+        <div class="status-editor-col">
 
         <!-- Základní informace -->
         <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
@@ -1575,7 +1582,7 @@
         <!-- Barvy -->
         <div style="background:#f8fafc; border:1px solid #e8edf2; border-radius:12px; padding:16px 18px; margin-bottom:14px;">
             <div style="font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;">🎨 Barevné schéma</div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
                 <div class="modal-form-group" style="margin:0;">
                     <label class="modal-form-label">BARVA BUŇKY (POZADÍ)</label>
                     <div style="display:flex; align-items:center; gap:10px; padding:5px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:9px; height:42px; box-sizing:border-box;">
@@ -1597,7 +1604,34 @@
                     </div>
                 </div>
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; padding-top:12px; border-top:1px dashed #dbe4ee;">
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">POZADÍ ČASU PŘÍCHODU</label>
+                    <div style="display:flex; align-items:center; gap:10px; padding:5px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:9px; height:42px; box-sizing:border-box;">
+                        <input type="color" name="work_time_bg_color" value="${timeBgColor}"
+                            style="width:30px; height:28px; padding:0; border:none; border-radius:4px; cursor:pointer; background:none;"
+                            oninput="document.getElementById('status-time-preview').style.background=this.value; document.getElementById('status-time-bg-val').textContent=this.value;">
+                        <span id="status-time-bg-val" style="font-size:12px; color:#475569; font-weight:700; font-family:monospace;">${timeBgColor}</span>
+                    </div>
+                </div>
+                <div class="modal-form-group" style="margin:0;">
+                    <label class="modal-form-label">TEXT ČASU</label>
+                    <div style="display:flex; align-items:center; gap:10px; padding:5px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:9px; height:42px; box-sizing:border-box;">
+                        <input type="color" name="work_time_text_color" value="${timeTxtColor}"
+                            style="width:30px; height:28px; padding:0; border:none; border-radius:4px; cursor:pointer; background:none;"
+                            oninput="document.getElementById('status-time-preview').style.color=this.value; document.getElementById('status-time-txt-val').textContent=this.value;">
+                        <span id="status-time-txt-val" style="font-size:12px; color:#475569; font-weight:700; font-family:monospace;">${timeTxtColor}</span>
+                    </div>
+                </div>
+                <div style="grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:12px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:9px 12px;">
+                    <span style="font-size:11px; color:#64748b; font-weight:800; text-transform:uppercase;">Náhled času</span>
+                    <span id="status-time-preview" style="display:inline-flex; align-items:center; justify-content:center; min-width:52px; height:18px; padding:0 8px; border-radius:5px; background:${timeBgColor}; color:${timeTxtColor}; font-size:10px; font-weight:900; line-height:1;">08:00</span>
+                </div>
+            </div>
         </div>
+
+        </div>
+        <div class="status-editor-col">
 
         ${!isMaskStatus ? `
         <!-- GDPR maskování a retence -->
@@ -1660,9 +1694,11 @@
                 </label>
             </div>
         </div>
+        </div>
+        </div>
     </form>
 </div>
-<div class="modal-footer-brand" style="padding:16px 32px; background:#f8fafc; border-top:1px solid #eef2f6;">
+<div class="modal-footer-brand" style="background:#f8fafc; border-top:1px solid #eef2f6;">
     <button class="btn-modal-cancel" onclick="admin.closeModal()" style="height:42px; padding:0 22px;">ZRUŠIT</button>
     <button class="btn-modal-save" onclick="admin.saveStatus()" style="height:42px; padding:0 28px; background:var(--primary);">ULOŽIT ${isMaskStatus ? 'MASKOVACÍ STATUS' : 'STATUS'}</button>
 </div>`;

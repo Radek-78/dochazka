@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.21";
+const APP_VERSION = "2.10.22";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.22",
+    "date": "2026-05-12",
+    "changes": [
+      "Administrace statusů: detail statusu přepracován do kompaktního dvousloupcového rozvržení ve stylu profilového okna",
+      "Statusy mají nově vlastní nastavení barvy pozadí a textu pro štítek času příchodu, aby byl čas čitelný na všech barvách statusů"
+    ]
+  },
   {
     "version": "2.10.21",
     "date": "2026-05-11",

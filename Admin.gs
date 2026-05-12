@@ -357,6 +357,8 @@ var Admin = {
       const required = [
         'text_color',
         'category',
+        'work_time_bg_color',
+        'work_time_text_color',
         'status_kind',
         'masked_status_id',
         'retention_category'
@@ -374,6 +376,8 @@ var Admin = {
     return statuses.map(function(s) {
       if (!s.status_kind) s.status_kind = 'NORMAL';
       if (!s.retention_category) s.retention_category = s.is_vacation === 'true' ? 'YEAR_END' : 'SHORT_TERM';
+      if (!s.work_time_bg_color) s.work_time_bg_color = '#1f2937';
+      if (!s.work_time_text_color) s.work_time_text_color = '#ffffff';
       return s;
     });
   },
@@ -417,7 +421,12 @@ var Admin = {
       data.allows_desk_reservation = 'false';
       data.is_vacation = 'false';
       data.shows_work_time = 'false';
+      data.work_time_bg_color = '';
+      data.work_time_text_color = '';
       if (!data.category) data.category = 'Ostatní';
+    } else {
+      if (!data.work_time_bg_color) data.work_time_bg_color = '#1f2937';
+      if (!data.work_time_text_color) data.work_time_text_color = '#ffffff';
     }
     return this.updateEntity(DB_SHEETS.CORE.ATTENDANCE_STATUSES, 'status_id', data);
   },

@@ -1090,9 +1090,11 @@
             // Kontrola uživatelského nastavení pro zobrazení začátku pracovní doby v chipu
             const showTimeSetting = !!(plannerData && plannerData.user && plannerData.user.show_work_start_time);
             const formattedTime = (showTimeSetting) ? _formatWorkTime(entry.work_start_time) : '';
+            const timeBg = st.work_time_bg_color || 'rgba(0,0,0,0.18)';
+            const timeFg = st.work_time_text_color || '#ffffff';
 
             const timeTag = (formattedTime && formattedTime !== '')
-                ? '<span class="chip-time-tag">' + formattedTime + '</span>'
+                ? '<span class="chip-time-tag" style="background:' + timeBg + ';color:' + timeFg + ';">' + formattedTime + '</span>'
                 : '';
             const timeTitleSuffix = (formattedTime && formattedTime !== '') ? ' · příchod ' + formattedTime : '';
 

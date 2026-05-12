@@ -3015,6 +3015,45 @@
         background: #fff;
     }
 
+    .status-editor-modal {
+        width: min(980px, 96vw);
+        max-height: 92vh;
+    }
+
+    .status-editor-modal .modal-body-padded {
+        padding: 16px 20px;
+        overflow: auto;
+    }
+
+    .status-editor-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+        gap: 14px;
+        align-items: start;
+    }
+
+    .status-editor-col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+    }
+
+    .status-editor-modal .modal-brand-header {
+        padding: 14px 22px;
+        min-height: auto;
+    }
+
+    .status-editor-modal .modal-footer-brand {
+        padding: 12px 20px;
+    }
+
+    @media (max-width: 860px) {
+        .status-editor-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
     .modal-form-group {
         display: flex;
         flex-direction: column;
