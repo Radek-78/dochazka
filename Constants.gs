@@ -41,7 +41,8 @@ var DB_SHEETS = {
   },
   SYSTEM: {
     NOTIFICATIONS: "NOTIFICATIONS",
-    AUDIT_LOG: "AUDIT_LOG"
+    AUDIT_LOG: "AUDIT_LOG",
+    PURGE_LOG: "PURGE_LOG"
   }
 };
 
@@ -89,6 +90,15 @@ const NOTIFICATION_TYPES = {
   VACATION_APPROVED:         "VACATION_APPROVED",
   VACATION_REJECTED:         "VACATION_REJECTED"
 };
+
+/** Stav GDPR purge analýzy uložený v Script Properties */
+const PURGE_STATUS = {
+  PENDING:   "PENDING",
+  EXECUTED:  "EXECUTED",
+  CANCELLED: "CANCELLED"
+};
+
+const PROP_PENDING_PURGE = "GDPR_PENDING_PURGE";
 
 /** Typy systému dovolených (pole vacation_config.system_type) */
 const VACATION_SYSTEM_TYPE = {

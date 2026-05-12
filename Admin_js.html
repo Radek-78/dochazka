@@ -64,7 +64,8 @@
                     'settings': 'settings',
                     'maps': 'manage_maps',
                     'namedays': 'manage_namedays',
-                    'rbac': 'manage_rbac'
+                    'rbac': 'manage_rbac',
+                    'gdpr': 'manage_gdpr'
                 };
 
                 let firstVisibleTab = null;
@@ -137,6 +138,7 @@
                     case 'maps': this.renderMapsPanel(); break;
                     case 'namedays': this.renderNamedDays(); break;
                     case 'rbac': this.renderRbac(); break;
+                    case 'gdpr': this.renderGdpr(); break;
                 }
             }
         },
@@ -2671,6 +2673,7 @@
             { label: 'Správa Map kanceláří', key: 'manage_maps', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
             { label: 'Správa Jmenin', key: 'manage_namedays', category: 'Administrace', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
             { label: 'Správa Oprávnění', key: 'manage_rbac', category: 'Administrace', USER: false, LEADER: false, ADMIN: false, SUPERADMIN: true },
+            { label: 'GDPR / Archivace docházky', key: 'manage_gdpr', category: 'Administrace', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },
 
             // Kategorie: DOCHÁZKA A DOVOLENÉ
             { label: 'Vidět vlastní docházku a statistiky', key: 'view_own_attendance', category: 'Docházka & Dovolené', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
@@ -3702,4 +3705,229 @@
             setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
         }, 4000);
     }
+
+    // ─── GDPR / ARCHIVACE ────────────────────────────────────────────────────
+
+    admin.renderGdpr = async function() {
+        const panel = document.getElementById('admin-panel-gdpr');
+        if (!panel) return;
+
+        panel.innerHTML = `<div style="padding:32px; text-align:center; color:#94a3b8;">Načítám GDPR data...</div>`;
+
+        try {
+            const [pendingRes, logRes] = await Promise.all([
+                callServer('adminGetPendingPurge'),
+                callServer('adminGetPurgeLog')
+            ]);
+
+            const pending = pendingRes && pendingRes.success ? pendingRes.data : null;
+            const log = logRes && logRes.success ? logRes.data : [];
+
+            panel.innerHTML = admin._renderGdprPanel(pending, log);
+        } catch(e) {
+            panel.innerHTML = `<div style="padding:32px; color:#ef4444;">Chyba: ${e}</div>`;
+        }
+    };
+
+    admin._renderGdprPanel = function(pending, log) {
+        const now = new Date();
+        const cutoffPreview = admin._gdprCutoffPreview(now);
+
+        let html = `
+        <div style="max-width:900px;">
+            <div style="font-size:22px; font-weight:800; color:#1e293b; margin-bottom:6px;">🔒 GDPR / Archivace docházky</div>
+            <div style="font-size:13px; color:#64748b; margin-bottom:28px;">
+                Retenční politika: aktuální měsíc + 2 předchozí. Dovolené se uchovávají do konce kalendářního roku.
+            </div>`;
+
+        // ── Čekající analýza ──
+        if (pending) {
+            const analyzedAt = new Date(pending.analyzedAt).toLocaleString('cs-CZ');
+            html += `
+            <div style="background:#fffbeb; border:2px solid #f59e0b; border-radius:14px; padding:20px 24px; margin-bottom:20px;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+                    <span style="font-size:18px;">⏳</span>
+                    <span style="font-size:15px; font-weight:800; color:#92400e;">Čeká na schválení</span>
+                    <span style="font-size:11px; color:#b45309; margin-left:auto;">Analýza: ${analyzedAt}</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+                    <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
+                        <div style="font-size:28px; font-weight:900; color:#dc2626;">${pending.totalToDelete}</div>
+                        <div style="font-size:11px; color:#64748b; font-weight:600;">záznamů ke smazání</div>
+                    </div>
+                    <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
+                        <div style="font-size:28px; font-weight:900; color:#0369a1;">${pending.keptVacation}</div>
+                        <div style="font-size:11px; color:#64748b; font-weight:600;">dovolených ponecháno</div>
+                    </div>
+                    <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
+                        <div style="font-size:28px; font-weight:900; color:#16a34a;">${pending.keptRecent}</div>
+                        <div style="font-size:11px; color:#64748b; font-weight:600;">záznamů v retenci</div>
+                    </div>
+                </div>
+                <div style="font-size:12px; color:#78716c; margin-bottom:10px;">
+                    <strong>Cutoff datum:</strong> ${pending.cutoffDate} &nbsp;|&nbsp;
+                    <strong>Mazané měsíce:</strong> ${pending.months.map(m => m.month + ' (' + m.count + ')').join(', ') || '—'}
+                    ${pending.isNewYear ? '<br><span style="color:#dc2626; font-weight:700;">⚠ Novoroční běh — budou smazány i dovolené z předchozího roku.</span>' : ''}
+                </div>
+                ${admin._renderPurgeRecordTable(pending.records, pending.vacationRecords)}
+                <div style="display:flex; gap:10px; margin-top:16px;">
+                    <button onclick="admin.executePurge('${pending.purgeId}')"
+                        style="background:#dc2626; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-weight:800; font-size:13px; cursor:pointer;">
+                        🗑 Provést smazání
+                    </button>
+                    <button onclick="admin.cancelPurge()"
+                        style="background:#f1f5f9; color:#475569; border:none; border-radius:8px; padding:10px 22px; font-weight:700; font-size:13px; cursor:pointer;">
+                        Zrušit analýzu
+                    </button>
+                </div>
+            </div>`;
+        } else {
+            html += `
+            <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:20px 24px; margin-bottom:20px;">
+                <div style="font-size:13px; color:#64748b; margin-bottom:4px;">Žádná čekající analýza.</div>
+                <div style="font-size:12px; color:#94a3b8; margin-bottom:14px;">
+                    Při aktuálním stavu by se mazaly záznamy před <strong>${cutoffPreview}</strong>.
+                </div>
+                <button onclick="admin.runPurgeAnalysis()"
+                    style="background:#004fac; color:#fff; border:none; border-radius:8px; padding:10px 22px; font-weight:700; font-size:13px; cursor:pointer;">
+                    🔍 Spustit analýzu
+                </button>
+            </div>`;
+        }
+
+        // ── Historie ──
+        html += `
+            <div style="font-size:13px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px;">
+                Historie promazání
+            </div>`;
+
+        if (log.length === 0) {
+            html += `<div style="font-size:13px; color:#94a3b8; padding:12px 0;">Zatím žádné promazání neproběhlo.</div>`;
+        } else {
+            html += `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead>
+                    <tr style="background:#f1f5f9; font-weight:700; color:#475569;">
+                        <th style="padding:8px 12px; text-align:left;">Datum</th>
+                        <th style="padding:8px 12px; text-align:left;">Provedl</th>
+                        <th style="padding:8px 12px; text-align:center;">Smazáno</th>
+                        <th style="padding:8px 12px; text-align:left;">Cutoff</th>
+                        <th style="padding:8px 12px; text-align:center;">Dovolené</th>
+                        <th style="padding:8px 12px; text-align:left;">Poznámka</th>
+                    </tr>
+                </thead>
+                <tbody>
+                ${log.map(function(r, i) { return `
+                    <tr style="border-bottom:1px solid #f1f5f9; background:${i%2===0?'#fff':'#fafafa'}">
+                        <td style="padding:8px 12px;">${r.executed_at ? new Date(r.executed_at).toLocaleString('cs-CZ') : '—'}</td>
+                        <td style="padding:8px 12px;">${r.executed_by || '—'}</td>
+                        <td style="padding:8px 12px; text-align:center; font-weight:700; color:#dc2626;">${r.deleted_count || 0}</td>
+                        <td style="padding:8px 12px;">${r.cutoff_date || '—'}</td>
+                        <td style="padding:8px 12px; text-align:center;">${r.included_vacation === 'ano' ? '✓' : '—'}</td>
+                        <td style="padding:8px 12px; color:#64748b;">${r.note || ''}</td>
+                    </tr>`; }).join('')}
+                </tbody>
+            </table>`;
+        }
+
+        html += `</div>`;
+        return html;
+    };
+
+    admin._renderPurgeRecordTable = function(records, vacationRecords) {
+        const all = (records || []).concat((vacationRecords || []).map(function(r) {
+            return Object.assign({}, r, { _isVacation: true });
+        }));
+        if (all.length === 0) return '';
+
+        // Seskupit po měsících
+        const byMonth = {};
+        all.forEach(function(r) {
+            const m = (r.date || '').substring(0, 7);
+            if (!byMonth[m]) byMonth[m] = [];
+            byMonth[m].push(r);
+        });
+
+        let html = `<details style="margin-top:10px;">
+            <summary style="cursor:pointer; font-size:12px; font-weight:700; color:#475569; padding:6px 0;">
+                Zobrazit detail (${all.length} záznamů)
+            </summary>
+            <div style="margin-top:8px; max-height:320px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">
+            <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                <thead style="position:sticky; top:0; background:#f8fafc; z-index:1;">
+                    <tr style="font-weight:700; color:#475569;">
+                        <th style="padding:6px 10px; text-align:left;">Datum</th>
+                        <th style="padding:6px 10px; text-align:left;">Uživatel</th>
+                        <th style="padding:6px 10px; text-align:left;">Status</th>
+                        <th style="padding:6px 10px; text-align:left;">Slot</th>
+                        <th style="padding:6px 10px; text-align:left;">Typ</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        Object.keys(byMonth).sort().forEach(function(m) {
+            html += `<tr style="background:#f1f5f9;">
+                <td colspan="5" style="padding:5px 10px; font-weight:800; color:#475569; font-size:11px;">${m}</td>
+            </tr>`;
+            byMonth[m].forEach(function(r, i) {
+                html += `<tr style="border-bottom:1px solid #f8fafc; background:${r._isVacation ? '#eff6ff' : '#fff'}">
+                    <td style="padding:5px 10px;">${r.date || ''}</td>
+                    <td style="padding:5px 10px;">${r.user_name || ''}</td>
+                    <td style="padding:5px 10px;">${r.status_name || ''}</td>
+                    <td style="padding:5px 10px;">${r.slot || ''}</td>
+                    <td style="padding:5px 10px; color:${r._isVacation ? '#0369a1' : '#64748b'};">${r._isVacation ? 'Dovolená' : 'Běžný'}</td>
+                </tr>`;
+            });
+        });
+
+        html += `</tbody></table></div></details>`;
+        return html;
+    };
+
+    admin._gdprCutoffPreview = function(now) {
+        const month = now.getMonth();
+        const year = now.getFullYear();
+        const cutoffMonth = month - 2;
+        const cutoffYear = cutoffMonth < 0 ? year - 1 : year;
+        const normalizedMonth = ((cutoffMonth % 12) + 12) % 12;
+        const d = new Date(cutoffYear, normalizedMonth, 1);
+        return d.toLocaleDateString('cs-CZ');
+    };
+
+    admin.runPurgeAnalysis = async function() {
+        const panel = document.getElementById('admin-panel-gdpr');
+        if (panel) panel.innerHTML = `<div style="padding:32px; text-align:center; color:#94a3b8;">Spouštím analýzu...</div>`;
+        try {
+            const res = await callServer('adminRunPurgeAnalysis');
+            if (!res || !res.success) throw new Error(res ? res.error : 'Neznámá chyba');
+            await admin.renderGdpr();
+        } catch(e) {
+            alert('Chyba při analýze: ' + e);
+            await admin.renderGdpr();
+        }
+    };
+
+    admin.cancelPurge = async function() {
+        if (!confirm('Zrušit analýzu? Čekající data budou odstraněna.')) return;
+        try {
+            await callServer('adminCancelPurge');
+            await admin.renderGdpr();
+        } catch(e) {
+            alert('Chyba: ' + e);
+        }
+    };
+
+    admin.executePurge = async function(purgeId) {
+        if (!confirm('Opravdu provést smazání? Tato akce je nevratná.\nPřed smazáním bude automaticky vytvořena záloha.')) return;
+        const panel = document.getElementById('admin-panel-gdpr');
+        if (panel) panel.innerHTML = `<div style="padding:32px; text-align:center; color:#94a3b8;">Vytvářím zálohu a mažu záznamy...</div>`;
+        try {
+            const res = await callServer('adminExecutePurge', purgeId);
+            if (!res || !res.success) throw new Error(res ? res.error : 'Neznámá chyba');
+            alert('Smazáno ' + res.data.deletedCount + ' záznamů. Záloha: ' + res.data.backupFileId);
+            await admin.renderGdpr();
+        } catch(e) {
+            alert('Chyba při mazání: ' + e);
+            await admin.renderGdpr();
+        }
+    };
 </script>

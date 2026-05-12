@@ -2556,6 +2556,48 @@ function updateMarketingWeeks(rows) {
   }
 }
 
+// ─── GDPR PURGE ──────────────────────────────────────────────────────────────
+
+function adminRunPurgeAnalysis() {
+  try {
+    return { success: true, data: Purge.analyze() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminGetPendingPurge() {
+  try {
+    return { success: true, data: Purge.getPending() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminCancelPurge() {
+  try {
+    return { success: true, data: Purge.cancelPending() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminExecutePurge(purgeId) {
+  try {
+    return { success: true, data: Purge.execute(purgeId) };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminGetPurgeLog() {
+  try {
+    return { success: true, data: Purge.getLog() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 /**
  * Vyčistí osiřelé kalendáře (existují v Google, ale nemají záznam v DB).
  * Pouze ADMIN a SUPERADMIN.

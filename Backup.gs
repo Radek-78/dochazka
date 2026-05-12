@@ -151,7 +151,7 @@ var Backup = {
     const triggers = ScriptApp.getProjectTriggers();
     triggers.forEach(t => {
       const func = t.getHandlerFunction();
-      if (func === 'runDailyFullBackup' || func === 'runAttendanceSafetySnapshot') {
+      if (func === 'runDailyFullBackup' || func === 'runAttendanceSafetySnapshot' || func === 'runScheduledPurgeAnalysis') {
         ScriptApp.deleteTrigger(t);
       }
     });
@@ -168,8 +168,40 @@ var Backup = {
       .timeBased()
       .everyHours(1)
       .create();
-      
+
+    // GDPR purge analýza — 1. den každého měsíce v 01:00
+    ScriptApp.newTrigger('runScheduledPurgeAnalysis')
+      .timeBased()
+      .onMonthDay(1)
+      .atHour(1)
+      .create();
+
     console.log("Backup: AutomatickĂ© triggery nastaveny.");
+  },
+
+  /**
+   * Provede zálohu TRANSACTION spreadsheetů před GDPR mazáním.
+   * Vrátí ID záložního souboru.
+   */
+  createPurgeBackup: function() {
+    const prop = PropertiesService.getScriptProperties();
+    const transId = prop.getProperty(CONFIG.PROP_SS_TRANSACTION_ID);
+    if (!transId) throw new Error("TRANSACTION spreadsheet není nakonfigurován.");
+
+    const parentFolder = DriveApp.getFileById(transId).getParents().next();
+    let backupFolder;
+    const folders = parentFolder.getFoldersByName("Zálohy Docházky");
+    if (folders.hasNext()) {
+      backupFolder = folders.next();
+    } else {
+      backupFolder = parentFolder.createFolder("Zálohy Docházky");
+    }
+
+    const dateStr = Utilities.formatDate(new Date(), "GMT+1", "yyyy-MM-dd_HH-mm");
+    const file = DriveApp.getFileById(transId);
+    const copy = file.makeCopy(`[PURGE_BACKUP ${dateStr}] ${file.getName()}`, backupFolder);
+    console.log("Backup: Purge záloha vytvořena: " + copy.getId());
+    return copy.getId();
   }
 };
 

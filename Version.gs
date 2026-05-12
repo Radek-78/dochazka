@@ -3,9 +3,22 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.28";
+const APP_VERSION = "2.11.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.0",
+    "date": "2026-05-12",
+    "changes": [
+      "GDPR: automatizovaný systém mazání docházky s retenční politikou (aktuální + 2 předchozí měsíce)",
+      "GDPR: dovolené se uchovávají do konce kalendářního roku, 1. ledna se mažou i ony",
+      "GDPR: analýza spustitelná ručně nebo automaticky 1. dne každého měsíce — čeká na schválení adminem",
+      "GDPR: před každým mazáním se vytvoří záloha TRANSACTION databáze",
+      "GDPR: kompletní seznam záznamů k smazání seskupený po měsících v admin sekci",
+      "GDPR: notifikace emailem a in-app pro adminy při čekající analýze",
+      "GDPR: log provedených promazání v novém sheetu PURGE_LOG"
+    ]
+  },
   {
     "version": "2.10.28",
     "date": "2026-05-12",

@@ -128,6 +128,8 @@ const Setup = {
         headers = ["notif_id", "user_id", "title", "message", "type", "read", "timestamp"]; break;
       case DB_SHEETS.SYSTEM.AUDIT_LOG:
         headers = ["timestamp", "user_email", "action", "details"]; break;
+      case DB_SHEETS.SYSTEM.PURGE_LOG:
+        headers = ["purge_id", "executed_at", "executed_by", "deleted_count", "backup_file_id", "cutoff_date", "included_vacation", "note"]; break;
     }
     
     if (headers.length > 0) {
