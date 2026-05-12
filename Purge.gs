@@ -78,6 +78,9 @@ Purge.analyze = function() {
   const deleteMonths = {};        // "2026-01" → count  (ke smazání)
   const keptRecentMonths = {};    // "2026-03" → count  (v retenci)
   const keptVacationMonths = {};  // "2026-01" → count  (dovolené ponechané)
+  const monthDetails = {};        // "2026-01" → { deleteByStatus: {}, keepByStatus: {} }
+
+  const totalScanned = attendance.length;
 
   attendance.forEach(function(entry) {
     const dateStr = _toPfx(entry.date);
@@ -87,10 +90,14 @@ Purge.analyze = function() {
     const isVacation = vacationIds.has(String(entry.status_id || '').trim());
     const entryYear = entryDate.getFullYear();
     const mk = dateStr.substring(0, 7);
+    const sName = statusMap[String(entry.status_id || '').trim()] || entry.status_id || '?';
+
+    if (!monthDetails[mk]) monthDetails[mk] = { deleteByStatus: {}, keepByStatus: {} };
 
     if (entryDate >= cutoffDate) {
       // V retenčním okně — ponechat
       keptRecentMonths[mk] = (keptRecentMonths[mk] || 0) + 1;
+      monthDetails[mk].keepByStatus[sName] = (monthDetails[mk].keepByStatus[sName] || 0) + 1;
       return;
     }
 
@@ -102,23 +109,26 @@ Purge.analyze = function() {
           attendance_id: entry.attendance_id,
           user_name: userMap[entry.user_id] || entry.user_id,
           date: dateStr,
-          status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
+          status_name: sName,
           slot: entry.slot || ''
         });
         deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
+        monthDetails[mk].deleteByStatus[sName] = (monthDetails[mk].deleteByStatus[sName] || 0) + 1;
       } else {
         // Dovolená v nenovoročním běhu — ponechat
         keptVacationMonths[mk] = (keptVacationMonths[mk] || 0) + 1;
+        monthDetails[mk].keepByStatus[sName] = (monthDetails[mk].keepByStatus[sName] || 0) + 1;
       }
     } else {
       toDelete.push({
         attendance_id: entry.attendance_id,
         user_name: userMap[entry.user_id] || entry.user_id,
         date: dateStr,
-        status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
+        status_name: sName,
         slot: entry.slot || ''
       });
       deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
+      monthDetails[mk].deleteByStatus[sName] = (monthDetails[mk].deleteByStatus[sName] || 0) + 1;
     }
   });
 
@@ -133,6 +143,20 @@ Purge.analyze = function() {
     return { month: m, count: keptVacationMonths[m] };
   });
 
+  // Sestavit detail po měsících a statusech
+  const monthDetailsList = Object.keys(monthDetails).sort().map(function(m) {
+    const d = monthDetails[m];
+    const toDeleteArr = Object.keys(d.deleteByStatus).sort().map(function(s) {
+      return { status: s, count: d.deleteByStatus[s] };
+    });
+    const toKeepArr = Object.keys(d.keepByStatus).sort().map(function(s) {
+      return { status: s, count: d.keepByStatus[s] };
+    });
+    const total = toDeleteArr.reduce(function(a, b) { return a + b.count; }, 0) +
+                  toKeepArr.reduce(function(a, b) { return a + b.count; }, 0);
+    return { month: m, total: total, toDelete: toDeleteArr, toKeep: toKeepArr };
+  });
+
   const purgeId = 'PURGE_' + Utilities.formatDate(now, "GMT+1", "yyyyMMdd_HHmmss");
 
   const pending = {
@@ -140,6 +164,7 @@ Purge.analyze = function() {
     analyzedAt: now.toISOString(),
     cutoffDate: cutoffDateStr,
     isNewYear: isNewYear,
+    totalScanned: totalScanned,
     totalToDelete: toDelete.length + toDeleteVacation.length,
     regularCount: toDelete.length,
     vacationCount: toDeleteVacation.length,
@@ -148,6 +173,7 @@ Purge.analyze = function() {
     months: months,
     keptRecentMonths: keptRecentMonthsList,
     keptVacationMonths: keptVacationMonthsList,
+    monthDetailsList: monthDetailsList,
     records: toDelete,
     vacationRecords: toDeleteVacation,
     status: PURGE_STATUS.PENDING
@@ -163,6 +189,7 @@ Purge.analyze = function() {
     analyzedAt: pending.analyzedAt,
     cutoffDate: cutoffDateStr,
     isNewYear: isNewYear,
+    totalScanned: totalScanned,
     totalToDelete: pending.totalToDelete,
     regularCount: pending.regularCount,
     vacationCount: pending.vacationCount,
@@ -171,6 +198,7 @@ Purge.analyze = function() {
     months: months,
     keptRecentMonths: keptRecentMonthsList,
     keptVacationMonths: keptVacationMonthsList,
+    monthDetailsList: monthDetailsList,
     records: toDelete,
     vacationRecords: toDeleteVacation
   };

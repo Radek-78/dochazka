@@ -3750,17 +3750,21 @@
                     <span style="font-size:15px; font-weight:800; color:#92400e;">Čeká na schválení</span>
                     <span style="font-size:11px; color:#b45309; margin-left:auto;">Analýza: ${analyzedAt}</span>
                 </div>
-                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;">
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px;">
                     <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
-                        <div style="font-size:28px; font-weight:900; color:#dc2626;">${pending.totalToDelete}</div>
+                        <div style="font-size:24px; font-weight:900; color:#475569;">${pending.totalScanned || '?'}</div>
+                        <div style="font-size:11px; color:#64748b; font-weight:600;">prohledáno v DB</div>
+                    </div>
+                    <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
+                        <div style="font-size:24px; font-weight:900; color:#dc2626;">${pending.totalToDelete}</div>
                         <div style="font-size:11px; color:#64748b; font-weight:600;">záznamů ke smazání</div>
                     </div>
                     <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
-                        <div style="font-size:28px; font-weight:900; color:#0369a1;">${pending.keptVacation}</div>
+                        <div style="font-size:24px; font-weight:900; color:#0369a1;">${pending.keptVacation}</div>
                         <div style="font-size:11px; color:#64748b; font-weight:600;">dovolených ponecháno</div>
                     </div>
                     <div style="background:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
-                        <div style="font-size:28px; font-weight:900; color:#16a34a;">${pending.keptRecent}</div>
+                        <div style="font-size:24px; font-weight:900; color:#16a34a;">${pending.keptRecent}</div>
                         <div style="font-size:11px; color:#64748b; font-weight:600;">záznamů v retenci</div>
                     </div>
                 </div>
@@ -3779,6 +3783,7 @@
                         ${(pending.keptVacationMonths || []).length ? '<div style="font-weight:700; color:#0369a1; margin-top:6px; margin-bottom:4px;">📅 Dovolené ponechány</div>' + (pending.keptVacationMonths || []).map(function(m){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #eff6ff;"><span>' + m.month + '</span><span style="font-weight:700;">' + m.count + ' zázn.</span></div>'; }).join('') : ''}
                     </div>
                 </div>
+                ${admin._renderMonthStatusDetail(pending.monthDetailsList)}
                 ${admin._renderPurgeRecordTable(pending.records, pending.vacationRecords)}
                 <div style="display:flex; gap:10px; margin-top:16px;">
                     <button onclick="admin.executePurge('${pending.purgeId}')"
@@ -3841,6 +3846,47 @@
 
         html += `</div>`;
         return html;
+    };
+
+    admin._renderMonthStatusDetail = function(monthDetailsList) {
+        if (!monthDetailsList || monthDetailsList.length === 0) return '';
+
+        let rows = '';
+        monthDetailsList.forEach(function(m) {
+            rows += '<tr style="background:#f1f5f9;">' +
+                '<td colspan="3" style="padding:5px 10px; font-weight:800; color:#334155; font-size:12px;">' +
+                '📅 ' + m.month + ' — celkem ' + m.total + ' zázn.' +
+                '</td></tr>';
+            m.toDelete.forEach(function(s) {
+                rows += '<tr style="background:#fef2f2;">' +
+                    '<td style="padding:3px 10px 3px 20px; font-size:11px;">' + s.status + '</td>' +
+                    '<td style="padding:3px 10px; font-size:11px; font-weight:700; text-align:right;">' + s.count + '</td>' +
+                    '<td style="padding:3px 10px; font-size:11px; color:#dc2626; font-weight:700;">KE SMAZÁNÍ</td>' +
+                    '</tr>';
+            });
+            m.toKeep.forEach(function(s) {
+                rows += '<tr style="background:#f0fdf4;">' +
+                    '<td style="padding:3px 10px 3px 20px; font-size:11px;">' + s.status + '</td>' +
+                    '<td style="padding:3px 10px; font-size:11px; font-weight:700; text-align:right;">' + s.count + '</td>' +
+                    '<td style="padding:3px 10px; font-size:11px; color:#16a34a; font-weight:700;">PONECHÁNO</td>' +
+                    '</tr>';
+            });
+        });
+
+        return '<details style="margin-top:10px;">' +
+            '<summary style="cursor:pointer; font-size:12px; font-weight:700; color:#475569; padding:6px 0;">' +
+            'Detail po měsících a statusech' +
+            '</summary>' +
+            '<div style="margin-top:8px; max-height:360px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:8px;">' +
+            '<table style="width:100%; border-collapse:collapse;">' +
+            '<thead style="position:sticky; top:0; background:#f8fafc; z-index:1;">' +
+            '<tr style="font-weight:700; color:#475569; font-size:11px;">' +
+            '<th style="padding:6px 10px; text-align:left;">Status</th>' +
+            '<th style="padding:6px 10px; text-align:right;">Počet</th>' +
+            '<th style="padding:6px 10px; text-align:left;">Akce</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+            '</table></div></details>';
     };
 
     admin._renderPurgeRecordTable = function(records, vacationRecords) {
