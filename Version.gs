@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.10.23";
+const APP_VERSION = "2.10.24";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.10.24",
+    "date": "2026-05-12",
+    "changes": [
+      "Oprava pozice zkratky statusu při zobrazení času příchodu: zkratka se nyní centruje do prostoru nad pruhem s časem"
+    ]
+  },
   {
     "version": "2.10.23",
     "date": "2026-05-12",

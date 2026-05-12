@@ -1097,8 +1097,9 @@
                 ? '<span class="chip-time-tag" style="background:' + timeBg + ';color:' + timeFg + ';">' + formattedTime + '</span>'
                 : '';
             const timeTitleSuffix = (formattedTime && formattedTime !== '') ? ' · příchod ' + formattedTime : '';
+            const hasTimeCls = timeTag ? ' has-time-tag' : '';
 
-            return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls +
+            return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls + hasTimeCls +
                 '" data-slot="' + entry.slot + '" style="background:' + (st.color || '#94a3b8') +
                 ';color:' + (st.text_color || '#fff') + ';" title="' + (titlePrefix ? titlePrefix + ': ' : '') +
                 (st.name || '') + timeTitleSuffix + titleSuffix + '">' +
