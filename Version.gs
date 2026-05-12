@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.11.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.1",
+    "date": "2026-05-12",
+    "changes": [
+      "GDPR analýza nyní zobrazuje kompletní přehled měsíců: ke smazání, ponecháno v retenci i ponechané dovolené"
+    ]
+  },
   {
     "version": "2.11.0",
     "date": "2026-05-12",

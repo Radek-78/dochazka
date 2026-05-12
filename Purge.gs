@@ -74,22 +74,23 @@ Purge.analyze = function() {
 
   const toDelete = [];       // běžné záznamy ke smazání
   const toDeleteVacation = []; // dovolené ke smazání (jen při newYear)
-  let keptVacation = 0;
-  let keptRecent = 0;
 
-  const monthCounts = {}; // "2026-01" → count
+  const deleteMonths = {};        // "2026-01" → count  (ke smazání)
+  const keptRecentMonths = {};    // "2026-03" → count  (v retenci)
+  const keptVacationMonths = {};  // "2026-01" → count  (dovolené ponechané)
 
   attendance.forEach(function(entry) {
     const dateStr = _toPfx(entry.date);
-    if (!dateStr || dateStr.length < 10) { keptRecent++; return; }
+    if (!dateStr || dateStr.length < 10) return;
 
     const entryDate = new Date(dateStr + 'T00:00:00');
     const isVacation = vacationIds.has(String(entry.status_id || '').trim());
     const entryYear = entryDate.getFullYear();
+    const mk = dateStr.substring(0, 7);
 
     if (entryDate >= cutoffDate) {
       // V retenčním okně — ponechat
-      keptRecent++;
+      keptRecentMonths[mk] = (keptRecentMonths[mk] || 0) + 1;
       return;
     }
 
@@ -104,11 +105,10 @@ Purge.analyze = function() {
           status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
           slot: entry.slot || ''
         });
-        const mk = dateStr.substring(0, 7);
-        monthCounts[mk] = (monthCounts[mk] || 0) + 1;
+        deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
       } else {
         // Dovolená v nenovoročním běhu — ponechat
-        keptVacation++;
+        keptVacationMonths[mk] = (keptVacationMonths[mk] || 0) + 1;
       }
     } else {
       toDelete.push({
@@ -118,14 +118,19 @@ Purge.analyze = function() {
         status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
         slot: entry.slot || ''
       });
-      const mk = dateStr.substring(0, 7);
-      monthCounts[mk] = (monthCounts[mk] || 0) + 1;
+      deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
     }
   });
 
-  // Sestavit seznam měsíců (seřazeno)
-  const months = Object.keys(monthCounts).sort().map(function(m) {
-    return { month: m, count: monthCounts[m] };
+  // Sestavit přehledy měsíců (seřazeno)
+  const months = Object.keys(deleteMonths).sort().map(function(m) {
+    return { month: m, count: deleteMonths[m] };
+  });
+  const keptRecentMonthsList = Object.keys(keptRecentMonths).sort().map(function(m) {
+    return { month: m, count: keptRecentMonths[m] };
+  });
+  const keptVacationMonthsList = Object.keys(keptVacationMonths).sort().map(function(m) {
+    return { month: m, count: keptVacationMonths[m] };
   });
 
   const purgeId = 'PURGE_' + Utilities.formatDate(now, "GMT+1", "yyyyMMdd_HHmmss");
@@ -138,9 +143,11 @@ Purge.analyze = function() {
     totalToDelete: toDelete.length + toDeleteVacation.length,
     regularCount: toDelete.length,
     vacationCount: toDeleteVacation.length,
-    keptVacation: keptVacation,
-    keptRecent: keptRecent,
+    keptVacation: Object.values(keptVacationMonths).reduce(function(a,b){return a+b;}, 0),
+    keptRecent: Object.values(keptRecentMonths).reduce(function(a,b){return a+b;}, 0),
     months: months,
+    keptRecentMonths: keptRecentMonthsList,
+    keptVacationMonths: keptVacationMonthsList,
     records: toDelete,
     vacationRecords: toDeleteVacation,
     status: PURGE_STATUS.PENDING
@@ -159,9 +166,11 @@ Purge.analyze = function() {
     totalToDelete: pending.totalToDelete,
     regularCount: pending.regularCount,
     vacationCount: pending.vacationCount,
-    keptVacation: keptVacation,
-    keptRecent: keptRecent,
+    keptVacation: pending.keptVacation,
+    keptRecent: pending.keptRecent,
     months: months,
+    keptRecentMonths: keptRecentMonthsList,
+    keptVacationMonths: keptVacationMonthsList,
     records: toDelete,
     vacationRecords: toDeleteVacation
   };

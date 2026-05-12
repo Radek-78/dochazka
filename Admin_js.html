@@ -3764,10 +3764,20 @@
                         <div style="font-size:11px; color:#64748b; font-weight:600;">záznamů v retenci</div>
                     </div>
                 </div>
-                <div style="font-size:12px; color:#78716c; margin-bottom:10px;">
-                    <strong>Cutoff datum:</strong> ${pending.cutoffDate} &nbsp;|&nbsp;
-                    <strong>Mazané měsíce:</strong> ${pending.months.map(m => m.month + ' (' + m.count + ')').join(', ') || '—'}
+                <div style="font-size:12px; color:#78716c; margin-bottom:12px;">
+                    <strong>Cutoff datum:</strong> ${pending.cutoffDate}
                     ${pending.isNewYear ? '<br><span style="color:#dc2626; font-weight:700;">⚠ Novoroční běh — budou smazány i dovolené z předchozího roku.</span>' : ''}
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; font-size:12px;">
+                    <div style="background:#fff; border:1px solid #fecaca; border-radius:8px; padding:10px 12px;">
+                        <div style="font-weight:800; color:#dc2626; margin-bottom:6px;">🗑 Ke smazání</div>
+                        ${pending.months.length ? pending.months.map(function(m){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #fef2f2;"><span>' + m.month + '</span><span style="font-weight:700;">' + m.count + ' zázn.</span></div>'; }).join('') : '<div style="color:#94a3b8;">—</div>'}
+                    </div>
+                    <div style="background:#fff; border:1px solid #bbf7d0; border-radius:8px; padding:10px 12px;">
+                        <div style="font-weight:800; color:#16a34a; margin-bottom:6px;">✓ Ponecháno v retenci</div>
+                        ${(pending.keptRecentMonths || []).length ? (pending.keptRecentMonths || []).map(function(m){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f0fdf4;"><span>' + m.month + '</span><span style="font-weight:700;">' + m.count + ' zázn.</span></div>'; }).join('') : '<div style="color:#94a3b8;">—</div>'}
+                        ${(pending.keptVacationMonths || []).length ? '<div style="font-weight:700; color:#0369a1; margin-top:6px; margin-bottom:4px;">📅 Dovolené ponechány</div>' + (pending.keptVacationMonths || []).map(function(m){ return '<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #eff6ff;"><span>' + m.month + '</span><span style="font-weight:700;">' + m.count + ' zázn.</span></div>'; }).join('') : ''}
+                    </div>
                 </div>
                 ${admin._renderPurgeRecordTable(pending.records, pending.vacationRecords)}
                 <div style="display:flex; gap:10px; margin-top:16px;">
