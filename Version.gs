@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.2";
+const APP_VERSION = "2.11.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.3",
+    "date": "2026-05-13",
+    "changes": [
+      "Org. struktura: doplněn checkbox pro zapnutí nebo vypnutí zobrazování názvů týmů v kalendáři",
+      "Kalendář při vypnutém nastavení zachová řazení podle týmů, ale nezobrazuje meziřádky názvů týmů ani Bez týmu"
+    ]
+  },
   {
     "version": "2.11.2",
     "date": "2026-05-13",

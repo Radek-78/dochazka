@@ -111,7 +111,7 @@ const Setup = {
       case DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS:
         headers = ["group_id", "user_id", "permission"]; break; // permission: VIEW, WRITE, ADMIN
       case DB_SHEETS.CORE.SECTION_VIEW_CONFIG:
-        headers = ["section_id", "show_leader_first", "config_json"]; break;
+        headers = ["section_id", "show_leader_first", "show_team_headers", "config_json"]; break;
       case DB_SHEETS.CORE.OFFICE_MAPS:
         headers = ["map_id", "section_id", "name", "rows", "cols", "cells_json", "active"]; break;
       case DB_SHEETS.CORE.RBAC_CONFIG:
@@ -152,7 +152,7 @@ const Setup = {
       case DB_SHEETS.CORE.POSITIONS: h = ["position_id", "name", "active", "org_role"]; break;
       case DB_SHEETS.CORE.USERS: h = ["user_id", "email", "first_name", "last_name", "section_id", "department_id", "group_id", "position_id", "system_role", "org_role", "date_start", "date_end", "active", "auth_status", "last_active", "last_visit", "sync_own_attendance", "sync_team_vacations", "vacation_days_total", "vacation_days_carried_over", "show_work_start_time", "default_work_start_time"]; break;
       case DB_SHEETS.CORE.ATTENDANCE_STATUSES: h = ["status_id", "name", "abbreviation", "color", "text_color", "category", "requires_approval", "allows_desk_reservation", "active", "is_vacation", "shows_work_time", "work_time_bg_color", "work_time_text_color", "status_kind", "masked_status_id", "retention_category"]; break;
-      case DB_SHEETS.CORE.SECTION_VIEW_CONFIG: h = ["section_id", "show_leader_first", "config_json"]; break;
+      case DB_SHEETS.CORE.SECTION_VIEW_CONFIG: h = ["section_id", "show_leader_first", "show_team_headers", "config_json"]; break;
       case DB_SHEETS.CORE.OFFICE_MAPS: h = ["map_id", "section_id", "name", "rows", "cols", "cells_json", "active"]; break;
       case DB_SHEETS.TRANSACTION.ATTENDANCE: h = ["attendance_id", "user_id", "date", "status_id", "slot", "note", "approved", "created_at", "work_start_time"]; break;
       case DB_SHEETS.CORE.VACATION_CONFIG: h = ["system_type", "global_days", "base_days", "max_extra_days", "require_dept_leader_approval", "calendar_sync_map"]; break;

@@ -4215,6 +4215,11 @@
         const cfg = isViewingOwnSection ? sectionViewConfig : null;
         const useConfig = cfg && cfg.containers && cfg.containers.length > 0;
         const activeGroups = (groups || []).filter(g => String(g.active).toLowerCase() !== 'false');
+        const showTeamHeaders = !!(cfg && (cfg.show_team_headers === true || cfg.show_team_headers === 'true'));
+
+        function teamHeaderHtml(label) {
+            return showTeamHeaders ? `<div class="dept-header team-header"><div class="dept-label-sticky">${label}</div></div>` : '';
+        }
 
         if (useConfig) {
             const rendered = new Set(); // track user_ids already rendered
@@ -4261,7 +4266,7 @@
                             .sort(compareEmployeesCs);
                         if (teamEmployees.length === 0) return;
 
-                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">${group.name}</div></div>`;
+                        html += teamHeaderHtml(group.name);
                         teamEmployees.forEach(emp => {
                             html += empRow(emp);
                             rendered.add(emp.user_id);
@@ -4273,7 +4278,7 @@
                         .filter(emp => !emp.group_id || !validGroupIds.has(emp.group_id))
                         .sort(compareEmployeesCs);
                     if (noTeamEmployees.length > 0) {
-                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">Bez týmu</div></div>`;
+                        html += teamHeaderHtml('Bez týmu');
                         noTeamEmployees.forEach(emp => {
                             html += empRow(emp);
                             rendered.add(emp.user_id);
@@ -4362,7 +4367,7 @@
                             .sort(compareEmployeesCs);
                         if (teamEmployees.length === 0) return;
 
-                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">${group.name}</div></div>`;
+                        html += teamHeaderHtml(group.name);
                         teamEmployees.forEach(emp => {
                             html += empRow(emp);
                             renderedDefault.add(emp.user_id);
@@ -4374,7 +4379,7 @@
                         .filter(emp => !emp.group_id || !validGroupIds.has(emp.group_id))
                         .sort(compareEmployeesCs);
                     if (noTeamEmployees.length > 0) {
-                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">Bez týmu</div></div>`;
+                        html += teamHeaderHtml('Bez týmu');
                         noTeamEmployees.forEach(emp => {
                             html += empRow(emp);
                             renderedDefault.add(emp.user_id);

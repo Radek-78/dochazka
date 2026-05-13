@@ -509,7 +509,7 @@ var Admin = {
    * Získá konfiguraci zobrazení úseku v kalendáři.
    */
   getSectionViewConfig: function(sectionId) {
-    if (!sectionId) return { section_id: '', show_leader_first: false, containers: [] };
+    if (!sectionId) return { section_id: '', show_leader_first: false, show_team_headers: false, containers: [] };
     const coreSS = DB.getCore();
     // Zajistíme, že list existuje
     let sheet = coreSS.getSheetByName(DB_SHEETS.CORE.SECTION_VIEW_CONFIG);
@@ -519,12 +519,13 @@ var Admin = {
     }
     const table = DB.getTable(coreSS, DB_SHEETS.CORE.SECTION_VIEW_CONFIG);
     const row = table.find(function(r) { return r.section_id === sectionId; });
-    if (!row) return { section_id: sectionId, show_leader_first: false, containers: [] };
+    if (!row) return { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
     let containers = [];
     try { containers = JSON.parse(row.config_json || '[]'); } catch(e) { containers = []; }
     return {
       section_id: sectionId,
       show_leader_first: row.show_leader_first === 'true',
+      show_team_headers: row.show_team_headers === 'true',
       containers: containers
     };
   },
@@ -538,6 +539,7 @@ var Admin = {
     return this.updateEntity(DB_SHEETS.CORE.SECTION_VIEW_CONFIG, 'section_id', {
       section_id: data.section_id,
       show_leader_first: String(data.show_leader_first === true || data.show_leader_first === 'true'),
+      show_team_headers: String(data.show_team_headers === true || data.show_team_headers === 'true'),
       config_json: configJson
     });
   },

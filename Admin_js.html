@@ -548,9 +548,12 @@
                 const result = await callServer('getSectionViewConfig', sectionId);
                 this._sectionConfigs[sectionId] = (result && result.success && result.data)
                     ? result.data
-                    : { section_id: sectionId, show_leader_first: false, containers: [] };
+                    : { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
+                if (this._sectionConfigs[sectionId].show_team_headers === undefined) {
+                    this._sectionConfigs[sectionId].show_team_headers = false;
+                }
             } catch (e) {
-                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, containers: [] };
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
             }
             this.renderSectionConfigPanel(sectionId);
         },
@@ -614,6 +617,17 @@
         <label class="sec-toggle-switch">
             <input type="checkbox" ${cfg.show_leader_first ? 'checked' : ''}
                    onchange="admin._sectionConfigs['${sectionId}'].show_leader_first = this.checked">
+            <span class="sec-toggle-slider"></span>
+        </label>
+    </div>
+    <div class="sec-config-leader-toggle">
+        <label class="sec-toggle-label">
+            <span class="sec-toggle-icon">👥</span>
+            <span>Zobrazovat názvy týmů v kalendáři</span>
+        </label>
+        <label class="sec-toggle-switch">
+            <input type="checkbox" ${cfg.show_team_headers ? 'checked' : ''}
+                   onchange="admin._sectionConfigs['${sectionId}'].show_team_headers = this.checked">
             <span class="sec-toggle-slider"></span>
         </label>
     </div>
@@ -717,7 +731,7 @@
             else if (type === 'employee') { const x = d.sectionUsers.find(i => i.user_id === refId); label = x ? `${x.first_name} ${x.last_name}` : refId; }
 
             if (!this._sectionConfigs[sectionId]) {
-                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, containers: [] };
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
             }
             this._sectionConfigs[sectionId].containers.push({
                 id: '_c_' + Date.now(),
