@@ -4185,11 +4185,36 @@
             });
         }
 
+        function compareEmployeesCs(a, b) {
+            const last = (a.last_name || '').localeCompare(b.last_name || '', 'cs', { sensitivity: 'base' });
+            if (last !== 0) return last;
+            const first = (a.first_name || '').localeCompare(b.first_name || '', 'cs', { sensitivity: 'base' });
+            if (first !== 0) return first;
+            return String(a.user_id || '').localeCompare(String(b.user_id || ''), 'cs', { sensitivity: 'base' });
+        }
+
+        function isDeptLeader(emp) {
+            return emp && emp.org_role === 'DEPT_LEADER';
+        }
+
+        function isDeptDeputy(emp) {
+            return emp && emp.org_role === 'DEPT_DEPUTY';
+        }
+
+        function compareDeptLeadersFirst(a, b) {
+            if (isDeptLeader(a) && !isDeptLeader(b)) return -1;
+            if (!isDeptLeader(a) && isDeptLeader(b)) return 1;
+            if (isDeptDeputy(a) && !isDeptDeputy(b)) return -1;
+            if (!isDeptDeputy(a) && isDeptDeputy(b)) return 1;
+            return compareEmployeesCs(a, b);
+        }
+
         // ── Config-based rendering (if sectionViewConfig has containers) ──────────
         // Při přepnutém úseku (SUPERADMIN) nepoužívat config z jiného úseku
         const isViewingOwnSection = !_viewSectionId || _viewSectionId === (plannerData.user && plannerData.user.section_id);
         const cfg = isViewingOwnSection ? sectionViewConfig : null;
         const useConfig = cfg && cfg.containers && cfg.containers.length > 0;
+        const activeGroups = (groups || []).filter(g => String(g.active).toLowerCase() !== 'false');
 
         if (useConfig) {
             const rendered = new Set(); // track user_ids already rendered
@@ -4212,7 +4237,49 @@
                 let groupLabel = container.label;
 
                 if (container.type === 'department') {
-                    groupEmployees = (employees || []).filter(e => e.department_id === container.ref_id);
+                    const deptEmployees = activeForMonth(
+                        (employees || []).filter(e => e.department_id === container.ref_id && !rendered.has(e.user_id))
+                    );
+                    if (deptEmployees.length === 0) return;
+
+                    html += `<div class="dept-header"><div class="dept-label-sticky">${groupLabel}</div></div>`;
+
+                    const deptLeaders = deptEmployees
+                        .filter(emp => isDeptLeader(emp) || isDeptDeputy(emp))
+                        .sort(compareDeptLeadersFirst);
+                    deptLeaders.forEach(emp => {
+                        html += empRow(emp);
+                        rendered.add(emp.user_id);
+                    });
+
+                    const deptGroups = activeGroups.filter(g => g.department_id === container.ref_id);
+                    const validGroupIds = new Set(deptGroups.map(g => g.group_id));
+
+                    deptGroups.forEach(group => {
+                        const teamEmployees = deptEmployees
+                            .filter(emp => emp.group_id === group.group_id && !rendered.has(emp.user_id))
+                            .sort(compareEmployeesCs);
+                        if (teamEmployees.length === 0) return;
+
+                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">${group.name}</div></div>`;
+                        teamEmployees.forEach(emp => {
+                            html += empRow(emp);
+                            rendered.add(emp.user_id);
+                        });
+                    });
+
+                    const noTeamEmployees = deptEmployees
+                        .filter(emp => !rendered.has(emp.user_id))
+                        .filter(emp => !emp.group_id || !validGroupIds.has(emp.group_id))
+                        .sort(compareEmployeesCs);
+                    if (noTeamEmployees.length > 0) {
+                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">Bez týmu</div></div>`;
+                        noTeamEmployees.forEach(emp => {
+                            html += empRow(emp);
+                            rendered.add(emp.user_id);
+                        });
+                    }
+                    return;
                 } else if (container.type === 'team') {
                     groupEmployees = (employees || []).filter(e => e.group_id === container.ref_id);
                 } else if (container.type === 'position') {
@@ -4241,17 +4308,8 @@
                     // Append any not in items list at the end
                     groupEmployees.forEach(e => { if (!itemRefIds.includes(e.user_id)) ordered.push(e); });
                     groupEmployees = ordered;
-                }
-
-                // Vedoucí oddělení vždy první v rámci oddělení/týmu (identifikace přes org_role)
-                if (container.type === 'department' || container.type === 'team') {
-                    const leaderIdx = groupEmployees.findIndex(e =>
-                        e.org_role === 'DEPT_LEADER' || e.org_role === 'DEPT_DEPUTY'
-                    );
-                    if (leaderIdx > 0) {
-                        const deptLeader = groupEmployees.splice(leaderIdx, 1)[0];
-                        groupEmployees.unshift(deptLeader);
-                    }
+                } else {
+                    groupEmployees = groupEmployees.sort(compareEmployeesCs);
                 }
 
                 html += `<div class="dept-header"><div class="dept-label-sticky">${groupLabel}</div></div>`;
@@ -4262,15 +4320,16 @@
             });
 
         } else {
-            // ── Default: render by departments ────────────────────────────────────
+            // ── Default: render by departments, teams and Czech alphabetical order ─
             const renderedDefault = new Set();
 
             // Zaměstnanci bez oddělení (nebo s oddělením které neexistuje v seznamu)
             const deptIds = new Set((departments || []).map(d => d.department_id));
             let noDeptEmployees = activeForMonth(
                 (employees || []).filter(emp => !emp.department_id || !deptIds.has(emp.department_id))
-            );
+            ).sort(compareEmployeesCs);
             if (noDeptEmployees.length > 0) {
+                html += `<div class="dept-header"><div class="dept-label-sticky">Bez oddělení</div></div>`;
                 noDeptEmployees.forEach(emp => {
                     html += empRow(emp);
                     renderedDefault.add(emp.user_id);
@@ -4279,20 +4338,48 @@
 
             if (departments && departments.length > 0) {
                 departments.forEach(dept => {
-                    let deptEmployees = activeForMonth(
+                    const deptEmployees = activeForMonth(
                         (employees || []).filter(emp => emp.department_id === dept.department_id && !renderedDefault.has(emp.user_id))
                     );
                     if (deptEmployees.length === 0) return; // přeskočit prázdná oddělení
-                    // Vedoucí oddělení vždy první (identifikace přes org_role)
-                    const leaderIdx = deptEmployees.findIndex(e =>
-                        e.org_role === 'DEPT_LEADER' || e.org_role === 'DEPT_DEPUTY'
-                    );
-                    if (leaderIdx > 0) {
-                        const deptLeader = deptEmployees.splice(leaderIdx, 1)[0];
-                        deptEmployees.unshift(deptLeader);
-                    }
+
                     html += `<div class="dept-header"><div class="dept-label-sticky">${dept.name}</div></div>`;
-                    deptEmployees.forEach(emp => { html += empRow(emp); renderedDefault.add(emp.user_id); });
+
+                    const deptLeaders = deptEmployees
+                        .filter(emp => isDeptLeader(emp) || isDeptDeputy(emp))
+                        .sort(compareDeptLeadersFirst);
+                    deptLeaders.forEach(emp => {
+                        html += empRow(emp);
+                        renderedDefault.add(emp.user_id);
+                    });
+
+                    const deptGroups = activeGroups.filter(g => g.department_id === dept.department_id);
+                    const validGroupIds = new Set(deptGroups.map(g => g.group_id));
+
+                    deptGroups.forEach(group => {
+                        const teamEmployees = deptEmployees
+                            .filter(emp => emp.group_id === group.group_id && !renderedDefault.has(emp.user_id))
+                            .sort(compareEmployeesCs);
+                        if (teamEmployees.length === 0) return;
+
+                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">${group.name}</div></div>`;
+                        teamEmployees.forEach(emp => {
+                            html += empRow(emp);
+                            renderedDefault.add(emp.user_id);
+                        });
+                    });
+
+                    const noTeamEmployees = deptEmployees
+                        .filter(emp => !renderedDefault.has(emp.user_id))
+                        .filter(emp => !emp.group_id || !validGroupIds.has(emp.group_id))
+                        .sort(compareEmployeesCs);
+                    if (noTeamEmployees.length > 0) {
+                        html += `<div class="dept-header team-header"><div class="dept-label-sticky">Bez týmu</div></div>`;
+                        noTeamEmployees.forEach(emp => {
+                            html += empRow(emp);
+                            renderedDefault.add(emp.user_id);
+                        });
+                    }
                 });
             }
 

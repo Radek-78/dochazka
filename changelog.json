@@ -1,5 +1,13 @@
 [
   {
+    "version": "2.11.2",
+    "date": "2026-05-13",
+    "changes": [
+      "Kalendář nyní řadí oddělení a týmy podle pořadí v DB, vedoucí oddělení zobrazuje vždy první a ostatní zaměstnance řadí podle české abecedy",
+      "Zvětšen text čísla a názvu dne v horní řádce kalendáře bez zásahu do vodoznaků v buňkách"
+    ]
+  },
+  {
     "version": "2.11.1",
     "date": "2026-05-12",
     "changes": [
