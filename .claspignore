@@ -1,0 +1,14 @@
+.git/**
+.claude/**
+.sixth/**
+node_modules/**
+
+.gitignore
+AGENTS.md
+CLAUDE.md
+deploy.bat
+deploy.ps1
+deploy_logic.ps1
+lidl_logo_draw.png
+version.json
+changelog.json
