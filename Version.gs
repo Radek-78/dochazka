@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.4";
+const APP_VERSION = "2.11.5";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.5",
+    "date": "2026-05-14",
+    "changes": [
+      "Rezervace stolů: uvolněné pevné místo má nově samostatné zelené vizuální označení a vlastní popis v legendě",
+      "Mapy jasně rozlišují obsazené místo, pevné místo bez statusu a pevné místo fyzicky volné kvůli statusu mimo kancelář"
+    ]
+  },
   {
     "version": "2.11.4",
     "date": "2026-05-14",

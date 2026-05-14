@@ -2055,7 +2055,7 @@
             var comesToOffice = puEntries.some(function (e) {
                 return _statusNeedsDeskReservation(e.status_id);
             });
-            return comesToOffice ? 'desk-occupied' : 'desk-pre-other'; // červená nebo tmavě modrá
+            return comesToOffice ? 'desk-occupied' : 'desk-pre-other'; // obsazené nebo uvolněné pevné místo
         }
 
         // 5. Volné
