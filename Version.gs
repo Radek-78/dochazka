@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.3";
+const APP_VERSION = "2.11.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.4",
+    "date": "2026-05-14",
+    "changes": [
+      "Rezervace stolů: pevné místo lze nově rezervovat, pokud má jeho vlastník na daný den explicitní status mimo kancelář, například Dovolená",
+      "Rezervace stolů: backend nyní chrání ukládání rezervací proti obsazenému stolu, přítomnému pevnému vlastníkovi a neznámému stavu bez zadaného statusu"
+    ]
+  },
   {
     "version": "2.11.3",
     "date": "2026-05-13",

@@ -630,11 +630,7 @@ var Admin = {
     });
   },
 
-  saveMapReservation: function(data) {
-    if (!data || !data.map_id || !data.cell_id || !data.user_id || !data.date)
-      return { success: false, error: 'Chybějí povinné parametry.' };
-    
-    // Hledáme list v CORE i TRANSACTION
+  _getMapReservationStorage: function() {
     const coreSS = DB.getCore();
     const transSS = DB.getTransaction();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
@@ -643,17 +639,82 @@ var Admin = {
       sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
       ss = transSS;
     }
-
     if (!sheet) {
       sheet = transSS.insertSheet(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
       ss = transSS;
       if (typeof Setup !== 'undefined') Setup.setHeaders(sheet, DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     }
+    return { ss: ss, sheet: sheet };
+  },
+
+  _findOfficeMapById: function(mapId) {
+    const maps = this.getOfficeMaps('');
+    return maps.find(function(m) { return String(m.map_id) === String(mapId); }) || null;
+  },
+
+  _deskOwnerNeedsDesk: function(ownerUserId, date) {
+    if (!ownerUserId || !date) return { hasEntries: false, needsDesk: false };
+    const targetDate = String(date).substring(0, 10);
+    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    const deskStatusIds = {};
+    statuses.forEach(function(s) {
+      if (String(s.allows_desk_reservation).toLowerCase() === 'true') {
+        deskStatusIds[String(s.status_id)] = true;
+      }
+    });
+
+    const attendance = DB.getTable(DB.getTransaction(), DB_SHEETS.TRANSACTION.ATTENDANCE);
+    const entries = attendance.filter(function(a) {
+      return String(a.user_id) === String(ownerUserId) &&
+             String(a.date || '').substring(0, 10) === targetDate &&
+             String(a.approved || '').toLowerCase() !== 'rejected';
+    });
+
+    return {
+      hasEntries: entries.length > 0,
+      needsDesk: entries.some(function(e) { return !!deskStatusIds[String(e.status_id)]; })
+    };
+  },
+
+  saveMapReservation: function(data) {
+    if (!data || !data.map_id || !data.cell_id || !data.user_id || !data.date)
+      return { success: false, error: 'Chybějí povinné parametry.' };
+
+    const storage = this._getMapReservationStorage();
+    const ss = storage.ss;
     const table = DB.getTable(ss, DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     
     // Normalizujeme datum z požadavku
     const targetDate = String(data.date).substring(0, 10);
     const targetUserId = String(data.user_id).trim();
+    const targetCellId = String(data.cell_id).trim();
+
+    const officeMap = this._findOfficeMapById(data.map_id);
+    if (!officeMap) return { success: false, error: 'Mapa kanceláře nebyla nalezena.' };
+    const cell = (officeMap.cells || []).find(function(c) { return String(c.id) === targetCellId; });
+    if (!cell || cell.type !== 'desk') return { success: false, error: 'Vybrané místo není stůl.' };
+
+    const occupiedByOtherReservation = table.find(function(r) {
+      const rDate = String(r.date).substring(0, 10);
+      return String(r.map_id) === String(data.map_id) &&
+             String(r.cell_id).trim() === targetCellId &&
+             rDate === targetDate &&
+             String(r.user_id).trim() !== targetUserId &&
+             String(r.active) !== 'false';
+    });
+    if (occupiedByOtherReservation) {
+      return { success: false, error: 'Tento stůl už má v daný den jinou rezervaci.' };
+    }
+
+    if (cell.permanent_user_id && String(cell.permanent_user_id) !== targetUserId) {
+      const ownerState = this._deskOwnerNeedsDesk(cell.permanent_user_id, targetDate);
+      if (!ownerState.hasEntries) {
+        return { success: false, error: 'Pevný uživatel tohoto stolu nemá na daný den zadaný status.' };
+      }
+      if (ownerState.needsDesk) {
+        return { success: false, error: 'Pevný uživatel tohoto stolu je v daný den v kanceláři.' };
+      }
+    }
 
     // Najdeme JAKOUKOLIV aktivní rezervaci uživatele na tento den (i na jiné mapě)
     const existing = table.find(function(r) {
@@ -664,7 +725,7 @@ var Admin = {
     const payload = {
       reservation_id: existing ? existing.reservation_id : '',
       map_id: data.map_id,
-      cell_id: data.cell_id,
+      cell_id: targetCellId,
       user_id: data.user_id,
       date: targetDate, // Uložíme čistý formát YYYY-MM-DD
       active: true      // Uložíme jako boolean pro checkbox

@@ -1996,7 +1996,7 @@
 
                 var deskClass = active ? _getDeskColorClass(cell, date, myUserId, myReservation) : 'desk-inactive';
                 var isSelected = myReservation && myReservation.cell_id === cell.id;
-                var isClickable = active && (deskClass === 'desk-free' || deskClass === 'desk-mine');
+                var isClickable = active && (deskClass === 'desk-free' || deskClass === 'desk-mine' || deskClass === 'desk-pre-other');
                 var onclick = isClickable ? 'onclick="_handleModalDeskClick(\'' + cell.id + '\',\'' + date + '\')"' : '';
 
                 // Inicíály přiřazeného uživatele
@@ -2096,8 +2096,22 @@
         callServer('saveMapReservation', data).then(function (res) {
             if (res && res.success && res.id && _mapReservations[myUserId + '_' + date]) {
                 _mapReservations[myUserId + '_' + date].reservation_id = res.id;
+            } else if (!res || !res.success) {
+                delete _mapReservations[myUserId + '_' + date];
+                _renderMapInModal(date, true);
+                var retryCellEl = getCellElement(myUserId, date);
+                if (retryCellEl) renderAttendanceCell(retryCellEl, myUserId, date);
+                _updateBatchMapBtn();
+                showToast((res && res.error) || 'Rezervaci se nepodařilo uložit', 'warning');
             }
-        }).catch(function (e) { console.warn('saveMapReservation:', e); });
+        }).catch(function (e) {
+            delete _mapReservations[myUserId + '_' + date];
+            _renderMapInModal(date, true);
+            var retryCellEl = getCellElement(myUserId, date);
+            if (retryCellEl) renderAttendanceCell(retryCellEl, myUserId, date);
+            _updateBatchMapBtn();
+            console.warn('saveMapReservation:', e);
+        });
     }
 
     function _deleteModalReservation(date) {
@@ -2449,7 +2463,7 @@
                         (initials ? '<span style="font-size:8px;opacity:0.7;">' + initials + '</span>' : '');
                     div.title = cell.label || '';
 
-                    if (colorClass !== 'bmd-occupied') {
+                    if (colorClass === 'bmd-free' || colorClass === 'bmd-mine' || colorClass === 'bmd-prereserved-nomatch') {
                         div.onclick = (function (cellId) {
                             return function () { _handleBatchMapDeskClick(cellId, date); };
                         })(cell.id);
@@ -2639,8 +2653,22 @@
             .then(function (res) {
                 if (res && res.success && res.id && _mapReservations[myUserId + '_' + date]) {
                     _mapReservations[myUserId + '_' + date].reservation_id = res.id;
+                } else if (!res || !res.success) {
+                    delete _mapReservations[myUserId + '_' + date];
+                    _renderBatchMapModal();
+                    _updateBatchMapBtn();
+                    var calCellEl = getCellElement(myUserId, date);
+                    if (calCellEl) renderAttendanceCell(calCellEl, myUserId, date);
+                    showToast((res && res.error) || 'Rezervaci se nepodařilo uložit', 'warning');
                 }
-            }).catch(function (e) { console.warn('batchMapSaveOneReservation error:', e); });
+            }).catch(function (e) {
+                delete _mapReservations[myUserId + '_' + date];
+                _renderBatchMapModal();
+                _updateBatchMapBtn();
+                var calCellEl = getCellElement(myUserId, date);
+                if (calCellEl) renderAttendanceCell(calCellEl, myUserId, date);
+                console.warn('batchMapSaveOneReservation error:', e);
+            });
     }
 
     /**
@@ -2685,8 +2713,15 @@
             }).then(function (res) {
                 if (res && res.success && res.id && _mapReservations[myUserId + '_' + d]) {
                     _mapReservations[myUserId + '_' + d].reservation_id = res.id;
+                } else if (!res || !res.success) {
+                    delete _mapReservations[myUserId + '_' + d];
+                    var calCellEl = getCellElement(myUserId, d);
+                    if (calCellEl) renderAttendanceCell(calCellEl, myUserId, d);
                 }
             }).catch(function (e) {
+                delete _mapReservations[myUserId + '_' + d];
+                var calCellEl = getCellElement(myUserId, d);
+                if (calCellEl) renderAttendanceCell(calCellEl, myUserId, d);
                 console.warn('batchMapSaveReservation error for ' + d + ':', e);
             });
         });
@@ -5531,7 +5566,7 @@
 
                 var deskClass = _getDeskColorClass(cell, date, myUserId, myReservation);
                 var isSelected = myReservation && myReservation.cell_id === cell.id;
-                var isClickable = (deskClass === 'desk-free' || deskClass === 'desk-mine');
+                var isClickable = (deskClass === 'desk-free' || deskClass === 'desk-mine' || deskClass === 'desk-pre-other');
                 var onclick = isClickable ? 'onclick="_handleStandaloneMapClick(\'' + cell.id + '\',\'' + date + '\')"' : '';
 
                 // Iniciály
@@ -5730,9 +5765,21 @@
                 .then(function (res) {
                     if (res && res.success && res.id && _mapReservations[myUserId + '_' + date]) {
                         _mapReservations[myUserId + '_' + date].reservation_id = res.id;
+                    } else if (!res || !res.success) {
+                        delete _mapReservations[myUserId + '_' + date];
+                        _renderStandaloneMap(date);
+                        var retryCellEl = getCellElement(myUserId, date);
+                        if (retryCellEl) renderAttendanceCell(retryCellEl, myUserId, date);
+                        showToast((res && res.error) || 'Rezervaci se nepodařilo uložit', 'warning');
                     }
                 })
-                .catch(function (e) { console.warn('saveMapReservation:', e); });
+                .catch(function (e) {
+                    delete _mapReservations[myUserId + '_' + date];
+                    _renderStandaloneMap(date);
+                    var retryCellEl = getCellElement(myUserId, date);
+                    if (retryCellEl) renderAttendanceCell(retryCellEl, myUserId, date);
+                    console.warn('saveMapReservation:', e);
+                });
         }
     }
 
