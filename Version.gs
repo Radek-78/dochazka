@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.5";
+const APP_VERSION = "2.11.6";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.11.6",
+    "date": "2026-05-18",
+    "changes": [
+      "Dovolené: hromadné schválení a zamítnutí používá sjednocenou kontrolu oprávnění approve_vacation_scope na frontendu i backendu",
+      "Dovolené: frontend nově upozorní, pokud backend některé vybrané záznamy přeskočí, a audit log uvádí konkrétní důvod přeskočení"
+    ]
+  },
   {
     "version": "2.11.5",
     "date": "2026-05-14",

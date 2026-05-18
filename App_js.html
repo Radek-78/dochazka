@@ -204,6 +204,26 @@
         return false;
     }
 
+    function canApproveVacationForUser(userId) {
+        if (!plannerData || !plannerData.user || userId === plannerData.user.user_id) return false;
+        const scope = hasPermission('approve_vacation_scope');
+        if (scope === 'ALL') return true;
+
+        const emp = (plannerData.employees || []).find(e => e.user_id === userId);
+        if (!emp) return false;
+
+        const myUser = plannerData.user;
+        if (scope === 'OWN_SECTION') return !!myUser.section_id && emp.section_id === myUser.section_id;
+        if (scope === 'OWN_DEPARTMENT') return !!myUser.department_id && emp.department_id === myUser.department_id;
+        if (scope === 'OWN_GROUP') return !!myUser.group_id && emp.group_id === myUser.group_id;
+        if (scope === 'LEADERS_ONLY') {
+            const leaderRoles = ['DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
+            return leaderRoles.includes(emp.org_role);
+        }
+
+        return false;
+    }
+
     /**
      * Kontrola oprávnění na základě RBAC konfigurace.
      */
@@ -1163,18 +1183,7 @@
 
         // --- RBAC CLICKABLE LOGIC ---
         const canEdit = canEditUserAttendance(userId);
-        let canApprove = false;
-        if (hasPending && _isVacationApprover() && userId !== plannerData.user.user_id) {
-            const scope = hasPermission('approve_vacation_scope');
-            const emp = (plannerData.employees || []).find(e => e.user_id === userId);
-            const myUser = plannerData.user;
-            if (scope === 'ALL') canApprove = true;
-            else if (scope === 'OWN_DEPARTMENT' && emp && emp.department_id === myUser.department_id) canApprove = true;
-            else if (scope === 'LEADERS_ONLY' && emp) {
-                const leaderRoles = ['DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
-                if (leaderRoles.includes(emp.org_role)) canApprove = true;
-            }
-        }
+        const canApprove = hasPending && _isVacationApprover() && canApproveVacationForUser(userId);
 
         if (canEdit || canApprove) {
             cellEl.classList.add('clickable');
@@ -1331,19 +1340,7 @@
 
         // Approval mode: vedoucí klikne na pending buňku → otevření banneru
         if (_isVacationApprover() && cellEl.classList.contains('has-pending') && userId !== plannerData.user.user_id) {
-            const scope = hasPermission('approve_vacation_scope');
-            const emp = plannerData.employees.find(e => e.user_id === userId);
-            const myUser = plannerData.user;
-
-            let canApprove = false;
-            if (scope === 'ALL') canApprove = true;
-            else if (scope === 'OWN_DEPARTMENT' && emp && emp.department_id === myUser.department_id) canApprove = true;
-            else if (scope === 'LEADERS_ONLY' && emp) {
-                const leaderRoles = ['DEPT_LEADER', 'DEPT_DEPUTY', 'SECTION_LEADER', 'SECTION_DEPUTY'];
-                if (leaderRoles.includes(emp.org_role)) canApprove = true;
-            }
-
-            if (!canApprove) return;
+            if (!canApproveVacationForUser(userId)) return;
 
             var pendingForCell = _getPendingEntriesForUser(userId);
             if (pendingForCell.length > 0) {
@@ -3149,6 +3146,15 @@
         try {
             var res = await callServer('processVacationDecisions', approvedIds, rejectedIds);
             if (res && res.success) {
+                var processedCount = Number(res.approvedCount || 0) + Number(res.rejectedCount || 0);
+                if (processedCount === 0) {
+                    if (banner) banner.classList.remove('processing');
+                    alert('Žádný z vybraných záznamů se nepodařilo zpracovat. Obnovte prosím aplikaci a zkuste to znovu.');
+                    return;
+                }
+                if (Number(res.skippedCount || 0) > 0) {
+                    alert('Část vybraných záznamů se nepodařilo zpracovat (' + res.skippedCount + '). Kalendář se obnoví.');
+                }
                 // Optimistický update: schválené → approved='true', zamítnuté → lokálně skrýt
                 _approvalMode.entries.forEach(function (e) {
                     var aid = e.attendance_id;
@@ -3182,10 +3188,12 @@
             } else {
                 if (banner) banner.classList.remove('processing');
                 console.warn('finishVacationApproval failed:', res);
+                alert('Schválení dovolené se nepodařilo: ' + ((res && res.error) || 'neznámá chyba'));
             }
         } catch (e) {
             if (banner) banner.classList.remove('processing');
             console.warn('finishVacationApproval error:', e);
+            alert('Chyba komunikace při schvalování dovolené: ' + e);
         }
     }
 

@@ -58,6 +58,43 @@ function _canManageTargetAttendance(currentUser, targetUser, positions, rbacConf
   return false;
 }
 
+function _canApproveVacationForTarget(currentUser, targetUser, positions, rbacConfig) {
+  if (!currentUser || !targetUser) return false;
+  if (String(currentUser.user_id) === String(targetUser.user_id)) return false;
+
+  const cfg = (rbacConfig && rbacConfig.approve_vacation_scope) || {};
+  const systemRole = currentUser.system_role || ROLES.SYSTEM.USER;
+  const orgRole = _resolveOrgRole(currentUser, positions);
+  let scope = cfg[systemRole];
+  if (scope === undefined) scope = cfg[orgRole];
+  if (scope === undefined && systemRole === ROLES.SYSTEM.SUPERADMIN) scope = "ALL";
+  if (scope === true || String(scope).toUpperCase() === "TRUE") scope = "ALL";
+  if (scope === false || !scope || String(scope).toUpperCase() === "FALSE") scope = "NONE";
+  scope = String(scope).toUpperCase();
+
+  if (scope === "ALL") return true;
+  if (scope === "OWN_SECTION") {
+    return !!currentUser.section_id && currentUser.section_id === targetUser.section_id;
+  }
+  if (scope === "OWN_DEPARTMENT") {
+    return !!currentUser.department_id && currentUser.department_id === targetUser.department_id;
+  }
+  if (scope === "OWN_GROUP") {
+    return !!currentUser.group_id && currentUser.group_id === targetUser.group_id;
+  }
+  if (scope === "LEADERS_ONLY") {
+    const targetOrgRole = _resolveOrgRole(targetUser, positions);
+    return [
+      ROLES.ORG.DEPT_LEADER,
+      ROLES.ORG.DEPT_DEPUTY,
+      ROLES.ORG.SECTION_LEADER,
+      ROLES.ORG.SECTION_DEPUTY
+    ].indexOf(targetOrgRole) !== -1;
+  }
+
+  return false;
+}
+
 function _isVacationStatusId(statusId, statusMap) {
   const st = statusMap[Privacy.normalizeStatusId(statusId)];
   if (!st) return false;
@@ -1535,15 +1572,21 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     let skipped = [];
     let rejectedCalendarDeletes = [];
 
+    function getVacationDecisionSkipReason(row, targetUser) {
+      if (!_canApproveVacationForTarget(currentUser, targetUser, positions, rbacConfig)) return "permission_denied";
+      if (!_isVacationStatusId(row[statIdx], statusMap)) return "not_vacation_status";
+      if (String(row[apprIdx]) !== APPROVAL_STATUS.PENDING) return "not_pending";
+      return "";
+    }
+
     // --- Schválení ---
     for (let i = 1; i < data.length; i++) {
       let aid = data[i][aidIdx];
       if (!approvedSet.has(aid)) continue;
       let uid = data[i][uidIdx];
-      if (!_canManageTargetAttendance(currentUser, userMap[uid], positions, rbacConfig) ||
-          !_isVacationStatusId(data[i][statIdx], statusMap) ||
-          String(data[i][apprIdx]) !== APPROVAL_STATUS.PENDING) {
-        skipped.push({ attendance_id: aid, user_id: uid, decision: "approve" });
+      let skipReason = getVacationDecisionSkipReason(data[i], userMap[uid]);
+      if (skipReason) {
+        skipped.push({ attendance_id: aid, user_id: uid, decision: "approve", reason: skipReason });
         continue;
       }
       sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.APPROVED);
@@ -1563,10 +1606,9 @@ function processVacationDecisions(approvedIds, rejectedIds) {
       let aid2 = data[j][aidIdx];
       if (!rejectedSet.has(aid2)) continue;
       let uid2 = data[j][uidIdx];
-      if (!_canManageTargetAttendance(currentUser, userMap[uid2], positions, rbacConfig) ||
-          !_isVacationStatusId(data[j][statIdx], statusMap) ||
-          String(data[j][apprIdx]) !== APPROVAL_STATUS.PENDING) {
-        skipped.push({ attendance_id: aid2, user_id: uid2, decision: "reject" });
+      let skipReason2 = getVacationDecisionSkipReason(data[j], userMap[uid2]);
+      if (skipReason2) {
+        skipped.push({ attendance_id: aid2, user_id: uid2, decision: "reject", reason: skipReason2 });
         continue;
       }
       sheet.getRange(j + 1, apprIdx + 1).setValue(APPROVAL_STATUS.REJECTED);
@@ -1626,6 +1668,19 @@ function processVacationDecisions(approvedIds, rejectedIds) {
       skipped_count: skipped.length,
       skipped_sample: skipped.slice(0, 20)
     }, currentUser);
+
+    const requestedCount = approvedIds.length + rejectedIds.length;
+    const processedCount = approvedCount + rejectedCount;
+    if (requestedCount > 0 && processedCount === 0) {
+      return {
+        success: false,
+        error: "Žádný z vybraných záznamů se nepodařilo schválit ani zamítnout.",
+        approvedCount: approvedCount,
+        rejectedCount: rejectedCount,
+        skippedCount: skipped.length,
+        skippedSample: skipped.slice(0, 20)
+      };
+    }
 
     return { success: true, approvedCount: approvedCount, rejectedCount: rejectedCount, skippedCount: skipped.length };
   } catch (e) {
