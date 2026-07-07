@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.12.0";
+const APP_VERSION = "2.12.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.12.1",
+    "date": "2026-07-07",
+    "changes": [
+      "Administrace statusů: doplněn chybějící sloupec Poznámka do tabulky statusů, aby šel příznak allows_note vidět bez otevření editace"
+    ]
+  },
   {
     "version": "2.12.0",
     "date": "2026-07-07",

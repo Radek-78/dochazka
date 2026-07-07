@@ -1421,6 +1421,7 @@
                     <th style="text-align:center">Retence</th>
                     <th style="text-align:center">Vyžaduje schválení</th>
                     <th style="text-align:center">Rezervace stolu</th>
+                    <th style="text-align:center">Poznámka</th>
                     <th style="text-align:center">Čas příchodu</th>
                     <th style="text-align:center">Stav</th>
                     <th style="text-align:center">Akce</th>
@@ -1433,6 +1434,7 @@
                     const isActive = s.active !== 'false';
                     const reqApproval = s.requires_approval === 'true' || s.requires_approval === true;
                     const deskRes = s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true;
+                    const noteFlag = s.allows_note === 'true' || s.allows_note === true;
                     const bgColor = safeCssColor(s.color);
                     const txtColor = safeCssColor(s.text_color || '#ffffff');
                     const masked = s.masked_status_id ? maskById[String(s.masked_status_id || '').trim()] : null;
@@ -1457,6 +1459,7 @@
                     <td style="text-align:center;"><span style="font-size:11px; font-weight:800; color:#64748b;">${escapeHtml(retention)}</span></td>
                     <td style="text-align:center;">${reqApproval ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">${deskRes ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
+                    <td style="text-align:center;">${noteFlag ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">
                         <button onclick="admin.toggleStatusWorkTime('${s.status_id}')" title="Kliknutím přepnout" style="background:none; border:none; cursor:pointer; padding:4px;">${s.shows_work_time === 'true' ? '<span class="badge-auth-yes" style="min-width:36px;">⏰ Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</button>
                     </td>`}
@@ -1468,7 +1471,7 @@
                 </tr>`;
                 });
             } else {
-                html += `<tr><td colspan="${currentView === 'mask' ? '7' : '11'}" style="text-align:center; padding:40px; color:#94a3b8;">${currentView === 'mask' ? 'Zatím nejsou definovány žádné maskovací statusy.' : 'Zatím nejsou definovány žádné docházkové statusy.'}</td></tr>`;
+                html += `<tr><td colspan="${currentView === 'mask' ? '7' : '12'}" style="text-align:center; padding:40px; color:#94a3b8;">${currentView === 'mask' ? 'Zatím nejsou definovány žádné maskovací statusy.' : 'Zatím nejsou definovány žádné docházkové statusy.'}</td></tr>`;
             }
 
             html += `</tbody></table></div></div>`;
