@@ -7907,6 +7907,11 @@
         flex: 1;
     }
 
+    /* Log docházky: pevná výška, aby se modal neroztahoval/nesmršťoval podle počtu výsledků */
+    #activity-log-modal .footer-modal-card {
+        height: 85vh;
+    }
+
     /* ===== OFFICE MAP MODAL ===== */
     .map-modal-controls {
         display: flex;
@@ -8206,6 +8211,23 @@
         transition: all 0.15s;
     }
     .log-filter-reset:hover { background: #e2e8f0; color: #334155; }
+    .log-export-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border: 1px solid #15803d;
+        border-radius: 6px;
+        background: #f0fdf4;
+        color: #15803d;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-left: auto;
+    }
+    .log-export-btn:hover { background: #15803d; color: white; }
+    .log-export-btn:disabled { opacity: 0.6; cursor: default; background: #f0fdf4; color: #15803d; }
     .log-table-wrapper {
         max-height: 55vh;
         overflow-y: auto;

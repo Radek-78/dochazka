@@ -2455,88 +2455,98 @@ function getPlannerGroupMembers(groupId) {
  * @param {number} offset - kolik záznamů přeskočit (pro stránkování)
  * @return {{ success: boolean, entries: Array, hasMore: boolean }}
  */
+/**
+ * Sestaví kompletní (nestránkovaný) log docházky úseku aktuálního uživatele,
+ * seřazený podle created_at DESC. Sdíleno mezi getAttendanceLog a exportem.
+ */
+function _buildAttendanceLogEntries(currentUser) {
+  const coreDb = DB.getCore();
+  const allUsers = DB.getTable(coreDb, DB_SHEETS.CORE.USERS);
+  const allStatuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreDb, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+  const positions = DB.getTable(coreDb, DB_SHEETS.CORE.POSITIONS);
+  const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+  const privacyCtx = Privacy.createContext({
+    viewer: currentUser,
+    positions: positions,
+    statuses: allStatuses,
+    rbacConfig: rbacConfig
+  });
+
+  // Uživatelé ve stejném úseku
+  const sectionId = currentUser.section_id;
+  const sectionUserMap = {};
+  const sectionUserObjMap = {};
+  allUsers.forEach(function(u) {
+    if (u.section_id === sectionId && u.active === 'true') {
+      u.org_role = _resolveOrgRole(u, positions);
+      sectionUserMap[u.user_id] = u.first_name + ' ' + u.last_name;
+      sectionUserObjMap[u.user_id] = u;
+    }
+  });
+
+  // Mapa statusů pro enrichment
+  const statusMap = {};
+  allStatuses.forEach(function(s) {
+    statusMap[s.status_id] = { name: s.name || s.status_id, color: s.color || '#94a3b8', icon: s.icon || '' };
+  });
+
+  // Načti ATTENDANCE sheet
+  const transDB = DB.getTransaction();
+  const sheet = transDB.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
+  if (!sheet || sheet.getLastRow() <= 1) return [];
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const aidIdx  = headers.indexOf('attendance_id');
+  const uidIdx  = headers.indexOf('user_id');
+  const dateIdx = headers.indexOf('date');
+  const statIdx = headers.indexOf('status_id');
+  const slotIdx = headers.indexOf('slot');
+  const catIdx  = headers.indexOf('created_at');
+
+  const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+
+  // Filtruj jen uživatele z úseku a enrichni
+  var logEntries = [];
+  allRows.forEach(function(r) {
+    var uid = r[uidIdx];
+    if (!sectionUserMap[uid]) return;
+    var createdAt = catIdx !== -1 ? r[catIdx] : '';
+    var rawStatusId = r[statIdx];
+    var canonicalStatusId = Privacy.getCanonicalStatusId(rawStatusId, privacyCtx);
+    var statusId = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx)
+      ? canonicalStatusId
+      : Privacy.getMaskedStatusId(canonicalStatusId, privacyCtx);
+    logEntries.push({
+      attendance_id: r[aidIdx],
+      user_id: uid,
+      user_name: sectionUserMap[uid],
+      date: _toPfx(r[dateIdx], transDB),
+      status_id: statusId,
+      status_name: (statusMap[statusId] || {}).name || statusId,
+      status_color: (statusMap[statusId] || {}).color || '#94a3b8',
+      status_icon: (statusMap[statusId] || {}).icon || '',
+      slot: r[slotIdx] || 'ALL_DAY',
+      created_at: createdAt ? String(createdAt) : ''
+    });
+  });
+
+  // Seřaď podle created_at DESC (záznamy bez timestampu na konec)
+  logEntries.sort(function(a, b) {
+    if (!a.created_at && !b.created_at) return 0;
+    if (!a.created_at) return 1;
+    if (!b.created_at) return -1;
+    return b.created_at.localeCompare(a.created_at);
+  });
+
+  return logEntries;
+}
+
 function getAttendanceLog(offset) {
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
 
-    const coreDb = DB.getCore();
-    const allUsers = DB.getTable(coreDb, DB_SHEETS.CORE.USERS);
-    const allStatuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreDb, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
-    const positions = DB.getTable(coreDb, DB_SHEETS.CORE.POSITIONS);
-    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
-    const privacyCtx = Privacy.createContext({
-      viewer: currentUser,
-      positions: positions,
-      statuses: allStatuses,
-      rbacConfig: rbacConfig
-    });
-
-    // Uživatelé ve stejném úseku
-    const sectionId = currentUser.section_id;
-    const sectionUserMap = {};
-    const sectionUserObjMap = {};
-    allUsers.forEach(function(u) {
-      if (u.section_id === sectionId && u.active === 'true') {
-        u.org_role = _resolveOrgRole(u, positions);
-        sectionUserMap[u.user_id] = u.first_name + ' ' + u.last_name;
-        sectionUserObjMap[u.user_id] = u;
-      }
-    });
-
-    // Mapa statusů pro enrichment
-    const statusMap = {};
-    allStatuses.forEach(function(s) {
-      statusMap[s.status_id] = { name: s.name || s.status_id, color: s.color || '#94a3b8', icon: s.icon || '' };
-    });
-
-    // Načti ATTENDANCE sheet
-    const transDB = DB.getTransaction();
-    const sheet = transDB.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
-    if (!sheet || sheet.getLastRow() <= 1) return { success: true, entries: [], hasMore: false };
-
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const aidIdx  = headers.indexOf('attendance_id');
-    const uidIdx  = headers.indexOf('user_id');
-    const dateIdx = headers.indexOf('date');
-    const statIdx = headers.indexOf('status_id');
-    const slotIdx = headers.indexOf('slot');
-    const catIdx  = headers.indexOf('created_at');
-
-    const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
-
-    // Filtruj jen uživatele z úseku a enrichni
-    var logEntries = [];
-    allRows.forEach(function(r) {
-      var uid = r[uidIdx];
-      if (!sectionUserMap[uid]) return;
-      var createdAt = catIdx !== -1 ? r[catIdx] : '';
-      var rawStatusId = r[statIdx];
-      var canonicalStatusId = Privacy.getCanonicalStatusId(rawStatusId, privacyCtx);
-      var statusId = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx)
-        ? canonicalStatusId
-        : Privacy.getMaskedStatusId(canonicalStatusId, privacyCtx);
-      logEntries.push({
-        attendance_id: r[aidIdx],
-        user_id: uid,
-        user_name: sectionUserMap[uid],
-        date: _toPfx(r[dateIdx], transDB),
-        status_id: statusId,
-        status_name: (statusMap[statusId] || {}).name || statusId,
-        status_color: (statusMap[statusId] || {}).color || '#94a3b8',
-        status_icon: (statusMap[statusId] || {}).icon || '',
-        slot: r[slotIdx] || 'ALL_DAY',
-        created_at: createdAt ? String(createdAt) : ''
-      });
-    });
-
-    // Seřaď podle created_at DESC (záznamy bez timestampu na konec)
-    logEntries.sort(function(a, b) {
-      if (!a.created_at && !b.created_at) return 0;
-      if (!a.created_at) return 1;
-      if (!b.created_at) return -1;
-      return b.created_at.localeCompare(a.created_at);
-    });
+    const logEntries = _buildAttendanceLogEntries(currentUser);
 
     // Stránkování
     var startIdx = offset || 0;
@@ -2545,6 +2555,79 @@ function getAttendanceLog(offset) {
     var hasMore = (startIdx + pageSize) < logEntries.length;
 
     return { success: true, entries: page, hasMore: hasMore, total: logEntries.length };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Exportuje log docházky (respektuje aktivní filtry uživatele/statusu/data)
+ * do nově vytvořeného Google Sheets a vrátí jeho URL.
+ */
+function exportAttendanceLogToSheet(filters) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+
+    filters = filters || {};
+    const userIds = Array.isArray(filters.userIds) ? filters.userIds : [];
+    const statusIds = Array.isArray(filters.statusIds) ? filters.statusIds : [];
+    const dateFrom = filters.dateFrom || '';
+    const dateTo = filters.dateTo || '';
+
+    var logEntries = _buildAttendanceLogEntries(currentUser).filter(function(e) {
+      if (userIds.length && userIds.indexOf(e.user_id) === -1) return false;
+      if (statusIds.length && statusIds.indexOf(e.status_id) === -1) return false;
+      if (dateFrom && e.date < dateFrom) return false;
+      if (dateTo && e.date > dateTo) return false;
+      return true;
+    });
+
+    if (logEntries.length === 0) {
+      return { success: false, error: "Žádné záznamy neodpovídají zadaným filtrům." };
+    }
+
+    const slotLabels = { 'ALL_DAY': 'Celý den', 'AM': 'Dopoledne', 'PM': 'Odpoledne' };
+    const dateStr = Utilities.formatDate(new Date(), "GMT+1", "yyyy-MM-dd_HH-mm");
+    const ss = SpreadsheetApp.create('Log docházky export ' + dateStr);
+    const sheet = ss.getSheets()[0];
+    sheet.setName('Log docházky');
+
+    const rows = [['Čas uložení', 'Uživatel', 'Datum', 'Status', 'Slot']];
+    logEntries.forEach(function(e) {
+      rows.push([
+        e.created_at ? new Date(e.created_at) : '',
+        e.user_name,
+        e.date,
+        e.status_name,
+        slotLabels[e.slot] || e.slot
+      ]);
+    });
+    sheet.getRange(1, 1, rows.length, 5).setValues(rows);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.getRange(2, 1, rows.length - 1, 1).setNumberFormat('dd.mm.yyyy hh:mm:ss');
+    sheet.autoResizeColumns(1, 5);
+    sheet.setFrozenRows(1);
+
+    // Přesun exportu do stejné složky jako core databáze (konzistentně se zálohami v Backup.gs)
+    try {
+      const coreId = DB.getCore().getId();
+      const parentFolder = DriveApp.getFileById(coreId).getParents().next();
+      var exportFolder;
+      var folders = parentFolder.getFoldersByName("Exporty Docházky");
+      if (folders.hasNext()) {
+        exportFolder = folders.next();
+      } else {
+        exportFolder = parentFolder.createFolder("Exporty Docházky");
+      }
+      const file = DriveApp.getFileById(ss.getId());
+      exportFolder.addFile(file);
+      DriveApp.getRootFolder().removeFile(file);
+    } catch (moveErr) {
+      console.warn('exportAttendanceLogToSheet: přesun do složky selhal (export samotný proběhl):', moveErr);
+    }
+
+    return { success: true, url: ss.getUrl(), count: logEntries.length };
   } catch(e) {
     return { success: false, error: e.toString() };
   }

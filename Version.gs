@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.13.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.1",
+    "date": "2026-07-07",
+    "changes": [
+      "Log docházky: modal má nyní pevnou výšku, nemění velikost podle počtu výsledků filtru",
+      "Log docházky: přidán export filtrovaných (nebo všech) záznamů do nového Google Sheets"
+    ]
+  },
   {
     "version": "2.13.0",
     "date": "2026-07-07",

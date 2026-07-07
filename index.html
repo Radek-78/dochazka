@@ -525,8 +525,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.13.0</a>
-          | Excelový multi-select filtr v Logu docházky | Aktualizace: 07.07.2026 14:04
+            id="app-version-display">v2.13.1</a>
+          | Pevná výška logu a export do Sheets | Aktualizace: 07.07.2026 14:23
         </div>
       </footer>
     </div>
@@ -637,6 +637,15 @@
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
+          </button>
+          <button class="log-export-btn" id="log-export-btn" onclick="exportActivityLog()"
+            title="Exportovat výsledky do Google Sheets">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 3v12" />
+              <path d="M7 10l5 5 5-5" />
+              <path d="M4 19h16" />
+            </svg>
+            Export do Sheets
           </button>
         </div>
         <div class="log-table-wrapper">

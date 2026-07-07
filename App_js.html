@@ -6062,6 +6062,34 @@
         _renderLogTable();
     }
 
+    function exportActivityLog() {
+        var btn = document.getElementById('log-export-btn');
+        var filters = {
+            userIds: Array.from(_logSelected.user),
+            statusIds: Array.from(_logSelected.status),
+            dateFrom: document.getElementById('log-filter-from').value,
+            dateTo: document.getElementById('log-filter-to').value
+        };
+
+        if (btn) btn.disabled = true;
+        showOpSpinner('Exportuji log docházky...', 'Vytvářím Google Sheet se všemi odpovídajícími záznamy');
+
+        callServer('exportAttendanceLogToSheet', filters).then(function (res) {
+            hideOpSpinner();
+            if (btn) btn.disabled = false;
+            if (!res || !res.success) {
+                alert('Export se nezdařil: ' + ((res && res.error) || 'Neznámá chyba'));
+                return;
+            }
+            window.open(res.url, '_blank');
+        }).catch(function (e) {
+            hideOpSpinner();
+            if (btn) btn.disabled = false;
+            alert('Export se nezdařil: ' + e);
+            console.warn('exportAttendanceLogToSheet error:', e);
+        });
+    }
+
     // Statusy se světlým pozadím — černý text místo bílého
     var _darkTextStatuses = ['Kancelář', 'Dovolená'];
 
