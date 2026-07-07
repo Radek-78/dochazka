@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.1";
+const APP_VERSION = "2.13.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.2",
+    "date": "2026-07-07",
+    "changes": [
+      "Log docházky: řazení kliknutím na sloupce hlavičky (Čas uložení, Uživatel, Datum, Status, Slot, Poznámka)",
+      "Log docházky: přidán sloupec Poznámka (respektuje GDPR maskování) a filtr uživatelů je nyní řazený podle příjmení"
+    ]
+  },
   {
     "version": "2.13.1",
     "date": "2026-07-07",

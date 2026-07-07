@@ -525,8 +525,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.13.1</a>
-          | Pevná výška logu a export do Sheets | Aktualizace: 07.07.2026 14:23
+            id="app-version-display">v2.13.2</a>
+          | Řazení sloupců a poznámka v Logu docházky | Aktualizace: 07.07.2026 14:29
         </div>
       </footer>
     </div>
@@ -652,11 +652,12 @@
           <table class="log-table">
             <thead>
               <tr>
-                <th>Čas uložení</th>
-                <th>Uživatel</th>
-                <th>Datum</th>
-                <th>Status</th>
-                <th>Slot</th>
+                <th class="log-sortable" data-field="created_at" onclick="sortActivityLog('created_at')">Čas uložení<span class="log-sort-icon"></span></th>
+                <th class="log-sortable" data-field="user_name" onclick="sortActivityLog('user_name')">Uživatel<span class="log-sort-icon"></span></th>
+                <th class="log-sortable" data-field="date" onclick="sortActivityLog('date')">Datum<span class="log-sort-icon"></span></th>
+                <th class="log-sortable" data-field="status_name" onclick="sortActivityLog('status_name')">Status<span class="log-sort-icon"></span></th>
+                <th class="log-sortable" data-field="slot" onclick="sortActivityLog('slot')">Slot<span class="log-sort-icon"></span></th>
+                <th class="log-sortable" data-field="note" onclick="sortActivityLog('note')">Poznámka<span class="log-sort-icon"></span></th>
               </tr>
             </thead>
             <tbody id="log-table-body"></tbody>

@@ -2502,6 +2502,7 @@ function _buildAttendanceLogEntries(currentUser) {
   const statIdx = headers.indexOf('status_id');
   const slotIdx = headers.indexOf('slot');
   const catIdx  = headers.indexOf('created_at');
+  const noteIdx = headers.indexOf('note');
 
   const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
 
@@ -2513,7 +2514,8 @@ function _buildAttendanceLogEntries(currentUser) {
     var createdAt = catIdx !== -1 ? r[catIdx] : '';
     var rawStatusId = r[statIdx];
     var canonicalStatusId = Privacy.getCanonicalStatusId(rawStatusId, privacyCtx);
-    var statusId = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx)
+    var canViewUnmasked = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx);
+    var statusId = canViewUnmasked
       ? canonicalStatusId
       : Privacy.getMaskedStatusId(canonicalStatusId, privacyCtx);
     logEntries.push({
@@ -2526,6 +2528,7 @@ function _buildAttendanceLogEntries(currentUser) {
       status_color: (statusMap[statusId] || {}).color || '#94a3b8',
       status_icon: (statusMap[statusId] || {}).icon || '',
       slot: r[slotIdx] || 'ALL_DAY',
+      note: (canViewUnmasked && noteIdx !== -1) ? (r[noteIdx] || '') : '',
       created_at: createdAt ? String(createdAt) : ''
     });
   });
@@ -2593,20 +2596,21 @@ function exportAttendanceLogToSheet(filters) {
     const sheet = ss.getSheets()[0];
     sheet.setName('Log docházky');
 
-    const rows = [['Čas uložení', 'Uživatel', 'Datum', 'Status', 'Slot']];
+    const rows = [['Čas uložení', 'Uživatel', 'Datum', 'Status', 'Slot', 'Poznámka']];
     logEntries.forEach(function(e) {
       rows.push([
         e.created_at ? new Date(e.created_at) : '',
         e.user_name,
         e.date,
         e.status_name,
-        slotLabels[e.slot] || e.slot
+        slotLabels[e.slot] || e.slot,
+        e.note || ''
       ]);
     });
-    sheet.getRange(1, 1, rows.length, 5).setValues(rows);
-    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.getRange(1, 1, rows.length, 6).setValues(rows);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
     sheet.getRange(2, 1, rows.length - 1, 1).setNumberFormat('dd.mm.yyyy hh:mm:ss');
-    sheet.autoResizeColumns(1, 5);
+    sheet.autoResizeColumns(1, 6);
     sheet.setFrozenRows(1);
 
     // Přesun exportu do stejné složky jako core databáze (konzistentně se zálohami v Backup.gs)

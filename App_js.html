@@ -5864,6 +5864,7 @@
     var _logSelected = { user: new Set(), status: new Set() };
     var _logOptions = { user: [], status: [] };
     var _logMsfOpen = null; // 'user' | 'status' | null
+    var _logSort = { field: 'created_at', dir: 'desc' };
 
     function openActivityLogModal() {
         var modal = document.getElementById('activity-log-modal');
@@ -5872,6 +5873,7 @@
         _logData = [];
         _logOffset = 0;
         _logHasMore = false;
+        _logSort = { field: 'created_at', dir: 'desc' };
 
         // Reset filtrů
         _logSelected = { user: new Set(), status: new Set() };
@@ -5884,7 +5886,7 @@
         });
         document.getElementById('log-filter-from').value = '';
         document.getElementById('log-filter-to').value = '';
-        document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Načítání...</td></tr>';
+        document.getElementById('log-table-body').innerHTML = '<tr><td colspan="6" class="log-empty-state">Načítání...</td></tr>';
 
         _loadLogEntries(0);
     }
@@ -5898,7 +5900,7 @@
     function _loadLogEntries(offset) {
         callServer('getAttendanceLog', offset).then(function (res) {
             if (!res || !res.success) {
-                document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Chyba: ' + ((res && res.error) || 'Neznámá') + '</td></tr>';
+                document.getElementById('log-table-body').innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba: ' + ((res && res.error) || 'Neznámá') + '</td></tr>';
                 return;
             }
 
@@ -5919,13 +5921,19 @@
             var countInfo = document.getElementById('log-count-info');
             if (countInfo) countInfo.textContent = 'Zobrazeno ' + _logData.length + ' z ' + (res.total || _logData.length);
         }).catch(function (e) {
-            document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Chyba načítání</td></tr>';
+            document.getElementById('log-table-body').innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba načítání</td></tr>';
             console.warn('getAttendanceLog error:', e);
         });
     }
 
     function loadMoreLogEntries() {
         _loadLogEntries(_logOffset);
+    }
+
+    /** Vrátí poslední slovo ze jména ("Jan Novák" -> "Novák") pro řazení podle příjmení. */
+    function _surname(fullName) {
+        var parts = String(fullName || '').trim().split(/\s+/);
+        return parts[parts.length - 1] || '';
     }
 
     function _populateLogFilters() {
@@ -5936,7 +5944,7 @@
             statuses[e.status_id] = { name: e.status_name, color: e.status_color, icon: e.status_icon };
         });
         _logOptions.user = Object.keys(users).map(function (id) { return { id: id, label: users[id] }; })
-            .sort(function (a, b) { return a.label.localeCompare(b.label, 'cs'); });
+            .sort(function (a, b) { return _surname(a.label).localeCompare(_surname(b.label), 'cs') || a.label.localeCompare(b.label, 'cs'); });
         _logOptions.status = Object.keys(statuses).map(function (id) {
             return { id: id, label: statuses[id].name, color: statuses[id].color, icon: statuses[id].icon };
         }).sort(function (a, b) { return a.label.localeCompare(b.label, 'cs'); });
@@ -6109,11 +6117,28 @@
         });
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="log-empty-state">Žádné záznamy</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Žádné záznamy</td></tr>';
+            _updateLogSortHeaders();
             return;
         }
 
         var slotLabels = { 'ALL_DAY': 'Celý den', 'AM': 'Dopoledne', 'PM': 'Odpoledne' };
+
+        filtered.sort(function (a, b) {
+            var field = _logSort.field;
+            var dir = _logSort.dir === 'asc' ? 1 : -1;
+            var va, vb;
+            if (field === 'slot') {
+                va = slotLabels[a.slot] || a.slot || '';
+                vb = slotLabels[b.slot] || b.slot || '';
+            } else {
+                va = a[field] || '';
+                vb = b[field] || '';
+            }
+            if (va === vb) return 0;
+            return va.localeCompare(vb, 'cs', { numeric: true }) * dir;
+        });
+
         var html = '';
         filtered.forEach(function (e) {
             var ts = e.created_at ? _formatLogTimestamp(e.created_at) : '—';
@@ -6126,9 +6151,31 @@
                 '<td><span class="log-status-badge" style="background:' + (e.status_color || '#94a3b8') + '; color:' + textColor + '">' +
                 (e.status_icon ? e.status_icon + ' ' : '') + e.status_name + '</span></td>' +
                 '<td><span class="log-slot-badge">' + (slotLabels[e.slot] || e.slot) + '</span></td>' +
+                '<td class="log-note-cell"' + (e.note ? ' title="' + escapeHtml(e.note) + '"' : '') + '>' +
+                (e.note ? escapeHtml(e.note) : '<span class="log-note-empty">—</span>') + '</td>' +
                 '</tr>';
         });
         tbody.innerHTML = html;
+        _updateLogSortHeaders();
+    }
+
+    function sortActivityLog(field) {
+        if (_logSort.field === field) {
+            _logSort.dir = _logSort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            _logSort.field = field;
+            _logSort.dir = 'asc';
+        }
+        _renderLogTable();
+    }
+
+    function _updateLogSortHeaders() {
+        document.querySelectorAll('.log-table th.log-sortable').forEach(function (th) {
+            th.classList.remove('sorted-asc', 'sorted-desc');
+            if (th.getAttribute('data-field') === _logSort.field) {
+                th.classList.add(_logSort.dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+            }
+        });
     }
 
     function _formatLogTimestamp(isoStr) {
