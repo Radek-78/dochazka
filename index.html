@@ -525,8 +525,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.12.2</a>
-          | Sjednocení dynamické oblasti modalu (mapa/poznámka) | Aktualizace: 07.07.2026 13:26
+            id="app-version-display">v2.12.3</a>
+          | Rezervovaný prostor pro dynamickou oblast modalu | Aktualizace: 07.07.2026 13:38
         </div>
       </footer>
     </div>
@@ -928,36 +928,39 @@
         <div class="att-status-grid" id="att-status-grid"></div>
       </div>
 
-      <!-- POZNÁMKA KE STATUSU -->
-      <div id="att-note-section" class="att-note-section" style="display:none;">
-        <div class="att-note-header">
-          <span class="att-note-title">📝 Poznámka</span>
-        </div>
-        <div class="att-note-body">
-          <textarea id="att-note-input" class="att-note-textarea" maxlength="150"
-            placeholder="Krátká poznámka k tomuto dni (nepovinné)…"></textarea>
-        </div>
-      </div>
-
-      <!-- MAPA KANCELÁŘE -->
-      <div id="att-map-section" class="att-map-section" style="display:none;">
-        <div class="att-map-header">
-          <div class="att-map-header-left">
-            <span class="att-map-title">🪑 Výběr místa</span>
-            <span class="att-map-subtitle" id="att-map-subtitle">Vyberte status pro aktivaci</span>
+      <!-- DYNAMICKÁ SPODNÍ OBLAST: rezervovaný prostor, obsah se mění podle statusu -->
+      <div id="att-dynamic-section" class="att-dynamic-section">
+        <!-- POZNÁMKA KE STATUSU -->
+        <div id="att-note-section" class="att-note-section" style="display:none;">
+          <div class="att-note-header">
+            <span class="att-note-title">📝 Poznámka</span>
           </div>
-          <button class="att-map-skip-btn" onclick="skipDeskSelection()" title="Pokračovat bez výběru místa">Přeskočit
-            →</button>
+          <div class="att-note-body">
+            <textarea id="att-note-input" class="att-note-textarea" maxlength="150"
+              placeholder="Krátká poznámka k tomuto dni (nepovinné)…"></textarea>
+          </div>
         </div>
-        <div class="att-map-grid-scroll">
-          <div id="att-map-grid"></div>
-        </div>
-        <div class="att-map-legend">
-          <div class="att-map-legend-item"><span class="att-map-dot mine"></span>Moje místo</div>
-          <div class="att-map-legend-item"><span class="att-map-dot occupied"></span>Obsazeno</div>
-          <div class="att-map-legend-item"><span class="att-map-dot pre-no-status"></span>Předrezervováno</div>
-          <div class="att-map-legend-item"><span class="att-map-dot pre-other"></span>Uvolněné pevné</div>
-          <div class="att-map-legend-item"><span class="att-map-dot free"></span>Volné</div>
+
+        <!-- MAPA KANCELÁŘE -->
+        <div id="att-map-section" class="att-map-section" style="display:none;">
+          <div class="att-map-header">
+            <div class="att-map-header-left">
+              <span class="att-map-title">🪑 Výběr místa</span>
+              <span class="att-map-subtitle" id="att-map-subtitle">Vyberte status pro aktivaci</span>
+            </div>
+            <button class="att-map-skip-btn" onclick="skipDeskSelection()" title="Pokračovat bez výběru místa">Přeskočit
+              →</button>
+          </div>
+          <div class="att-map-grid-scroll">
+            <div id="att-map-grid"></div>
+          </div>
+          <div class="att-map-legend">
+            <div class="att-map-legend-item"><span class="att-map-dot mine"></span>Moje místo</div>
+            <div class="att-map-legend-item"><span class="att-map-dot occupied"></span>Obsazeno</div>
+            <div class="att-map-legend-item"><span class="att-map-dot pre-no-status"></span>Předrezervováno</div>
+            <div class="att-map-legend-item"><span class="att-map-dot pre-other"></span>Uvolněné pevné</div>
+            <div class="att-map-legend-item"><span class="att-map-dot free"></span>Volné</div>
+          </div>
         </div>
       </div>
 

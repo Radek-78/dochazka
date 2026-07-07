@@ -5995,6 +5995,17 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════════
+       DYNAMICKÁ SPODNÍ OBLAST — rezervovaný prostor, aby modal neměnil velikost
+       při přepínání mezi mapou kanceláře a poznámkou
+    ═══════════════════════════════════════════════════════════════════════════ */
+
+    .att-dynamic-section {
+        min-height: 190px;
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
        POZNÁMKA KE STATUSU V MODALU DOCHÁZKY
     ═══════════════════════════════════════════════════════════════════════════ */
 

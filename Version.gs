@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.12.2";
+const APP_VERSION = "2.12.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.12.3",
+    "date": "2026-07-07",
+    "changes": [
+      "Denní modal: spodní dynamická oblast (mapa/poznámka) má nyní rezervovaný prostor, takže velikost modalu se při přepínání statusů neskáče"
+    ]
+  },
   {
     "version": "2.12.2",
     "date": "2026-07-07",
