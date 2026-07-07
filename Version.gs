@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.2";
+const APP_VERSION = "2.13.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.3",
+    "date": "2026-07-07",
+    "changes": [
+      "GDPR: Log docházky nyní maskuje poznámku přes stejnou sdílenou funkci jako kalendářní chipy (Privacy.prepareAttendanceEntry), takže se pravidla viditelnosti přesně shodují"
+    ]
+  },
   {
     "version": "2.13.2",
     "date": "2026-07-07",

@@ -2506,18 +2506,19 @@ function _buildAttendanceLogEntries(currentUser) {
 
   const allRows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
 
-  // Filtruj jen uživatele z úseku a enrichni
+  // Filtruj jen uživatele z úseku a enrichni. Kanonizace + maskování statusu i poznámky
+  // jde přes Privacy.prepareAttendanceEntry - stejnou funkci jako getMonthAttendance pro
+  // kalendář, aby se log choval naprosto shodně (stejný status maskovaný = stejná poznámka skrytá).
   var logEntries = [];
   allRows.forEach(function(r) {
     var uid = r[uidIdx];
     if (!sectionUserMap[uid]) return;
     var createdAt = catIdx !== -1 ? r[catIdx] : '';
-    var rawStatusId = r[statIdx];
-    var canonicalStatusId = Privacy.getCanonicalStatusId(rawStatusId, privacyCtx);
-    var canViewUnmasked = Privacy.canViewUnmasked(sectionUserObjMap[uid], privacyCtx);
-    var statusId = canViewUnmasked
-      ? canonicalStatusId
-      : Privacy.getMaskedStatusId(canonicalStatusId, privacyCtx);
+    var prepared = Privacy.prepareAttendanceEntry({
+      status_id: r[statIdx],
+      note: noteIdx !== -1 ? (r[noteIdx] || '') : ''
+    }, sectionUserObjMap[uid], privacyCtx);
+    var statusId = prepared.status_id;
     logEntries.push({
       attendance_id: r[aidIdx],
       user_id: uid,
@@ -2528,7 +2529,7 @@ function _buildAttendanceLogEntries(currentUser) {
       status_color: (statusMap[statusId] || {}).color || '#94a3b8',
       status_icon: (statusMap[statusId] || {}).icon || '',
       slot: r[slotIdx] || 'ALL_DAY',
-      note: (canViewUnmasked && noteIdx !== -1) ? (r[noteIdx] || '') : '',
+      note: prepared.note || '',
       created_at: createdAt ? String(createdAt) : ''
     });
   });
