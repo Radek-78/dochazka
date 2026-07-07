@@ -1683,6 +1683,7 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                 ${togHtml('requires_approval', chkAttr('requires_approval', item), '✅', 'Vyžaduje schválení', 'Status musí být schválen vedoucím')}
                 ${togHtml('allows_desk_reservation', chkAttr('allows_desk_reservation', item), '🪑', 'Rezervace stolu', 'Umožní rezervaci pracovního místa')}
+                ${togHtml('allows_note', chkAttr('allows_note', item), '📝', 'Poznámka ke dni', 'Umožní zadat krátkou poznámku k dennímu záznamu')}
                 ${togHtml('shows_work_time', chkAttr('shows_work_time', item), '⏰', 'Zobrazovat čas příchodu', 'Zobrazí picker pro čas příchodu')}
                 ${togHtml('is_vacation', chkAttr('is_vacation', item), '🏖️', 'Počítá se do dovolené', 'Odpočítává ze zůstatku dovolené')}
             </div>
@@ -1690,6 +1691,7 @@
         ` : `
         <input type="hidden" name="requires_approval" value="false">
         <input type="hidden" name="allows_desk_reservation" value="false">
+        <input type="hidden" name="allows_note" value="false">
         <input type="hidden" name="shows_work_time" value="false">
         <input type="hidden" name="is_vacation" value="false">
         `}

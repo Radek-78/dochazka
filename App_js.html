@@ -1119,11 +1119,16 @@
             const timeTitleSuffix = (formattedTime && formattedTime !== '') ? ' · příchod ' + formattedTime : '';
             const hasTimeCls = timeTag ? ' has-time-tag' : '';
 
+            const hasNote = entry.note && String(entry.note).trim() !== '';
+            const noteTag = hasNote
+                ? '<span class="chip-note-icon" title="Poznámka: ' + escapeHtml(String(entry.note)) + '">📝</span>'
+                : '';
+
             return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls + hasTimeCls +
                 '" data-slot="' + entry.slot + '" style="background:' + (st.color || '#94a3b8') +
                 ';color:' + (st.text_color || '#fff') + ';" title="' + (titlePrefix ? titlePrefix + ': ' : '') +
                 (st.name || '') + timeTitleSuffix + titleSuffix + '">' +
-                (st.abbreviation || '') + timeTag + '</span>' + pendingOverlay;
+                (st.abbreviation || '') + timeTag + noteTag + '</span>' + pendingOverlay;
         };
 
         let hasPending = false;
@@ -1211,6 +1216,41 @@
         if (!statusId || !plannerData || !plannerData.statuses) return false;
         var s = findStatusById(statusId);
         return s && (s.allows_desk_reservation === 'true' || s.allows_desk_reservation === true);
+    }
+
+    /**
+     * Vrátí true pokud daný status podporuje krátkou poznámku k dennímu záznamu.
+     */
+    function _statusNeedsNote(statusId) {
+        if (!statusId || !plannerData || !plannerData.statuses) return false;
+        var s = findStatusById(statusId);
+        return s && (s.allows_note === 'true' || s.allows_note === true);
+    }
+
+    /**
+     * Zobrazí/aktivuje sekci poznámky v modalu pro daný slot.
+     * Textarea se přepíše existujícím obsahem jen při přechodu ze skryté sekce
+     * nebo při změně slotu, aby se nepřepsal rozepsaný text uživatele.
+     */
+    function _showNoteSection(slot) {
+        var section = document.getElementById('att-note-section');
+        var textarea = document.getElementById('att-note-input');
+        if (!section || !textarea) return;
+        var wasHidden = section.style.display === 'none' || section.style.display === '';
+        var slotChanged = _attModal._noteSlot !== slot;
+        section.style.display = 'block';
+        if (wasHidden || slotChanged) {
+            var key = _attModal.userId + '_' + _attModal.date + '_' + slot;
+            var entry = _attendanceData[key];
+            textarea.value = (entry && entry.note) || '';
+        }
+        _attModal._noteSlot = slot;
+    }
+
+    function _hideNoteSection() {
+        var section = document.getElementById('att-note-section');
+        if (section) section.style.display = 'none';
+        _attModal._noteSlot = null;
     }
 
     /**
@@ -1668,6 +1708,14 @@
                 mapSection.style.display = 'none';
             }
         }
+
+        // Poznámka ke statusu
+        var curStatusIdForNote = existing ? existing.status_id : null;
+        if (curStatusIdForNote && _statusNeedsNote(curStatusIdForNote)) {
+            _showNoteSection(slot);
+        } else {
+            _hideNoteSection();
+        }
     }
 
     function selectAttendanceStatus(statusId) {
@@ -1820,6 +1868,7 @@
         var isSecondHalf = (_attModal.mode === 'HALF' && slot === 'PM');
         var needsDesk = _statusNeedsDeskReservation(statusId) && plannerData && plannerData.officeMap;
         var needsWorkTime = _shouldShowWorkStartTimeBox(statusId);
+        var needsNote = _statusNeedsNote(statusId);
 
         // Zobrazit nebo skrýt box pro čas příchodu
         if (needsWorkTime) {
@@ -1831,9 +1880,13 @@
         if (isFullDay || isSecondHalf) {
             if (needsDesk) {
                 setTimeout(function () { _showMapInModal(_attModal.date); }, 100);
-            } else if (needsWorkTime) {
-                // Nezavírat modal – uživatel upraví čas a klikne Hotovo
+            }
+            if (needsNote) {
+                _showNoteSection(slot || 'ALL_DAY');
             } else {
+                _hideNoteSection();
+            }
+            if (!needsDesk && !needsNote && !needsWorkTime) {
                 setTimeout(closeAttendanceModal, 150);
             }
         } else if (_attModal.mode === 'HALF' && slot === 'AM') {
@@ -1848,6 +1901,11 @@
                     var subtitle = document.getElementById('att-map-subtitle');
                     if (subtitle) subtitle.textContent = 'Vyberte status Kancelář pro aktivaci';
                 }
+            }
+            if (needsNote) {
+                _showNoteSection('AM');
+            } else {
+                _hideNoteSection();
             }
         }
     }
@@ -1889,6 +1947,28 @@
                 }
             }
             workStartBox.style.display = 'none';
+        }
+
+        // Pokud je viditelná sekce poznámky, ulož ji do aktuálního záznamu
+        var noteSection = document.getElementById('att-note-section');
+        if (noteSection && noteSection.style.display !== 'none') {
+            var noteInput = document.getElementById('att-note-input');
+            var noteSlot = _attModal._noteSlot;
+            if (noteInput && _attModal.userId && _attModal.date && noteSlot) {
+                var noteDk = String(_attModal.date).substring(0, 10);
+                var noteKey = _attModal.userId + '_' + noteDk + '_' + noteSlot;
+                var noteEntry = _attendanceData[noteKey];
+                if (noteEntry && noteEntry.note !== noteInput.value) {
+                    noteEntry.note = noteInput.value;
+                    _attWriteQueue[noteKey] = noteEntry;
+                    _persistQueues();
+                    clearTimeout(_attSaveTimer);
+                    _attSaveTimer = setTimeout(flushAttendanceQueue, 400);
+                    var noteCellEl = getCellElement(_attModal.userId, noteDk);
+                    if (noteCellEl) renderAttendanceCell(noteCellEl, _attModal.userId, noteDk);
+                }
+            }
+            noteSection.style.display = 'none';
         }
 
         document.getElementById('attendance-modal').classList.remove('visible');
@@ -3273,6 +3353,7 @@
         var key = entry.user_id + '_' + dk + '_' + slot;
         var toQueue = { user_id: entry.user_id, date: dk, slot: slot, status_id: entry.status_id };
         if (entry.work_start_time) toQueue.work_start_time = entry.work_start_time;
+        if (entry.note !== undefined) toQueue.note = entry.note;
         _attWriteQueue[key] = toQueue;
         _attendanceData[key] = _attWriteQueue[key];
         _persistQueues();

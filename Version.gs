@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.11.6";
+const APP_VERSION = "2.12.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.12.0",
+    "date": "2026-07-07",
+    "changes": [
+      "Docházka: krátká poznámka k dennímu záznamu u vybraných statusů (nastavitelné v administraci přes příznak allows_note)",
+      "Denní modal nově zobrazuje pole poznámky místo mapy kanceláře, pokud vybraný status poznámku podporuje",
+      "Chip v kalendáři zobrazuje tužkovou ikonku s náhledem poznámky v tooltipu, pokud je vyplněná"
+    ]
+  },
   {
     "version": "2.11.6",
     "date": "2026-05-18",

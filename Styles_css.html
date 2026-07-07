@@ -5995,6 +5995,49 @@
     }
 
     /* ═══════════════════════════════════════════════════════════════════════════
+       POZNÁMKA KE STATUSU V MODALU DOCHÁZKY
+    ═══════════════════════════════════════════════════════════════════════════ */
+
+    .att-note-section {
+        border-top: 2px solid #fef3c7;
+        background: #fffbeb;
+        animation: fadeIn 0.25s ease-out;
+        padding: 10px 18px 14px;
+    }
+
+    .att-note-header {
+        display: flex;
+        align-items: center;
+        padding-bottom: 6px;
+    }
+
+    .att-note-title {
+        font-size: 13px;
+        font-weight: 900;
+        color: #92400e;
+        letter-spacing: 0.3px;
+    }
+
+    .att-note-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        resize: none;
+        min-height: 48px;
+        padding: 8px 10px;
+        border: 1.5px solid #fde68a;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: inherit;
+        color: #451a03;
+        background: #fff;
+    }
+
+    .att-note-textarea:focus {
+        outline: none;
+        border-color: #f59e0b;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
        MAPA KANCELÁŘE V MODALU DOCHÁZKY
     ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -6234,6 +6277,18 @@
 
     /* ─── Červený rámeček — Kancelář bez rezervace stolu ─────────────────── */
     /* Pseudo-element kreslí okraj nad všemi dětmi včetně chip-time-tag */
+    /* ─── Tužková ikonka — chip má vyplněnou poznámku ─────────────────────── */
+    .chip-note-icon {
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        font-size: 8px;
+        line-height: 1;
+        z-index: 3;
+        pointer-events: none;
+        filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6));
+    }
+
     .att-cell-chip.needs-desk-chip::after {
         content: '';
         position: absolute;

@@ -419,6 +419,7 @@ var Admin = {
       data.masked_status_id = '';
       data.requires_approval = 'false';
       data.allows_desk_reservation = 'false';
+      data.allows_note = 'false';
       data.is_vacation = 'false';
       data.shows_work_time = 'false';
       data.work_time_bg_color = '';
