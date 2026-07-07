@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.12.3";
+const APP_VERSION = "2.12.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.12.4",
+    "date": "2026-07-07",
+    "changes": [
+      "Denní modal: kompaktnější horní část s výběrem statusů (menší dlaždice, menší mezery), aby nebylo nutné v této části scrollovat"
+    ]
+  },
   {
     "version": "2.12.3",
     "date": "2026-07-07",
