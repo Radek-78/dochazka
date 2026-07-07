@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.12.1";
+const APP_VERSION = "2.12.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.12.2",
+    "date": "2026-07-07",
+    "changes": [
+      "Denní modal: spodní dynamická oblast nyní zobrazuje vždy jen jednu věc podle vybraného statusu (mapa kanceláře, nebo poznámka), místo aby se zobrazovaly obě zároveň",
+      "Neaktivní zašedlá mapa kanceláře byla odstraněna, mapa se zobrazí pouze pro status Kancelář"
+    ]
+  },
   {
     "version": "2.12.1",
     "date": "2026-07-07",

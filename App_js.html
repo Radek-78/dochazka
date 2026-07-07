@@ -1688,30 +1688,14 @@
 
         document.getElementById('attendance-modal').classList.add('visible');
 
-        // Mapa kanceláře: zobrazit i pro ostatní uživatele, pokud mapa existuje
-        var mapSection = document.getElementById('att-map-section');
-        if (mapSection) {
-            if (plannerData.officeMap) {
-                mapSection.style.display = '';
-                // Zjisti zda aktuálně vybraný status vyžaduje rezervaci
-                var curStatusId = existing ? existing.status_id : null;
-                if (curStatusId && _statusNeedsDeskReservation(curStatusId)) {
-                    _showMapInModal(date);
-                } else {
-                    mapSection.classList.add('att-map-inactive');
-                    // Vykresli mapu v neaktivním stavu
-                    _renderMapInModal(date, false);
-                    var subtitle = document.getElementById('att-map-subtitle');
-                    if (subtitle) subtitle.textContent = 'Vyberte status Kancelář pro aktivaci';
-                }
-            } else {
-                mapSection.style.display = 'none';
-            }
+        // Dynamická spodní oblast: mapa kanceláře nebo poznámka podle aktuálního statusu
+        var curStatusId = existing ? existing.status_id : null;
+        if (plannerData.officeMap && curStatusId && _statusNeedsDeskReservation(curStatusId)) {
+            _showMapInModal(date);
+        } else {
+            _hideMapInModal();
         }
-
-        // Poznámka ke statusu
-        var curStatusIdForNote = existing ? existing.status_id : null;
-        if (curStatusIdForNote && _statusNeedsNote(curStatusIdForNote)) {
+        if (curStatusId && _statusNeedsNote(curStatusId)) {
             _showNoteSection(slot);
         } else {
             _hideNoteSection();
@@ -1880,6 +1864,8 @@
         if (isFullDay || isSecondHalf) {
             if (needsDesk) {
                 setTimeout(function () { _showMapInModal(_attModal.date); }, 100);
+            } else {
+                _hideMapInModal();
             }
             if (needsNote) {
                 _showNoteSection(slot || 'ALL_DAY');
@@ -1894,13 +1880,7 @@
             if (needsDesk) {
                 _showMapInModal(_attModal.date);
             } else {
-                var mapSection = document.getElementById('att-map-section');
-                if (mapSection) {
-                    mapSection.classList.add('att-map-inactive');
-                    _renderMapInModal(_attModal.date, false);
-                    var subtitle = document.getElementById('att-map-subtitle');
-                    if (subtitle) subtitle.textContent = 'Vyberte status Kancelář pro aktivaci';
-                }
+                _hideMapInModal();
             }
             if (needsNote) {
                 _showNoteSection('AM');
@@ -1980,13 +1960,7 @@
         }
         _batchActionRequest = null;
 
-        // Reset mapy do neaktivního stavu
-        var mapSection = document.getElementById('att-map-section');
-        if (mapSection) {
-            mapSection.classList.add('att-map-inactive');
-            var subtitle = document.getElementById('att-map-subtitle');
-            if (subtitle) subtitle.textContent = 'Vyberte status pro aktivaci';
-        }
+        _hideMapInModal();
         _attModal = { userId: null, date: null, slot: 'ALL_DAY', mode: 'FULL', nextHalfSlot: 'AM', selectedStatusId: null, canEdit: false };
     }
 
@@ -2010,14 +1984,8 @@
                 // Překresli buňku (odstraní needs-desk-chip, přidá znovu pokud nutné)
                 var cellEl = getCellElement(userId, date);
                 if (cellEl) renderAttendanceCell(cellEl, userId, date);
-                // Pokud je mapa otevřená v modalu, překresli ji do neaktivního stavu
-                var mapSection = document.getElementById('att-map-section');
-                if (mapSection && !mapSection.classList.contains('att-map-inactive')) {
-                    mapSection.classList.add('att-map-inactive');
-                    _renderMapInModal(date, false);
-                    var subtitle = document.getElementById('att-map-subtitle');
-                    if (subtitle) subtitle.textContent = 'Vyberte status Kancelář pro aktivaci';
-                }
+                // Pokud je mapa otevřená v modalu, skryj ji (den už rezervaci nepotřebuje)
+                _hideMapInModal();
                 _updateBatchMapBtn();
                 // Smaž rezervaci na serveru
                 callServer('deleteMapReservation', plannerData.officeMap.map_id, userId, date)
@@ -2029,13 +1997,22 @@
     // ─── MAPA KANCELÁŘE V MODALU ─────────────────────────────────────────────
 
     /**
-     * Aktivuje mapu kanceláře v modalu (odebere inactive třídu) a vykreslí ji.
+     * Zobrazí a aktivuje mapu kanceláře v modalu (dynamická spodní oblast).
      */
     function _showMapInModal(date) {
         var mapSection = document.getElementById('att-map-section');
         if (!mapSection || !plannerData || !plannerData.officeMap) return;
+        mapSection.style.display = 'block';
         mapSection.classList.remove('att-map-inactive');
         _renderMapInModal(date, true);
+    }
+
+    /**
+     * Skryje mapu kanceláře v modalu (dynamická spodní oblast).
+     */
+    function _hideMapInModal() {
+        var mapSection = document.getElementById('att-map-section');
+        if (mapSection) mapSection.style.display = 'none';
     }
 
     /**
