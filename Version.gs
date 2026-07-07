@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.12.4";
+const APP_VERSION = "2.13.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.0",
+    "date": "2026-07-07",
+    "changes": [
+      "Log docházky: filtr uživatele a statusu nahrazen excelovým multi-select filtrem s vyhledáváním a hromadným výběrem/zrušením výběru",
+      "Opravena chyba, kdy se do filtru nedostali uživatelé/statusy z pozdějších stránek po kliknutí na Načíst další záznamy"
+    ]
+  },
   {
     "version": "2.12.4",
     "date": "2026-07-07",

@@ -525,8 +525,8 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.12.4</a>
-          | Kompaktnější výběr statusů bez scrollování | Aktualizace: 07.07.2026 13:51
+            id="app-version-display">v2.13.0</a>
+          | Excelový multi-select filtr v Logu docházky | Aktualizace: 07.07.2026 14:04
         </div>
       </footer>
     </div>
@@ -593,12 +593,42 @@
       </div>
       <div class="footer-modal-body">
         <div class="log-filters">
-          <select id="log-filter-user" class="log-filter-select" onchange="filterActivityLog()">
-            <option value="">Všichni uživatelé</option>
-          </select>
-          <select id="log-filter-status" class="log-filter-select" onchange="filterActivityLog()">
-            <option value="">Všechny statusy</option>
-          </select>
+          <div class="log-msf" id="log-msf-user">
+            <button type="button" class="log-msf-btn" onclick="toggleLogMsf('user')">
+              <span id="log-msf-user-label">Všichni uživatelé</span>
+              <svg class="log-msf-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="3">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <div class="log-msf-panel" id="log-msf-user-panel">
+              <input type="text" class="log-msf-search" id="log-msf-user-search" placeholder="Hledat uživatele…"
+                oninput="_renderLogMsfOptions('user')">
+              <div class="log-msf-actions">
+                <button type="button" onclick="_logMsfSelectAll('user')">Vybrat vše</button>
+                <button type="button" onclick="_logMsfClearAll('user')">Zrušit výběr</button>
+              </div>
+              <div class="log-msf-options" id="log-msf-user-options"></div>
+            </div>
+          </div>
+          <div class="log-msf" id="log-msf-status">
+            <button type="button" class="log-msf-btn" onclick="toggleLogMsf('status')">
+              <span id="log-msf-status-label">Všechny statusy</span>
+              <svg class="log-msf-caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="3">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <div class="log-msf-panel" id="log-msf-status-panel">
+              <input type="text" class="log-msf-search" id="log-msf-status-search" placeholder="Hledat status…"
+                oninput="_renderLogMsfOptions('status')">
+              <div class="log-msf-actions">
+                <button type="button" onclick="_logMsfSelectAll('status')">Vybrat vše</button>
+                <button type="button" onclick="_logMsfClearAll('status')">Zrušit výběr</button>
+              </div>
+              <div class="log-msf-options" id="log-msf-status-options"></div>
+            </div>
+          </div>
           <input type="date" id="log-filter-from" class="log-filter-date" onchange="filterActivityLog()"
             placeholder="Od">
           <input type="date" id="log-filter-to" class="log-filter-date" onchange="filterActivityLog()" placeholder="Do">

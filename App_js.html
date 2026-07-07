@@ -5861,6 +5861,9 @@
     var _logData = [];
     var _logOffset = 0;
     var _logHasMore = false;
+    var _logSelected = { user: new Set(), status: new Set() };
+    var _logOptions = { user: [], status: [] };
+    var _logMsfOpen = null; // 'user' | 'status' | null
 
     function openActivityLogModal() {
         var modal = document.getElementById('activity-log-modal');
@@ -5871,8 +5874,14 @@
         _logHasMore = false;
 
         // Reset filtrů
-        document.getElementById('log-filter-user').value = '';
-        document.getElementById('log-filter-status').value = '';
+        _logSelected = { user: new Set(), status: new Set() };
+        _logOptions = { user: [], status: [] };
+        _closeLogMsf();
+        ['user', 'status'].forEach(function (kind) {
+            var search = document.getElementById('log-msf-' + kind + '-search');
+            if (search) search.value = '';
+            _updateLogMsfLabel(kind);
+        });
         document.getElementById('log-filter-from').value = '';
         document.getElementById('log-filter-to').value = '';
         document.getElementById('log-table-body').innerHTML = '<tr><td colspan="5" class="log-empty-state">Načítání...</td></tr>';
@@ -5883,6 +5892,7 @@
     function closeActivityLogModal() {
         var modal = document.getElementById('activity-log-modal');
         if (modal) modal.style.display = 'none';
+        _closeLogMsf();
     }
 
     function _loadLogEntries(offset) {
@@ -5894,10 +5904,11 @@
 
             if (offset === 0) {
                 _logData = res.entries || [];
-                _populateLogFilters();
             } else {
                 _logData = _logData.concat(res.entries || []);
             }
+            // Vždy přepočítat možnosti filtru (i po "Načíst další"), výběr uživatele se zachová
+            _populateLogFilters();
 
             _logOffset = offset + (res.entries || []).length;
             _logHasMore = res.hasMore || false;
@@ -5918,34 +5929,134 @@
     }
 
     function _populateLogFilters() {
-        // Uživatelé
-        var userSelect = document.getElementById('log-filter-user');
         var users = {};
-        _logData.forEach(function (e) { users[e.user_id] = e.user_name; });
-        var opts = '<option value="">Všichni uživatelé</option>';
-        Object.keys(users).sort(function (a, b) { return users[a].localeCompare(users[b], 'cs'); }).forEach(function (uid) {
-            opts += '<option value="' + uid + '">' + users[uid] + '</option>';
-        });
-        userSelect.innerHTML = opts;
-
-        // Statusy
-        var statusSelect = document.getElementById('log-filter-status');
         var statuses = {};
-        _logData.forEach(function (e) { statuses[e.status_id] = e.status_name; });
-        var sOpts = '<option value="">Všechny statusy</option>';
-        Object.keys(statuses).sort(function (a, b) { return statuses[a].localeCompare(statuses[b], 'cs'); }).forEach(function (sid) {
-            sOpts += '<option value="' + sid + '">' + statuses[sid] + '</option>';
+        _logData.forEach(function (e) {
+            users[e.user_id] = e.user_name;
+            statuses[e.status_id] = { name: e.status_name, color: e.status_color, icon: e.status_icon };
         });
-        statusSelect.innerHTML = sOpts;
+        _logOptions.user = Object.keys(users).map(function (id) { return { id: id, label: users[id] }; })
+            .sort(function (a, b) { return a.label.localeCompare(b.label, 'cs'); });
+        _logOptions.status = Object.keys(statuses).map(function (id) {
+            return { id: id, label: statuses[id].name, color: statuses[id].color, icon: statuses[id].icon };
+        }).sort(function (a, b) { return a.label.localeCompare(b.label, 'cs'); });
+
+        _renderLogMsfOptions('user');
+        _renderLogMsfOptions('status');
+        _updateLogMsfLabel('user');
+        _updateLogMsfLabel('status');
     }
+
+    // ─── EXCELOVÝ MULTI-SELECT FILTR (uživatel / status) ───────────────────
+
+    function toggleLogMsf(kind) {
+        var wrap = document.getElementById('log-msf-' + kind);
+        if (!wrap) return;
+        var wasOpen = wrap.classList.contains('active');
+        _closeLogMsf();
+        if (!wasOpen) {
+            wrap.classList.add('active');
+            _logMsfOpen = kind;
+            var search = document.getElementById('log-msf-' + kind + '-search');
+            if (search) {
+                search.value = '';
+                _renderLogMsfOptions(kind);
+                setTimeout(function () { search.focus(); }, 0);
+            }
+        }
+    }
+
+    function _closeLogMsf() {
+        ['user', 'status'].forEach(function (kind) {
+            var wrap = document.getElementById('log-msf-' + kind);
+            if (wrap) wrap.classList.remove('active');
+        });
+        _logMsfOpen = null;
+    }
+
+    function _renderLogMsfOptions(kind) {
+        var container = document.getElementById('log-msf-' + kind + '-options');
+        if (!container) return;
+        var searchEl = document.getElementById('log-msf-' + kind + '-search');
+        var q = ((searchEl && searchEl.value) || '').trim().toLowerCase();
+        var opts = _logOptions[kind].filter(function (o) { return !q || o.label.toLowerCase().indexOf(q) !== -1; });
+
+        if (opts.length === 0) {
+            container.innerHTML = '<div class="log-msf-option-empty">Nic nenalezeno</div>';
+            return;
+        }
+        var selected = _logSelected[kind];
+        container.innerHTML = opts.map(function (o) {
+            var checked = selected.has(o.id) ? 'checked' : '';
+            var dot = kind === 'status'
+                ? '<span class="log-msf-option-dot" style="background:' + (o.color || '#94a3b8') + ';"></span>'
+                : '';
+            return '<label class="log-msf-option"><input type="checkbox" ' + checked +
+                ' onchange="_logMsfToggle(\'' + kind + '\',\'' + o.id + '\')">' + dot +
+                '<span>' + escapeHtml(o.label) + '</span></label>';
+        }).join('');
+    }
+
+    function _logMsfToggle(kind, id) {
+        var set = _logSelected[kind];
+        if (set.has(id)) set.delete(id); else set.add(id);
+        _updateLogMsfLabel(kind);
+        filterActivityLog();
+    }
+
+    function _logMsfSelectAll(kind) {
+        var searchEl = document.getElementById('log-msf-' + kind + '-search');
+        var q = ((searchEl && searchEl.value) || '').trim().toLowerCase();
+        _logOptions[kind].filter(function (o) { return !q || o.label.toLowerCase().indexOf(q) !== -1; })
+            .forEach(function (o) { _logSelected[kind].add(o.id); });
+        _renderLogMsfOptions(kind);
+        _updateLogMsfLabel(kind);
+        filterActivityLog();
+    }
+
+    function _logMsfClearAll(kind) {
+        _logSelected[kind].clear();
+        _renderLogMsfOptions(kind);
+        _updateLogMsfLabel(kind);
+        filterActivityLog();
+    }
+
+    function _updateLogMsfLabel(kind) {
+        var label = document.getElementById('log-msf-' + kind + '-label');
+        if (!label) return;
+        var set = _logSelected[kind];
+        var defaultText = kind === 'user' ? 'Všichni uživatelé' : 'Všechny statusy';
+        if (set.size === 0) {
+            label.textContent = defaultText;
+        } else if (set.size === 1) {
+            var id = Array.from(set)[0];
+            var opt = _logOptions[kind].find(function (o) { return o.id === id; });
+            label.textContent = opt ? opt.label : '1 vybráno';
+        } else {
+            label.textContent = set.size + ' vybráno';
+        }
+    }
+
+    // Zavřít popover při kliknutí mimo něj
+    document.addEventListener('click', function (e) {
+        if (_logMsfOpen && !e.target.closest('#log-msf-' + _logMsfOpen)) {
+            _closeLogMsf();
+        }
+    });
 
     function filterActivityLog() {
         _renderLogTable();
     }
 
     function resetActivityLogFilters() {
-        document.getElementById('log-filter-user').value = '';
-        document.getElementById('log-filter-status').value = '';
+        _logSelected.user.clear();
+        _logSelected.status.clear();
+        ['user', 'status'].forEach(function (kind) {
+            var search = document.getElementById('log-msf-' + kind + '-search');
+            if (search) search.value = '';
+            _renderLogMsfOptions(kind);
+            _updateLogMsfLabel(kind);
+        });
         document.getElementById('log-filter-from').value = '';
         document.getElementById('log-filter-to').value = '';
         _renderLogTable();
@@ -5958,14 +6069,12 @@
         var tbody = document.getElementById('log-table-body');
         if (!tbody) return;
 
-        var filterUser = document.getElementById('log-filter-user').value;
-        var filterStatus = document.getElementById('log-filter-status').value;
         var filterFrom = document.getElementById('log-filter-from').value;
         var filterTo = document.getElementById('log-filter-to').value;
 
         var filtered = _logData.filter(function (e) {
-            if (filterUser && e.user_id !== filterUser) return false;
-            if (filterStatus && e.status_id !== filterStatus) return false;
+            if (_logSelected.user.size && !_logSelected.user.has(e.user_id)) return false;
+            if (_logSelected.status.size && !_logSelected.status.has(e.status_id)) return false;
             if (filterFrom && e.date < filterFrom) return false;
             if (filterTo && e.date > filterTo) return false;
             return true;
