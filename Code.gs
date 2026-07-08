@@ -11,6 +11,28 @@ function _resolveOrgRole(user, positions) {
   return user.org_role || ROLES.ORG.MEMBER;
 }
 
+// Vrátí true, pokud je uživatel reálně aktivní - tedy má active !== 'false' A zároveň
+// nemá date_end v minulosti (odvozená neaktivita při odchodu, stejná logika jako
+// Admin.getAllUsers is_derived_active).
+function _isUserActiveNow(user) {
+  if (!user) return false;
+  if (user.active === 'false') return false;
+  if (!user.date_end) return true;
+  var endDate;
+  if (user.date_end instanceof Date) {
+    endDate = user.date_end;
+  } else {
+    var parts = String(user.date_end).split(/[-T]/);
+    endDate = parts.length >= 3
+      ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      : new Date(user.date_end);
+  }
+  if (isNaN(endDate.getTime())) return true;
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return endDate >= today;
+}
+
 // Pomocná funkce pro sjednocení formátu data (vždy YYYY-MM-DD) dle TZ spreadsheetu
 function _toPfx(val, ss) {
   if (!val) return "";
@@ -2476,12 +2498,13 @@ function _buildAttendanceLogEntries(currentUser) {
     rbacConfig: rbacConfig
   });
 
-  // Uživatelé ve stejném úseku
+  // Uživatelé ve stejném úseku - jen reálně aktivní (active='true' a zároveň bez
+  // proběhlého date_end, stejná logika jako "neaktivní" badge v administraci uživatelů)
   const sectionId = currentUser.section_id;
   const sectionUserMap = {};
   const sectionUserObjMap = {};
   allUsers.forEach(function(u) {
-    if (u.section_id === sectionId && u.active === 'true') {
+    if (u.section_id === sectionId && _isUserActiveNow(u)) {
       u.org_role = _resolveOrgRole(u, positions);
       sectionUserMap[u.user_id] = u.first_name + ' ' + u.last_name;
       sectionUserObjMap[u.user_id] = u;

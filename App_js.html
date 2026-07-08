@@ -5917,6 +5917,7 @@
     var _logData = [];
     var _logOffset = 0;
     var _logHasMore = false;
+    var _logServerTotal = 0;
     var _logSelected = { user: new Set(), status: new Set() };
     var _logOptions = { user: [], status: [] };
     var _logMsfOpen = null; // 'user' | 'status' | null
@@ -5929,6 +5930,7 @@
         _logData = [];
         _logOffset = 0;
         _logHasMore = false;
+        _logServerTotal = 0;
         _logSort = { field: 'created_at', dir: 'desc' };
 
         // Reset filtrů
@@ -5970,12 +5972,11 @@
 
             _logOffset = offset + (res.entries || []).length;
             _logHasMore = res.hasMore || false;
+            _logServerTotal = res.total || _logData.length;
             _renderLogTable();
 
             var loadMoreDiv = document.getElementById('log-load-more');
             if (loadMoreDiv) loadMoreDiv.style.display = _logHasMore ? 'flex' : 'none';
-            var countInfo = document.getElementById('log-count-info');
-            if (countInfo) countInfo.textContent = 'Zobrazeno ' + _logData.length + ' z ' + (res.total || _logData.length);
         }).catch(function (e) {
             document.getElementById('log-table-body').innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba načítání</td></tr>';
             console.warn('getAttendanceLog error:', e);
@@ -6164,6 +6165,8 @@
         var filterFrom = document.getElementById('log-filter-from').value;
         var filterTo = document.getElementById('log-filter-to').value;
 
+        var filterActive = _logSelected.user.size > 0 || _logSelected.status.size > 0 || !!filterFrom || !!filterTo;
+
         var filtered = _logData.filter(function (e) {
             if (_logSelected.user.size && !_logSelected.user.has(e.user_id)) return false;
             if (_logSelected.status.size && !_logSelected.status.has(e.status_id)) return false;
@@ -6171,6 +6174,13 @@
             if (filterTo && e.date > filterTo) return false;
             return true;
         });
+
+        var countInfo = document.getElementById('log-count-info');
+        if (countInfo) {
+            countInfo.textContent = filterActive
+                ? 'Vyfiltrováno ' + filtered.length + ' z ' + _logData.length + ' načtených (celkem ' + _logServerTotal + ')'
+                : 'Zobrazeno ' + _logData.length + ' z ' + _logServerTotal;
+        }
 
         if (filtered.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Žádné záznamy</td></tr>';

@@ -1,5 +1,13 @@
 [
   {
+    "version": "2.13.9",
+    "date": "2026-07-08",
+    "changes": [
+      "Log docházky a export nyní vylučují i uživatele, kteří mají v administraci proběhlé datum ukončení (dřív se filtrovalo jen podle příznaku active, takže se v logu/exportu mohli objevit i lidé vedení jako neaktivní kvůli odchodu)",
+      "Počet zobrazených záznamů v Logu docházky nyní odpovídá aktivnímu filtru (\"Vyfiltrováno X z Y načtených\"), místo aby stále ukazoval celkový počet bez ohledu na filtr"
+    ]
+  },
+  {
     "version": "2.13.8",
     "date": "2026-07-08",
     "changes": [
