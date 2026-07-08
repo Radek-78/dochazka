@@ -2618,36 +2618,55 @@ function exportAttendanceLogToSheet(filters) {
     sheet.autoResizeColumns(1, 6);
     sheet.setFrozenRows(1);
 
-    // Web app běží jako USER_DEPLOYING (appsscript.json), takže soubor vznikne pod účtem
-    // nasazujícího admina, ne pod účtem uživatele, který export spustil. Proto ho explicitně
-    // nasdílíme, aby k němu měl přístup vždy i požadující uživatel.
+    // Web app běží jako USER_DEPLOYING (appsscript.json), takže soubor primárně vznikne pod
+    // účtem nasazujícího admina. Pokusíme se vlastnictví převést přímo na uživatele, který
+    // export spustil, aby byl soubor skutečně jeho (funguje jen v rámci stejné Google
+    // Workspace domény a pokud to povoluje nastavení domény). Když se to nepodaří, alespoň
+    // ho explicitně nasdílíme a uložíme do sdílené složky vedle databáze jako dřív.
+    var ownershipTransferred = false;
     if (currentUser.email) {
       try {
-        ss.addEditor(currentUser.email);
-      } catch (shareErr) {
-        console.warn('exportAttendanceLogToSheet: sdílení s uživatelem selhalo:', shareErr);
+        var ownerPermission = Drive.newPermission();
+        ownerPermission.role = 'owner';
+        ownerPermission.type = 'user';
+        ownerPermission.value = currentUser.email;
+        Drive.Permissions.insert(ownerPermission, ss.getId(), { sendNotificationEmails: false, transferOwnership: true });
+        ownershipTransferred = true;
+      } catch (ownerErr) {
+        console.warn('exportAttendanceLogToSheet: převod vlastnictví selhal, sdílím jako editor:', ownerErr);
       }
     }
 
-    // Přesun exportu do stejné složky jako core databáze (konzistentně se zálohami v Backup.gs)
-    try {
-      const coreId = DB.getCore().getId();
-      const parentFolder = DriveApp.getFileById(coreId).getParents().next();
-      var exportFolder;
-      var folders = parentFolder.getFoldersByName("Exporty Docházky");
-      if (folders.hasNext()) {
-        exportFolder = folders.next();
-      } else {
-        exportFolder = parentFolder.createFolder("Exporty Docházky");
+    if (!ownershipTransferred) {
+      if (currentUser.email) {
+        try {
+          ss.addEditor(currentUser.email);
+        } catch (shareErr) {
+          console.warn('exportAttendanceLogToSheet: sdílení s uživatelem selhalo:', shareErr);
+        }
       }
-      const file = DriveApp.getFileById(ss.getId());
-      exportFolder.addFile(file);
-      DriveApp.getRootFolder().removeFile(file);
-    } catch (moveErr) {
-      console.warn('exportAttendanceLogToSheet: přesun do složky selhal (export samotný proběhl):', moveErr);
+
+      // Přesun exportu do stejné složky jako core databáze (konzistentně se zálohami v Backup.gs)
+      // - jen pokud soubor zůstává pod admin účtem (fallback).
+      try {
+        const coreId = DB.getCore().getId();
+        const parentFolder = DriveApp.getFileById(coreId).getParents().next();
+        var exportFolder;
+        var folders = parentFolder.getFoldersByName("Exporty Docházky");
+        if (folders.hasNext()) {
+          exportFolder = folders.next();
+        } else {
+          exportFolder = parentFolder.createFolder("Exporty Docházky");
+        }
+        const file = DriveApp.getFileById(ss.getId());
+        exportFolder.addFile(file);
+        DriveApp.getRootFolder().removeFile(file);
+      } catch (moveErr) {
+        console.warn('exportAttendanceLogToSheet: přesun do složky selhal (export samotný proběhl):', moveErr);
+      }
     }
 
-    return { success: true, url: ss.getUrl(), count: logEntries.length };
+    return { success: true, url: ss.getUrl(), count: logEntries.length, owned: ownershipTransferred };
   } catch(e) {
     return { success: false, error: e.toString() };
   }

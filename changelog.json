@@ -1,5 +1,13 @@
 [
   {
+    "version": "2.13.6",
+    "date": "2026-07-08",
+    "changes": [
+      "Export logu docházky do Sheets nyní primárně převádí vlastnictví souboru přímo na uživatele, který export spustil (funguje v rámci stejné Google Workspace domény)",
+      "Pokud převod vlastnictví není možný, export se bezpečně vrátí k dřívějšímu chování (sdílení + uložení do složky vedle databáze)"
+    ]
+  },
+  {
     "version": "2.13.5",
     "date": "2026-07-08",
     "changes": [
