@@ -1530,7 +1530,7 @@
             var currentSlot = _attModal.nextHalfSlot;
 
             preview.innerHTML = `
-            <div class="att-status-preview-slot ${currentSlot === 'AM' ? 'active-slot' : ''} ${!amStatus ? 'empty-slot' : ''}">
+            <div class="att-status-preview-slot ${currentSlot === 'AM' ? 'active-slot' : ''} ${!amStatus ? 'empty-slot' : ''}" onclick="switchHalfSlot('AM')" title="Přepnout na dopoledne">
                 <span class="slot-label">DOP</span>
                 ${amStatus ? `
                     <div class="att-status-preview-chip" style="background:${amStatus.color}; color:${amStatus.text_color};">
@@ -1539,7 +1539,7 @@
                     <div class="att-status-preview-name">${amStatus.name}</div>
                 ` : '<span class="att-status-preview-name" style="color:#94a3b8; font-style:italic;">---</span>'}
             </div>
-            <div class="att-status-preview-slot ${currentSlot === 'PM' ? 'active-slot' : ''} ${!pmStatus ? 'empty-slot' : ''}">
+            <div class="att-status-preview-slot ${currentSlot === 'PM' ? 'active-slot' : ''} ${!pmStatus ? 'empty-slot' : ''}" onclick="switchHalfSlot('PM')" title="Přepnout na odpoledne">
                 <span class="slot-label">ODP</span>
                 ${pmStatus ? `
                     <div class="att-status-preview-chip" style="background:${pmStatus.color}; color:${pmStatus.text_color};">
@@ -1638,6 +1638,51 @@
         // Refresh gridu pro zobrazení výběru a preview
         _renderStatusGrid(_attModal.canEdit);
         _updateStatusPreview();
+    }
+
+    /**
+     * Přepne aktivní půldenní slot (DOP/ODP) v už otevřeném modalu - ať už při prvním
+     * zadávání, nebo při editaci dne, kde už oba půldny mají přiřazený status. Umožňuje
+     * volně "překlikávat" mezi dopolednem a odpolednem, ne jen postupně vpřed.
+     */
+    function switchHalfSlot(slot) {
+        if (_attModal.mode !== 'HALF' || !_attModal.userId) return;
+        if (_attModal.nextHalfSlot === slot) return;
+
+        // Ulož rozepsanou poznámku předchozího slotu, než přepneme
+        _flushNoteSection();
+
+        _attModal.nextHalfSlot = slot;
+        _attModal.slot = slot;
+        _attModal.selectedStatusId = (slot === 'AM') ? _attModal.amStatusId : _attModal.pmStatusId;
+
+        const helperText = document.getElementById('slot-helper-text');
+        if (helperText) helperText.textContent = slot === 'AM' ? 'VYBERTE STATUS PRO DOPOLEDNE' : 'VYBERTE STATUS PRO ODPOLEDNE';
+
+        _renderStatusGrid(_attModal.canEdit);
+        _updateStatusPreview();
+
+        // Synchronizovat dynamickou oblast (mapa/poznámka/čas příchodu) se statusem tohoto slotu
+        var statusId = _attModal.selectedStatusId;
+        var needsDesk = _statusNeedsDeskReservation(statusId) && plannerData && plannerData.officeMap;
+        var needsWorkTime = _shouldShowWorkStartTimeBox(statusId);
+        var needsNote = _statusNeedsNote(statusId);
+
+        if (needsWorkTime) {
+            _showWorkStartTimeBox(slot);
+        } else {
+            _hideWorkStartTimeBox();
+        }
+        if (needsDesk) {
+            _showMapInModal(_attModal.date);
+        } else {
+            _hideMapInModal();
+        }
+        if (needsNote) {
+            _showNoteSection(slot);
+        } else {
+            _hideNoteSection();
+        }
     }
 
     function openAttendanceModal(userId, date) {

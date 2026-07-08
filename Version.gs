@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.7";
+const APP_VERSION = "2.13.8";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.8",
+    "date": "2026-07-08",
+    "changes": [
+      "Denní modal: náhledové dlaždice DOP/ODP v půldenním režimu jsou nyní klikatelné a umožňují volně přepínat mezi dopolednem a odpolednem (dřív šlo jen postupně vpřed při prvním zadávání)",
+      "Mapa kanceláře, poznámka i čas příchodu se při přepnutí slotu automaticky synchronizují s aktuálně přiřazeným statusem daného půldne"
+    ]
+  },
   {
     "version": "2.13.7",
     "date": "2026-07-08",
