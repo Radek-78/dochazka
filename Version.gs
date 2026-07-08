@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.9";
+const APP_VERSION = "2.13.10";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.10",
+    "date": "2026-07-08",
+    "changes": [
+      "Úvodní splash obrazovka nyní zobrazuje verzi a datum poslední aktualizace pod loaderem (bráno automaticky z APP_VERSION/APP_CHANGELOG, stejně jako patička)"
+    ]
+  },
   {
     "version": "2.13.9",
     "date": "2026-07-08",
