@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.3";
+const APP_VERSION = "2.13.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.4",
+    "date": "2026-07-08",
+    "changes": [
+      "Oprava horního modulu denních statistik: zařazení do Kancelář/Home office/Dovolená už nehádá podle textu v názvu statusu, ale podle skutečných příznaků statusu (rezervace stolu, dovolená, maskovací status)",
+      "Maskovací statusy (např. GDPR náhrada 'Mimo kancelář') se už nikdy chybně nezařadí jako Kancelář jen kvůli shodě slova v názvu"
+    ]
+  },
   {
     "version": "2.13.3",
     "date": "2026-07-07",

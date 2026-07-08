@@ -2094,18 +2094,22 @@ function getDailyStats(dateStr) {
       }
       
       const fullName = u.first_name + " " + u.last_name;
-      const sName = status.name ? status.name.toLowerCase() : "";
-      const sCat = status.category ? status.category.toLowerCase() : "";
+      const sKind = String(status.status_kind || "NORMAL").toUpperCase();
+      const isVacation = String(status.is_vacation) === "true";
+      const isDeskOffice = String(status.allows_desk_reservation) === "true";
+      const sCat = (status.category || "").trim();
       const color = status.color || "#94a3b8";
 
       const item = { name: fullName, status: status.name, color: color, category: status.category || "Ostatní" };
 
-      if (sName.includes('kancelář')) {
+      if (sKind === "MASK") {
+        stats.ostatni.push(item);
+      } else if (isDeskOffice) {
         stats.kancelar.push(item);
-      } else if (sName.includes('homeoffice') || sName.includes('home office')) {
-        stats.homeoffice.push(item);
-      } else if (sCat.includes('volno') || sCat.includes('absence') || sName.includes('dovolená') || sName.includes('volno')) {
+      } else if (isVacation) {
         stats.dovolena.push(item);
+      } else if (sCat === "Práce") {
+        stats.homeoffice.push(item);
       } else {
         stats.ostatni.push(item);
       }
