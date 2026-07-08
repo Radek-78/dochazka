@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.6";
+const APP_VERSION = "2.13.7";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.7",
+    "date": "2026-07-08",
+    "changes": [
+      "Export logu docházky: soubor se nyní vždy uloží do složky Exporty Docházky vedle databáze a navíc se mu (na Workspace doméně) předá vlastnictví uživateli, který export spustil - dřív se přesun do složky přeskočil, pokud se předání vlastnictví povedlo"
+    ]
+  },
   {
     "version": "2.13.6",
     "date": "2026-07-08",
