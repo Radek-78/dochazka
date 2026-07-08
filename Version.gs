@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.4";
+const APP_VERSION = "2.13.5";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.5",
+    "date": "2026-07-08",
+    "changes": [
+      "Oprava: rozepsaná poznámka se už neztratí při přepnutí mezi dopoledním a odpoledním statusem v půldenním zadávání (ukládá se automaticky před přepnutím slotu)",
+      "Export logu docházky do Sheets nyní explicitně sdílí vzniklý soubor s uživatelem, který export spustil (web app běží pod účtem nasazujícího admina)"
+    ]
+  },
   {
     "version": "2.13.4",
     "date": "2026-07-08",

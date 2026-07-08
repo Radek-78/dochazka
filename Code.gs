@@ -2618,6 +2618,17 @@ function exportAttendanceLogToSheet(filters) {
     sheet.autoResizeColumns(1, 6);
     sheet.setFrozenRows(1);
 
+    // Web app běží jako USER_DEPLOYING (appsscript.json), takže soubor vznikne pod účtem
+    // nasazujícího admina, ne pod účtem uživatele, který export spustil. Proto ho explicitně
+    // nasdílíme, aby k němu měl přístup vždy i požadující uživatel.
+    if (currentUser.email) {
+      try {
+        ss.addEditor(currentUser.email);
+      } catch (shareErr) {
+        console.warn('exportAttendanceLogToSheet: sdílení s uživatelem selhalo:', shareErr);
+      }
+    }
+
     // Přesun exportu do stejné složky jako core databáze (konzistentně se zálohami v Backup.gs)
     try {
       const coreId = DB.getCore().getId();

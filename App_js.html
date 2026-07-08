@@ -1242,6 +1242,8 @@
         if (!section || !textarea) return;
         var wasHidden = section.style.display === 'none' || section.style.display === '';
         var slotChanged = _attModal._noteSlot !== slot;
+        // Než přepneme na jiný slot, ulož rozepsaný text toho předchozího (jinak by se ztratil)
+        if (!wasHidden && slotChanged) _flushNoteSection();
         section.style.display = 'block';
         if (wasHidden || slotChanged) {
             var key = _attModal.userId + '_' + _attModal.date + '_' + slot;
@@ -1252,9 +1254,31 @@
     }
 
     function _hideNoteSection() {
+        _flushNoteSection();
         var section = document.getElementById('att-note-section');
         if (section) section.style.display = 'none';
         _attModal._noteSlot = null;
+    }
+
+    /**
+     * Uloží aktuální obsah textarey poznámky do záznamu slotu, který byl naposledy aktivní
+     * (_attModal._noteSlot). Volá se před každým skrytím/přepnutím sekce poznámky, aby se
+     * nikdy neztratil rozepsaný text (např. při přepnutí z dopoledne na odpoledne v půldenním módu).
+     */
+    function _flushNoteSection() {
+        var textarea = document.getElementById('att-note-input');
+        var slot = _attModal._noteSlot;
+        if (!textarea || !slot || !_attModal.userId || !_attModal.date) return;
+        var key = _attModal.userId + '_' + _attModal.date + '_' + slot;
+        var entry = _attendanceData[key];
+        if (!entry || entry.note === textarea.value) return;
+        entry.note = textarea.value;
+        _attWriteQueue[key] = entry;
+        _persistQueues();
+        clearTimeout(_attSaveTimer);
+        _attSaveTimer = setTimeout(flushAttendanceQueue, 400);
+        var cellEl = getCellElement(_attModal.userId, _attModal.date);
+        if (cellEl) renderAttendanceCell(cellEl, _attModal.userId, _attModal.date);
     }
 
     /**
@@ -1933,27 +1957,10 @@
             workStartBox.style.display = 'none';
         }
 
-        // Pokud je viditelná sekce poznámky, ulož ji do aktuálního záznamu
+        // Ulož rozepsanou poznámku (pokud byla sekce viditelná) a skryj ji
+        _flushNoteSection();
         var noteSection = document.getElementById('att-note-section');
-        if (noteSection && noteSection.style.display !== 'none') {
-            var noteInput = document.getElementById('att-note-input');
-            var noteSlot = _attModal._noteSlot;
-            if (noteInput && _attModal.userId && _attModal.date && noteSlot) {
-                var noteDk = String(_attModal.date).substring(0, 10);
-                var noteKey = _attModal.userId + '_' + noteDk + '_' + noteSlot;
-                var noteEntry = _attendanceData[noteKey];
-                if (noteEntry && noteEntry.note !== noteInput.value) {
-                    noteEntry.note = noteInput.value;
-                    _attWriteQueue[noteKey] = noteEntry;
-                    _persistQueues();
-                    clearTimeout(_attSaveTimer);
-                    _attSaveTimer = setTimeout(flushAttendanceQueue, 400);
-                    var noteCellEl = getCellElement(_attModal.userId, noteDk);
-                    if (noteCellEl) renderAttendanceCell(noteCellEl, _attModal.userId, noteDk);
-                }
-            }
-            noteSection.style.display = 'none';
-        }
+        if (noteSection) noteSection.style.display = 'none';
 
         document.getElementById('attendance-modal').classList.remove('visible');
 
