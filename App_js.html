@@ -5922,6 +5922,13 @@
     var _logOptions = { user: [], status: [] };
     var _logMsfOpen = null; // 'user' | 'status' | null
     var _logSort = { field: 'created_at', dir: 'desc' };
+    // Filtrovaný režim: null = žádný filtr (browsuje se _logData po stránkách),
+    // jinak pole VŠECH záznamů z celé DB odpovídajících filtru (nezávisle na stránkování)
+    var _logFilteredData = null;
+    var _logFilteredTotal = 0;
+    var _logFilteredTruncated = false;
+    var _logFilterFetchToken = 0;
+    var _logFilterDebounceTimer = null;
 
     function openActivityLogModal() {
         var modal = document.getElementById('activity-log-modal');
@@ -5932,6 +5939,9 @@
         _logHasMore = false;
         _logServerTotal = 0;
         _logSort = { field: 'created_at', dir: 'desc' };
+        _logFilteredData = null;
+        _logFilteredTotal = 0;
+        _logFilteredTruncated = false;
 
         // Reset filtrů
         _logSelected = { user: new Set(), status: new Set() };
@@ -5974,9 +5984,6 @@
             _logHasMore = res.hasMore || false;
             _logServerTotal = res.total || _logData.length;
             _renderLogTable();
-
-            var loadMoreDiv = document.getElementById('log-load-more');
-            if (loadMoreDiv) loadMoreDiv.style.display = _logHasMore ? 'flex' : 'none';
         }).catch(function (e) {
             document.getElementById('log-table-body').innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba načítání</td></tr>';
             console.warn('getAttendanceLog error:', e);
@@ -6109,8 +6116,55 @@
         }
     });
 
+    function _isLogFilterActive() {
+        var filterFrom = document.getElementById('log-filter-from').value;
+        var filterTo = document.getElementById('log-filter-to').value;
+        return _logSelected.user.size > 0 || _logSelected.status.size > 0 || !!filterFrom || !!filterTo;
+    }
+
+    /**
+     * Filtr v Logu docházky musí prohledávat CELOU databázi, ne jen aktuálně načtenou
+     * stránku (max 500 řádků) - proto se při aktivním filtru dotáže serveru na všechny
+     * odpovídající záznamy místo pouhého filtrování _logData. Debounce 300ms, aby rychlé
+     * odškrtávání víc položek ve filtru nezpůsobilo zbytečnou sérii požadavků.
+     */
     function filterActivityLog() {
-        _renderLogTable();
+        clearTimeout(_logFilterDebounceTimer);
+        _logFilterDebounceTimer = setTimeout(_applyLogFilter, 300);
+    }
+
+    function _applyLogFilter() {
+        if (!_isLogFilterActive()) {
+            _logFilteredData = null;
+            _renderLogTable();
+            return;
+        }
+        var myToken = ++_logFilterFetchToken;
+        var tbody = document.getElementById('log-table-body');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Filtruji...</td></tr>';
+
+        var filters = {
+            userIds: Array.from(_logSelected.user),
+            statusIds: Array.from(_logSelected.status),
+            dateFrom: document.getElementById('log-filter-from').value,
+            dateTo: document.getElementById('log-filter-to').value
+        };
+
+        callServer('getFilteredAttendanceLog', filters).then(function (res) {
+            if (myToken !== _logFilterFetchToken) return; // mezitím přišel novější požadavek
+            if (!res || !res.success) {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba: ' + ((res && res.error) || 'Neznámá') + '</td></tr>';
+                return;
+            }
+            _logFilteredData = res.entries || [];
+            _logFilteredTotal = res.total || _logFilteredData.length;
+            _logFilteredTruncated = !!res.truncated;
+            _renderLogTable();
+        }).catch(function (e) {
+            if (myToken !== _logFilterFetchToken) return;
+            if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Chyba filtrování</td></tr>';
+            console.warn('getFilteredAttendanceLog error:', e);
+        });
     }
 
     function resetActivityLogFilters() {
@@ -6124,6 +6178,9 @@
         });
         document.getElementById('log-filter-from').value = '';
         document.getElementById('log-filter-to').value = '';
+        clearTimeout(_logFilterDebounceTimer);
+        _logFilterFetchToken++; // zahodí případnou odpověď na dřívější požadavek
+        _logFilteredData = null;
         _renderLogTable();
     }
 
@@ -6162,27 +6219,24 @@
         var tbody = document.getElementById('log-table-body');
         if (!tbody) return;
 
-        var filterFrom = document.getElementById('log-filter-from').value;
-        var filterTo = document.getElementById('log-filter-to').value;
-
-        var filterActive = _logSelected.user.size > 0 || _logSelected.status.size > 0 || !!filterFrom || !!filterTo;
-
-        var filtered = _logData.filter(function (e) {
-            if (_logSelected.user.size && !_logSelected.user.has(e.user_id)) return false;
-            if (_logSelected.status.size && !_logSelected.status.has(e.status_id)) return false;
-            if (filterFrom && e.date < filterFrom) return false;
-            if (filterTo && e.date > filterTo) return false;
-            return true;
-        });
+        var isFiltered = _logFilteredData !== null;
+        var rows = isFiltered ? _logFilteredData : _logData;
 
         var countInfo = document.getElementById('log-count-info');
         if (countInfo) {
-            countInfo.textContent = filterActive
-                ? 'Vyfiltrováno ' + filtered.length + ' z ' + _logData.length + ' načtených (celkem ' + _logServerTotal + ')'
-                : 'Zobrazeno ' + _logData.length + ' z ' + _logServerTotal;
+            if (isFiltered) {
+                countInfo.textContent = _logFilteredTruncated
+                    ? 'Nalezeno ' + _logFilteredTotal + ' záznamů, zobrazeno prvních ' + rows.length + ' (upřesněte filtr)'
+                    : 'Nalezeno ' + rows.length + ' záznamů';
+            } else {
+                countInfo.textContent = 'Zobrazeno ' + _logData.length + ' z ' + _logServerTotal;
+            }
         }
 
-        if (filtered.length === 0) {
+        var loadMoreDiv = document.getElementById('log-load-more');
+        if (loadMoreDiv) loadMoreDiv.style.display = (!isFiltered && _logHasMore) ? 'flex' : 'none';
+
+        if (rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="log-empty-state">Žádné záznamy</td></tr>';
             _updateLogSortHeaders();
             return;
@@ -6190,7 +6244,7 @@
 
         var slotLabels = { 'ALL_DAY': 'Celý den', 'AM': 'Dopoledne', 'PM': 'Odpoledne' };
 
-        filtered.sort(function (a, b) {
+        var filtered = rows.slice().sort(function (a, b) {
             var field = _logSort.field;
             var dir = _logSort.dir === 'asc' ? 1 : -1;
             var va, vb;

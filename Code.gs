@@ -2592,6 +2592,46 @@ function getAttendanceLog(offset) {
 }
 
 /**
+ * Aplikuje filtr uživatelů/statusů/data na pole log záznamů. Sdíleno mezi
+ * exportAttendanceLogToSheet a getFilteredAttendanceLog, aby obě místa filtrovala shodně.
+ */
+function _filterLogEntries(entries, filters) {
+  filters = filters || {};
+  const userIds = Array.isArray(filters.userIds) ? filters.userIds : [];
+  const statusIds = Array.isArray(filters.statusIds) ? filters.statusIds : [];
+  const dateFrom = filters.dateFrom || '';
+  const dateTo = filters.dateTo || '';
+  return entries.filter(function(e) {
+    if (userIds.length && userIds.indexOf(e.user_id) === -1) return false;
+    if (statusIds.length && statusIds.indexOf(e.status_id) === -1) return false;
+    if (dateFrom && e.date < dateFrom) return false;
+    if (dateTo && e.date > dateTo) return false;
+    return true;
+  });
+}
+
+/**
+ * Vrátí VŠECHNY záznamy logu docházky odpovídající filtru (nezávisle na stránkování
+ * getAttendanceLog) - používá se, když je v Logu docházky aktivní filtr, aby výsledek
+ * odpovídal celé databázi, ne jen aktuálně načtené stránce na klientovi.
+ */
+function getFilteredAttendanceLog(filters) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+
+    const filtered = _filterLogEntries(_buildAttendanceLogEntries(currentUser), filters);
+    const displayCap = 1000;
+    const truncated = filtered.length > displayCap;
+    const entries = truncated ? filtered.slice(0, displayCap) : filtered;
+
+    return { success: true, entries: entries, total: filtered.length, truncated: truncated };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Exportuje log docházky (respektuje aktivní filtry uživatele/statusu/data)
  * do nově vytvořeného Google Sheets a vrátí jeho URL.
  */
@@ -2600,19 +2640,7 @@ function exportAttendanceLogToSheet(filters) {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
 
-    filters = filters || {};
-    const userIds = Array.isArray(filters.userIds) ? filters.userIds : [];
-    const statusIds = Array.isArray(filters.statusIds) ? filters.statusIds : [];
-    const dateFrom = filters.dateFrom || '';
-    const dateTo = filters.dateTo || '';
-
-    var logEntries = _buildAttendanceLogEntries(currentUser).filter(function(e) {
-      if (userIds.length && userIds.indexOf(e.user_id) === -1) return false;
-      if (statusIds.length && statusIds.indexOf(e.status_id) === -1) return false;
-      if (dateFrom && e.date < dateFrom) return false;
-      if (dateTo && e.date > dateTo) return false;
-      return true;
-    });
+    var logEntries = _filterLogEntries(_buildAttendanceLogEntries(currentUser), filters);
 
     if (logEntries.length === 0) {
       return { success: false, error: "Žádné záznamy neodpovídají zadaným filtrům." };
@@ -2660,30 +2688,19 @@ function exportAttendanceLogToSheet(filters) {
       console.warn('exportAttendanceLogToSheet: přesun do složky selhal (export samotný proběhl):', moveErr);
     }
 
-    // 2) Web app běží jako USER_DEPLOYING (appsscript.json), takže soubor primárně vznikne pod
-    // účtem nasazujícího admina. Navíc zkusíme vlastnictví převést přímo na uživatele, který
-    // export spustil, aby byl soubor skutečně jeho (funguje v rámci stejné Google Workspace
-    // domény). Když se to nepodaří, alespoň ho explicitně nasdílíme.
-    var ownershipTransferred = false;
+    // 2) Web app běží jako USER_DEPLOYING (appsscript.json), takže soubor vznikne pod účtem
+    // nasazujícího admina. Explicitně ho nasdílíme uživateli, který export spustil - rychlejší
+    // než převod vlastnictví (samostatné Drive API volání navíc), soubor je pro něj plně
+    // editovatelný, jen technicky zůstává pod admin účtem.
     if (currentUser.email) {
       try {
-        var ownerPermission = Drive.newPermission();
-        ownerPermission.role = 'owner';
-        ownerPermission.type = 'user';
-        ownerPermission.value = currentUser.email;
-        Drive.Permissions.insert(ownerPermission, ss.getId(), { sendNotificationEmails: false, transferOwnership: true });
-        ownershipTransferred = true;
-      } catch (ownerErr) {
-        console.warn('exportAttendanceLogToSheet: převod vlastnictví selhal, sdílím jako editor:', ownerErr);
-        try {
-          ss.addEditor(currentUser.email);
-        } catch (shareErr) {
-          console.warn('exportAttendanceLogToSheet: sdílení s uživatelem selhalo:', shareErr);
-        }
+        ss.addEditor(currentUser.email);
+      } catch (shareErr) {
+        console.warn('exportAttendanceLogToSheet: sdílení s uživatelem selhalo:', shareErr);
       }
     }
 
-    return { success: true, url: ss.getUrl(), count: logEntries.length, owned: ownershipTransferred };
+    return { success: true, url: ss.getUrl(), count: logEntries.length };
   } catch(e) {
     return { success: false, error: e.toString() };
   }

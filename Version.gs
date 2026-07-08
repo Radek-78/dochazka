@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.10";
+const APP_VERSION = "2.13.11";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.11",
+    "date": "2026-07-08",
+    "changes": [
+      "Oprava: filtr v Logu docházky teď prohledává celou databázi místo jen aktuálně načtené stránky (max 500 řádků) - dřív mohl při filtrování ukázat výrazně méně záznamů, než uživatel reálně má",
+      "Počet výsledků filtru se nyní zobrazuje jako \"Nalezeno X záznamů\" místo matoucího \"Vyfiltrováno X z 500 načtených\"",
+      "Export do Sheets vrácen k rychlejšímu sdílení souboru (bez převodu vlastnictví) - export byl s převodem vlastnictví výrazně pomalejší"
+    ]
+  },
   {
     "version": "2.13.10",
     "date": "2026-07-08",
