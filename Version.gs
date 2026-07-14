@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.11";
+const APP_VERSION = "2.13.12";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.12",
+    "date": "2026-07-14",
+    "changes": [
+      "Oprava: box pro nastavení času příchodu se v denním modalu neukázal při otevření dne, který už měl status s časem příchodu přiřazený (fungovalo jen při novém výběru statusu kliknutím)",
+      "Oprava: box pro čas příchodu nyní při otevření/přepnutí dne správně předvyplní dříve uložený čas místo toho, aby ho tiše přepsal výchozí hodnotou",
+      "Oprava vycentrování modulu \"Použít také na\" v denním modalu - způsobeno zastaralým duplicitním CSS pravidlem z doby před redesignem"
+    ]
+  },
   {
     "version": "2.13.11",
     "date": "2026-07-08",

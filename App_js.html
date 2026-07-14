@@ -1337,12 +1337,12 @@
         return _statusIsOffice(statusId);
     }
 
-    function _showWorkStartTimeBox(slot) {
+    function _showWorkStartTimeBox(slot, savedTime) {
         var box = document.getElementById('att-work-start-box');
         var input = document.getElementById('att-work-start-time');
         if (!box || !input) return;
         var defaultTime = (plannerData && plannerData.user && plannerData.user.default_work_start_time) || '08:00';
-        input.value = _formatWorkTime(defaultTime) || '08:00';
+        input.value = (savedTime && _formatWorkTime(savedTime)) || _formatWorkTime(defaultTime) || '08:00';
         box.style.display = 'flex';
         _attModal._workStartSlot = slot;
     }
@@ -1669,7 +1669,8 @@
         var needsNote = _statusNeedsNote(statusId);
 
         if (needsWorkTime) {
-            _showWorkStartTimeBox(slot);
+            var slotEntry = _attendanceData[_attModal.userId + '_' + _attModal.date + '_' + slot];
+            _showWorkStartTimeBox(slot, slotEntry && slotEntry.work_start_time);
         } else {
             _hideWorkStartTimeBox();
         }
@@ -1772,6 +1773,11 @@
             _showNoteSection(slot);
         } else {
             _hideNoteSection();
+        }
+        if (curStatusId && _shouldShowWorkStartTimeBox(curStatusId)) {
+            _showWorkStartTimeBox(slot, existing && existing.work_start_time);
+        } else {
+            _hideWorkStartTimeBox();
         }
     }
 
