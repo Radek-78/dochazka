@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.12";
+const APP_VERSION = "2.13.13";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.13.13",
+    "date": "2026-07-14",
+    "changes": [
+      "Oprava: při změně statusu u dne, který už měl status vybraný, zůstávalo v mřížce statusů silně orámované staré tlačítko - mřížka se po výběru nového statusu nepřekreslila (týkalo se celodenního režimu i druhého kliknutí v půldenním režimu)"
+    ]
+  },
   {
     "version": "2.13.12",
     "date": "2026-07-14",

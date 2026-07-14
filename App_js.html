@@ -1848,6 +1848,7 @@
         if (_attModal.mode === 'FULL') {
             // Klasické celodenní zadávání
             _attModal.selectedStatusId = statusId;
+            _renderStatusGrid(_attModal.canEdit);
             var entry = { user_id: userId, date: date, slot: 'ALL_DAY', status_id: statusId };
 
             // Smazat případné půldenní, pokud zadáváme celodenní → i na serveru!
@@ -1898,6 +1899,7 @@
                 _renderStatusGrid(_attModal.canEdit);
             } else {
                 // Po druhém kliknutí (PM) zůstává v PM módu (ale status se mohl změnit)
+                _renderStatusGrid(_attModal.canEdit);
             }
             _updateStatusPreview();
         }
