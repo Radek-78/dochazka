@@ -3734,29 +3734,67 @@
         panel.innerHTML = `<div style="padding:32px; text-align:center; color:#94a3b8;">Načítám GDPR data...</div>`;
 
         try {
-            const [pendingRes, logRes] = await Promise.all([
+            const [pendingRes, logRes, autoPurgeRes, triggersRes] = await Promise.all([
                 callServer('adminGetPendingPurge'),
-                callServer('adminGetPurgeLog')
+                callServer('adminGetPurgeLog'),
+                callServer('adminGetAutoPurgeSetting'),
+                callServer('adminGetTriggersStatus')
             ]);
 
             const pending = pendingRes && pendingRes.success ? pendingRes.data : null;
             const log = logRes && logRes.success ? logRes.data : [];
+            const autoPurgeEnabled = !!(autoPurgeRes && autoPurgeRes.success && autoPurgeRes.data && autoPurgeRes.data.enabled);
+            const triggerInstalled = !!(triggersRes && triggersRes.success && triggersRes.data && triggersRes.data.monthlyPurgeAnalysis);
 
-            panel.innerHTML = admin._renderGdprPanel(pending, log);
+            panel.innerHTML = admin._renderGdprPanel(pending, log, autoPurgeEnabled, triggerInstalled);
         } catch(e) {
             panel.innerHTML = `<div style="padding:32px; color:#ef4444;">Chyba: ${e}</div>`;
         }
     };
 
-    admin._renderGdprPanel = function(pending, log) {
+    admin._renderGdprPanel = function(pending, log, autoPurgeEnabled, triggerInstalled) {
         const now = new Date();
         const cutoffPreview = admin._gdprCutoffPreview(now);
 
         let html = `
         <div style="max-width:900px;">
             <div style="font-size:22px; font-weight:800; color:#1e293b; margin-bottom:6px;">🔒 GDPR / Archivace docházky</div>
-            <div style="font-size:13px; color:#64748b; margin-bottom:28px;">
+            <div style="font-size:13px; color:#64748b; margin-bottom:20px;">
                 Retenční politika: aktuální měsíc + 2 předchozí. Dovolené se uchovávají do konce kalendářního roku.
+            </div>
+
+            ${triggerInstalled ? `
+            <div style="display:flex; align-items:center; gap:10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:10px 16px; margin-bottom:14px; font-size:12px; color:#166534;">
+                <span>✅</span><span>Měsíční trigger analýzy je nastavený (1. den v měsíci, 01:00).</span>
+            </div>` : `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; background:#fef2f2; border:1.5px solid #fca5a5; border-radius:10px; padding:12px 16px; margin-bottom:14px;">
+                <div style="font-size:12px; color:#991b1b;">
+                    <strong>⚠️ Měsíční trigger analýzy není nastavený.</strong><br>
+                    Bez něj se analýza (a tedy ani automatické mazání) nikdy nespustí sama — je nutné ji pouštět ručně tlačítkem níže.
+                </div>
+                <button onclick="admin.setupSystemTriggers()"
+                    style="background:#dc2626; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-weight:800; font-size:12px; cursor:pointer; white-space:nowrap;">
+                    Nastavit trigger
+                </button>
+            </div>`}
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; background:#fff; border:1.5px solid ${autoPurgeEnabled ? '#fca5a5' : '#e2e8f0'}; border-radius:12px; padding:14px 18px; margin-bottom:20px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <span style="font-size:20px;">⚙️</span>
+                    <div>
+                        <div style="font-size:13px; font-weight:800; color:#1e293b;">Automatické měsíční mazání</div>
+                        <div style="font-size:11.5px; color:#64748b; margin-top:2px; max-width:520px;">
+                            1. den každého měsíce v 01:00 systém provede analýzu a bez čekání na ruční schválení rovnou smaže záznamy mimo retenci (záloha se vytvoří vždy). Pokud je vypnuto, jen se čeká na schválení zde v administraci jako dosud.
+                        </div>
+                    </div>
+                </div>
+                <label style="position:relative; display:inline-block; width:46px; height:25px; cursor:pointer; flex-shrink:0;">
+                    <input type="checkbox" ${autoPurgeEnabled ? 'checked' : ''}
+                        style="opacity:0; width:0; height:0; position:absolute;"
+                        onchange="admin.toggleAutoPurge(this)">
+                    <span class="atg-tr" style="position:absolute; inset:0; border-radius:25px; background:${autoPurgeEnabled ? '#dc2626' : '#d1d5db'}; transition:background 0.2s;"></span>
+                    <span class="atg-th" style="position:absolute; left:2px; top:2px; width:21px; height:21px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:transform 0.2s; transform:${autoPurgeEnabled ? 'translateX(21px)' : 'translateX(0)'};"></span>
+                </label>
             </div>`;
 
         // ── Čekající analýza ──
@@ -3942,6 +3980,35 @@
             await admin.renderGdpr();
         } catch(e) {
             alert('Chyba: ' + e);
+        }
+    };
+
+    admin.setupSystemTriggers = async function() {
+        if (!confirm('Nastavit automatické systémové triggery?\n\nTímto se založí/obnoví: denní záloha (2:00), hodinový snapshot docházky a měsíční GDPR analýza (1. den v měsíci, 1:00). Existující triggery těchto typů se nejdřív odstraní, aby nevznikly duplicity.')) return;
+        try {
+            const res = await callServer('adminSetupSystemTriggers');
+            if (!res || !res.success) throw new Error(res ? res.error : 'Neznámá chyba');
+            showAdminToast('Triggery nastaveny', 'success');
+            await admin.renderGdpr();
+        } catch(e) {
+            alert('Chyba při nastavování triggerů: ' + e);
+        }
+    };
+
+    admin.toggleAutoPurge = async function(checkbox) {
+        const enabling = checkbox.checked;
+        if (enabling && !confirm('Opravdu zapnout automatické měsíční mazání?\n\nOd příštího 1. dne v měsíci se záznamy mimo retenci budou mazat automaticky BEZ ručního schválení (záloha se vytvoří vždy, ale samotné smazání bude nevratné a bez zásahu admina).')) {
+            checkbox.checked = !enabling;
+            return;
+        }
+        try {
+            const res = await callServer('adminSetAutoPurgeSetting', enabling);
+            if (!res || !res.success) throw new Error(res ? res.error : 'Neznámá chyba');
+            showAdminToast(enabling ? 'Automatické mazání zapnuto' : 'Automatické mazání vypnuto', 'success');
+            await admin.renderGdpr();
+        } catch(e) {
+            alert('Chyba: ' + e);
+            checkbox.checked = !enabling;
         }
     };
 

@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.13.13";
+const APP_VERSION = "2.14.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.14.0",
+    "date": "2026-08-03",
+    "changes": [
+      "GDPR / Archivace: nový přepínač automatického měsíčního mazání - po analýze 1. den v měsíci lze nechat smazat záznamy mimo retenci rovnou, bez ručního schválení (záloha se vytváří vždy)",
+      "GDPR / Archivace: zobrazení stavu měsíčního triggeru analýzy a tlačítko pro jeho jednorázové nastavení - dosud existující kód pro založení triggerů (denní záloha, hodinový snapshot, měsíční GDPR analýza) nebyl nikde volaný, takže se automaticky nikdy nespustil"
+    ]
+  },
   {
     "version": "2.13.13",
     "date": "2026-07-14",

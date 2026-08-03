@@ -2809,6 +2809,41 @@ function adminGetPurgeLog() {
   }
 }
 
+function adminGetAutoPurgeSetting() {
+  try {
+    return { success: true, data: Purge.getAutoPurgeSetting() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminSetAutoPurgeSetting(enabled) {
+  try {
+    return { success: true, data: Purge.setAutoPurgeSetting(enabled) };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminGetTriggersStatus() {
+  try {
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    return { success: true, data: Backup.getTriggersStatus() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+function adminSetupSystemTriggers() {
+  try {
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    Backup.setupTriggers();
+    return { success: true, data: Backup.getTriggersStatus() };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 /**
  * Vyčistí osiřelé kalendáře (existují v Google, ale nemají záznam v DB).
  * Pouze ADMIN a SUPERADMIN.

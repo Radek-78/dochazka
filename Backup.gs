@@ -180,6 +180,19 @@ var Backup = {
   },
 
   /**
+   * Vrátí, které automatické triggery jsou aktuálně nainstalované.
+   */
+  getTriggersStatus: function() {
+    const triggers = ScriptApp.getProjectTriggers();
+    const installed = new Set(triggers.map(function(t) { return t.getHandlerFunction(); }));
+    return {
+      dailyBackup: installed.has('runDailyFullBackup'),
+      hourlySnapshot: installed.has('runAttendanceSafetySnapshot'),
+      monthlyPurgeAnalysis: installed.has('runScheduledPurgeAnalysis')
+    };
+  },
+
+  /**
    * Provede zálohu TRANSACTION spreadsheetů před GDPR mazáním.
    * Vrátí ID záložního souboru.
    */

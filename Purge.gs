@@ -281,8 +281,32 @@ Purge.execute = function(purgeId) {
 };
 
 /**
+ * Vrátí nastavení automatického měsíčního mazání (bez ručního schválení).
+ */
+Purge.getAutoPurgeSetting = function() {
+  if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+  return {
+    enabled: PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_GDPR_AUTO_PURGE_ENABLED) === 'true'
+  };
+};
+
+/**
+ * Uloží nastavení automatického měsíčního mazání.
+ */
+Purge.setAutoPurgeSetting = function(enabled) {
+  if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+  PropertiesService.getScriptProperties().setProperty(
+    CONFIG.PROP_GDPR_AUTO_PURGE_ENABLED,
+    (enabled === true || enabled === 'true') ? 'true' : 'false'
+  );
+  return this.getAutoPurgeSetting();
+};
+
+/**
  * Time trigger — 1. dne každého měsíce v 01:00.
- * Spustí analýzu a notifikuje adminy emailem + in-app.
+ * Spustí analýzu. Pokud je zapnuté automatické mazání, rovnou ho provede
+ * (se zálohou, jako při ručním schválení). Jinak jen notifikuje adminy
+ * a čeká na ruční schválení v administraci.
  */
 Purge.scheduledRun = function() {
   try {
@@ -290,6 +314,15 @@ Purge.scheduledRun = function() {
 
     if (summary.totalToDelete === 0) {
       console.log("Purge: Žádné záznamy ke smazání.");
+      return;
+    }
+
+    const autoEnabled = Purge.getAutoPurgeSetting().enabled;
+
+    if (autoEnabled) {
+      // Purge.execute již sama zajišťuje zálohu, smazání, log i notifikaci adminů.
+      const result = Purge.execute(summary.purgeId);
+      console.log("Purge: Automatické mazání provedeno. Smazáno: " + result.deletedCount);
       return;
     }
 
