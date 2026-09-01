@@ -11,6 +11,8 @@
   "jsonExtensions": [
     ".json"
   ],
-  "filePushOrder": [],
+  "filePushOrder": [
+    "0_VERZE.gs"
+  ],
   "skipSubdirectories": false
 }

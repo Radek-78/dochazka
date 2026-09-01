@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.15.2";
+const APP_VERSION = "2.15.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.15.3",
+    "date": "2026-09-01",
+    "changes": [
+      "Nový kontrolní soubor 0_VERZE.gs, který se v Apps Script editoru i ve výpisu clasp push řadí vždy jako první - obsahuje číslo poslední nasazené verze, aby šlo snadno ověřit, že se nasazení opravdu propsalo (bez čekání na cache prohlížeče)"
+    ]
+  },
   {
     "version": "2.15.2",
     "date": "2026-09-01",
