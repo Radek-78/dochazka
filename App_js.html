@@ -4991,21 +4991,23 @@
             let groupsHtml = '';
             const groups = plannerData.plannerGroups || [];
 
-            // Pokud není vybraná žádná skupina, vybereme automaticky všechny
+            // Pokud není vybraná žádná skupina, vybereme automaticky ty, kde je uživatel členem
+            // (skupiny viditelné jen díky SUPERADMIN přístupu zůstanou odškrtnuté, dokud si je sám nezaškrtne)
             if (_activePlannerGroups.length === 0 && groups.length > 0) {
-                _activePlannerGroups = groups.map(g => String(g.group_id));
+                _activePlannerGroups = groups.filter(g => g.is_member !== false).map(g => String(g.group_id));
             }
 
             groups.forEach(g => {
                 const isActive = _activePlannerGroups.includes(String(g.group_id));
                 const perm = (plannerData.plannerPermissions || {})[g.group_id] || 'VIEW';
+                const isForeign = g.is_member === false;
                 groupsHtml += `
                 <div class="group-item ${isActive ? 'active' : ''}" onclick="togglePlannerGroup('${g.group_id}')" style="display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center;">
                         <div class="group-dot" ${isActive ? `style="background:${g.color || '#0ea5e9'}; border-color:${g.color || '#0ea5e9'};"` : ''}></div>
                         <div class="group-info" style="display:flex; flex-direction:column; margin-left:8px;">
                             <span class="group-name">${escapeHtml(g.name)}</span>
-                            <span style="font-size:9px; color:#94a3b8;">${perm === 'VIEW' ? 'Jen čtení' : perm === 'WRITE' ? 'Zápis' : 'Správce'}</span>
+                            <span style="font-size:9px; color:#94a3b8;">${isForeign ? '👁 Cizí skupina (superadmin)' : (perm === 'VIEW' ? 'Jen čtení' : perm === 'WRITE' ? 'Zápis' : 'Správce')}</span>
                         </div>
                     </div>
                     ${perm === 'ADMIN' ? `<div style="display:flex;gap:4px;"><button onclick="event.stopPropagation(); window.openPlannerGroupModal('${g.group_id}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#1e293b;" title="Upravit Planner">✏️</button><button onclick="event.stopPropagation(); deletePlannerGroup('${g.group_id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#ef4444;" title="Smazat Planner">🗑️</button></div>` : ''}

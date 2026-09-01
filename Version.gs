@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.15.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.15.0",
+    "date": "2026-09-01",
+    "changes": [
+      "SUPERADMIN nyní po přepnutí úseku vidí i zaměstnance jiných úseků, ne jen ten svůj (přepínač úseku byl už dřív dostupný jen pro SUPERADMIN)",
+      "Planner: SUPERADMIN vidí v postranním panelu i skupiny, jejichž není členem, označené jako cizí - zaškrtnutím checkboxu si zobrazí i jejich události; ostatním rolím se zobrazují jen jejich vlastní skupiny jako dosud",
+      "Oprava: příliš dlouhý název úseku/oddělení se nyní zalomí do více řádků v rámci sloupce jmen místo aby přetékal přes dny v mřížce"
+    ]
+  },
   {
     "version": "2.14.0",
     "date": "2026-08-03",

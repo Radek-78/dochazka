@@ -314,7 +314,9 @@ function getPlannerData() {
     user.org_role = _resolveOrgRole(user, positions);
 
     perfStage = _startPerfStage();
-    const employees = allEmployees.filter(u => u.active === "true" && u.section_id === user.section_id).map(u => {
+    // SUPERADMIN vidí zaměstnance všech úseků (potřebné pro přepínač úseku), ostatní role jen svůj úsek.
+    const isSuperAdminUser = user.system_role === ROLES.SYSTEM.SUPERADMIN;
+    const employees = allEmployees.filter(u => u.active === "true" && (isSuperAdminUser || u.section_id === user.section_id)).map(u => {
       // 0. Efektivní org_role z pozice
       u.org_role = _resolveOrgRole(u, positions);
 
@@ -363,19 +365,26 @@ function getPlannerData() {
     });
     
     const userGroupIds = Object.keys(userGroupsMap);
-    const accessibleGroups = allPlannerGroups.filter(g => userGroupIds.includes(String(g.group_id)) && (g.active === true || String(g.active).toLowerCase() === 'true')).map(g => {
+    // SUPERADMIN vidí všechny založené skupiny (i bez členství), ostatní jen ty svoje.
+    const visibleGroups = allPlannerGroups.filter(g =>
+      (g.active === true || String(g.active).toLowerCase() === 'true') &&
+      (isSuperAdminUser || userGroupIds.includes(String(g.group_id)))
+    );
+    const accessibleGroups = visibleGroups.map(g => {
         return {
            group_id: g.group_id,
            name: g.name,
            active: true,
-           color: g.color || 'default'
+           color: g.color || 'default',
+           is_member: userGroupIds.includes(String(g.group_id))
         }
     });
-    
+    const visibleGroupIds = visibleGroups.map(g => String(g.group_id));
+
     // Načti a vyfiltruj události plánovače
     perfStage = _startPerfStage();
     const allEvents = DB.getTable(transSS, DB_SHEETS.TRANSACTION.PLANNER_EVENTS);
-    const plannerEvents = allEvents.filter(e => userGroupIds.includes(String(e.group_id)));
+    const plannerEvents = allEvents.filter(e => visibleGroupIds.includes(String(e.group_id)));
     _endPerfStage("planner.events.readAndFilter", perfStage, { total: allEvents.length, returned: plannerEvents.length });
     startupPerf.counts.planner_groups_total = allPlannerGroups.length;
     startupPerf.counts.planner_groups_returned = accessibleGroups.length;

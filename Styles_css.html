@@ -1313,11 +1313,18 @@
     .dept-label-sticky {
         position: sticky;
         left: 0;
-        padding: 0 15px;
+        padding: 2px 15px;
         background: inherit;
         height: 100%;
+        max-width: var(--label-w);
+        box-sizing: border-box;
         display: flex;
         align-items: center;
+        overflow: hidden;
+        white-space: normal;
+        overflow-wrap: break-word;
+        font-size: 10px;
+        line-height: 1.15;
         z-index: 150;
     }
 
@@ -1331,6 +1338,7 @@
 
     .team-header .dept-label-sticky {
         padding-left: 30px;
+        font-size: 9px;
     }
 
     /* KARTY TÝDNŮ (KT) */
