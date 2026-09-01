@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.15.1";
+const APP_VERSION = "2.15.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.15.2",
+    "date": "2026-09-01",
+    "changes": [
+      "Oprava: SUPERADMIN po přepnutí na cizí úsek (bez vlastního členství) nyní správně vidí \"Vedoucí úseku jako první\" - konfigurace zobrazení i hledání vedoucího se dřív vázaly na vlastní úsek přihlášeného uživatele místo na právě zobrazený úsek",
+      "Administrace: uložení úpravy (uživatel, oddělení, status...) už neskáče se seznamem zpět nahoru - scroll pozice se po překreslení zachová"
+    ]
+  },
   {
     "version": "2.15.1",
     "date": "2026-09-01",

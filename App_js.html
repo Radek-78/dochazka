@@ -8,10 +8,24 @@
     let currentView = 'attendance';
     let statsCurrentDate = new Date();
     var _viewSectionId = null; // SUPERADMIN: přepnutý úsek (null = vlastní)
+    var _sectionViewConfigCache = {}; // section_id -> config (getPlannerData posílá jen pro vlastní úsek)
 
     /** Vrátí section_id podle kterého se filtruje kalendář a statistika */
     function getActiveSectionId() {
         return _viewSectionId || (plannerData && plannerData.user && plannerData.user.section_id) || '';
+    }
+
+    /** Vrátí konfiguraci zobrazení pro aktuálně aktivní úsek, nebo null pokud ještě nebyla načtena. */
+    function getActiveSectionViewConfig() {
+        return _sectionViewConfigCache[getActiveSectionId()] || null;
+    }
+
+    /** Po (re)načtení plannerData naplní cache konfigurací vlastním úsekem přihlášeného uživatele. */
+    function _seedOwnSectionViewConfig() {
+        _sectionViewConfigCache = {};
+        if (plannerData && plannerData.user && plannerData.user.section_id) {
+            _sectionViewConfigCache[plannerData.user.section_id] = plannerData.sectionViewConfig || null;
+        }
     }
     let statsUpdateTimer = null;
     let heartbeatTimer = null;
@@ -3716,6 +3730,7 @@
                 const response = await callServer('getPlannerData');
                 if (response && response.success) {
                     plannerData = response;
+                    _seedOwnSectionViewConfig();
                     updateUserProfile(response.user);
                     _renderMarketingWeeks();
                     renderPlanner();
@@ -3906,6 +3921,7 @@
 
             if (response && response.success) {
                 plannerData = response;
+                _seedOwnSectionViewConfig();
                 console.log('[STARTUP PERF] payload counts', {
                     employees: (response.employees || []).length,
                     statuses: (response.statuses || []).length,
@@ -4148,10 +4164,27 @@
         var mySection = plannerData.user.section_id;
         _viewSectionId = (sectionId === mySection) ? null : sectionId;
 
-        // Překreslit kalendář a statistiku bez server callu
-        renderSectionNameRow();
-        renderPlanner();
-        updateDailyStats();
+        function redraw() {
+            renderSectionNameRow();
+            renderPlanner();
+            updateDailyStats();
+        }
+
+        // Konfigurace zobrazení (vedoucí první, kontejnery...) přišla v getPlannerData
+        // jen pro vlastní úsek — pro cizí úsek si ji při prvním přepnutí dotáhneme.
+        if (_sectionViewConfigCache[sectionId] !== undefined) {
+            redraw();
+        } else {
+            redraw(); // rovnou vykreslit bez configu, aby přepnutí nebylo blokující
+            callServer('getSectionViewConfigForSection', sectionId).then(function (res) {
+                _sectionViewConfigCache[sectionId] = (res && res.success) ? res.data : null;
+                // Pokud uživatel mezitím nepřepnul jinam, dokreslit s doraženou konfigurací
+                if (getActiveSectionId() === sectionId) redraw();
+            }).catch(function (e) {
+                console.warn('getSectionViewConfigForSection error:', e);
+                _sectionViewConfigCache[sectionId] = null;
+            });
+        }
     }
 
     function renderHeaders(year, month, count, today) {
@@ -4375,9 +4408,11 @@
         }
 
         // ── Config-based rendering (if sectionViewConfig has containers) ──────────
-        // Při přepnutém úseku (SUPERADMIN) nepoužívat config z jiného úseku
-        const isViewingOwnSection = !_viewSectionId || _viewSectionId === (plannerData.user && plannerData.user.section_id);
-        const cfg = isViewingOwnSection ? sectionViewConfig : null;
+        // Konfigurace vlastního úseku přišla rovnou v getPlannerData; pro cizí úsek
+        // (SUPERADMIN po přepnutí) se dotahuje zvlášť a čeká v _sectionViewConfigCache.
+        const cfg = _sectionViewConfigCache[activeSectionId] !== undefined
+            ? _sectionViewConfigCache[activeSectionId]
+            : sectionViewConfig;
         const useConfig = cfg && cfg.containers && cfg.containers.length > 0;
         const activeGroups = (groups || []).filter(g => String(g.active).toLowerCase() !== 'false');
         const showTeamHeaders = !!(cfg && (cfg.show_team_headers === true || cfg.show_team_headers === 'true'));
@@ -4390,12 +4425,14 @@
             const rendered = new Set(); // track user_ids already rendered
 
             // Optional: vedoucí úseku jako první (identifikace přes org_role z pozice)
+            // Musí se hledat v aktuálně zobrazeném úseku (activeSectionId), ne ve vlastním úseku
+            // přihlášeného uživatele - jinak se u SUPERADMINa po přepnutí úseku nikdy nenajde.
             if (cfg.show_leader_first) {
-                const userSectionId = plannerData.user && plannerData.user.section_id;
                 const leader = (employees || []).find(e =>
                     (e.org_role === 'SECTION_LEADER' || e.org_role === 'SECTION_DEPUTY') &&
-                    (!userSectionId || e.section_id === userSectionId)
+                    (!activeSectionId || e.section_id === activeSectionId)
                 );
+                console.log('[show_leader_first/useConfig] activeSectionId:', activeSectionId, 'nalezený vedoucí:', leader ? (leader.first_name + ' ' + leader.last_name + ' (' + leader.org_role + ')') : 'ŽÁDNÝ');
                 if (leader && !rendered.has(leader.user_id)) {
                     html += empRow(leader);
                     rendered.add(leader.user_id);
@@ -4494,12 +4531,14 @@
             const renderedDefault = new Set();
 
             // Optional: vedoucí úseku jako první (stejná logika jako v useConfig větvi)
+            // Musí se hledat v aktuálně zobrazeném úseku (activeSectionId), ne ve vlastním úseku
+            // přihlášeného uživatele - jinak se u SUPERADMINa po přepnutí úseku nikdy nenajde.
             if (cfg && cfg.show_leader_first) {
-                const userSectionId = plannerData.user && plannerData.user.section_id;
                 const leader = (employees || []).find(e =>
                     (e.org_role === 'SECTION_LEADER' || e.org_role === 'SECTION_DEPUTY') &&
-                    (!userSectionId || e.section_id === userSectionId)
+                    (!activeSectionId || e.section_id === activeSectionId)
                 );
+                console.log('[show_leader_first/default] activeSectionId:', activeSectionId, 'nalezený vedoucí:', leader ? (leader.first_name + ' ' + leader.last_name + ' (' + leader.org_role + ')') : 'ŽÁDNÝ');
                 if (leader) {
                     html += empRow(leader);
                     renderedDefault.add(leader.user_id);

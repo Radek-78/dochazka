@@ -788,6 +788,24 @@ function getVacationBalances(year) {
 }
 
 /**
+ * Vrátí konfiguraci zobrazení pro libovolný úsek (SUPERADMIN po přepnutí úseku).
+ * getPlannerData posílá konfiguraci jen pro vlastní úsek přihlášeného uživatele -
+ * tohle doplňuje konfiguraci pro úseky, které si SUPERADMIN teprve zvolí přes přepínač.
+ */
+function getSectionViewConfigForSection(sectionId) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+    if (currentUser.system_role !== ROLES.SYSTEM.SUPERADMIN && sectionId !== currentUser.section_id) {
+      return { success: false, error: "Nedostatečná oprávnění." };
+    }
+    return { success: true, data: Admin.getSectionViewConfig(sectionId) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Diagnostika párování status_id mezi ATTENDANCE a číselníkem statusů.
  * Volatelné ručně z Apps Scriptu nebo přes google.script.run pro administrátora.
  */

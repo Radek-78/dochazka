@@ -125,6 +125,12 @@
 
         renderCurrentTab: function () {
             console.log("Admin: Přepínám na záložku:", this.currentTab);
+            // Odstranění a znovupřidání .active třídy panelu (níže) mezitím sbalí obsah
+            // .admin-content na nulovou výšku, čímž prohlížeč vynuluje jeho scroll pozici.
+            // Zapamatujeme si ji tedy předem a po překreslení obnovíme - jinak po každém
+            // uložení (i bez skutečné změny záložky) skáče seznam nahoru.
+            const contentEl = document.querySelector('.admin-content');
+            const scrollTop = contentEl ? contentEl.scrollTop : 0;
             const panels = document.querySelectorAll('.admin-view-panel');
             panels.forEach(p => p.classList.remove('active'));
             const activePanel = document.getElementById(`admin-panel-${this.currentTab}`);
@@ -141,6 +147,7 @@
                     case 'gdpr': this.renderGdpr(); break;
                 }
             }
+            if (contentEl) contentEl.scrollTop = scrollTop;
         },
 
         renderUsers: function () {
