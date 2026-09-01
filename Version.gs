@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.15.4";
+const APP_VERSION = "2.16.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.16.0",
+    "date": "2026-09-01",
+    "changes": [
+      "Administrace: úsek má nově přepínač \"Zobrazovat řádek Bez oddělení\" - když má úsek zaměstnance bez přiřazeného oddělení, jde nadpisový řádek nad nimi v kalendáři vypnout (zaměstnanci se dál zobrazují, jen bez nadpisu)",
+      "Administrace → Org. struktura: jednotlivé úseky uvnitř lokace jde nyní sbalit/rozbalit stejně jako lokace",
+      "Administrace → Org. struktura: zrušeno automatické rozbalení první lokace při vstupu do sekce - všechny lokace se teď zobrazí sbalené"
+    ]
+  },
   {
     "version": "2.15.4",
     "date": "2026-09-01",

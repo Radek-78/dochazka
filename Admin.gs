@@ -510,7 +510,7 @@ var Admin = {
    * Získá konfiguraci zobrazení úseku v kalendáři.
    */
   getSectionViewConfig: function(sectionId) {
-    if (!sectionId) return { section_id: '', show_leader_first: false, show_team_headers: false, containers: [] };
+    if (!sectionId) return { section_id: '', show_leader_first: false, show_team_headers: false, show_no_department_row: true, containers: [] };
     const coreSS = DB.getCore();
     // Zajistíme, že list existuje
     let sheet = coreSS.getSheetByName(DB_SHEETS.CORE.SECTION_VIEW_CONFIG);
@@ -520,13 +520,15 @@ var Admin = {
     }
     const table = DB.getTable(coreSS, DB_SHEETS.CORE.SECTION_VIEW_CONFIG);
     const row = table.find(function(r) { return r.section_id === sectionId; });
-    if (!row) return { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
+    if (!row) return { section_id: sectionId, show_leader_first: false, show_team_headers: false, show_no_department_row: true, containers: [] };
     let containers = [];
     try { containers = JSON.parse(row.config_json || '[]'); } catch(e) { containers = []; }
     return {
       section_id: sectionId,
       show_leader_first: row.show_leader_first === 'true',
       show_team_headers: row.show_team_headers === 'true',
+      // Chybějící sloupec (starší řádky před zavedením přepínače) = zachovat dosavadní chování (zobrazeno)
+      show_no_department_row: row.show_no_department_row === '' || row.show_no_department_row === undefined ? true : row.show_no_department_row === 'true',
       containers: containers
     };
   },
@@ -541,6 +543,7 @@ var Admin = {
       section_id: data.section_id,
       show_leader_first: String(data.show_leader_first === true || data.show_leader_first === 'true'),
       show_team_headers: String(data.show_team_headers === true || data.show_team_headers === 'true'),
+      show_no_department_row: String(data.show_no_department_row !== false && data.show_no_department_row !== 'false'),
       config_json: configJson
     });
   },

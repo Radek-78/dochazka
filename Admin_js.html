@@ -31,7 +31,7 @@
         statusView: 'normal',
         privacySettings: { masking_enabled: false },
         _expandedLocations: new Set(),
-        _locationsInitialized: false,
+        _collapsedSections: new Set(), // section_id úseků ručně sbalených v org. struktuře
         _sectionViewMode: {},       // { [sectionId]: 'structure' | 'config' }
         _sectionConfigs: {},        // { [sectionId]: { section_id, show_leader_first, containers } }
         _drag: null,                // drag&drop state
@@ -404,14 +404,6 @@
                 return (a.name || '').localeCompare(b.name || '', 'cs');
             });
 
-            // Auto-expand první lokaci jen při úplně prvním renderu
-            if (!this._locationsInitialized) {
-                this._locationsInitialized = true;
-                if (sorted.length > 0) {
-                    this._expandedLocations.add(sorted[0].location_id);
-                }
-            }
-
             let html = `
 <div class="admin-card" style="padding:0; overflow:hidden;">
   <div class="admin-header-compact" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
@@ -455,6 +447,7 @@
                         locSections.forEach(s => {
                             const depts = departments.filter(d => d.section_id === s.section_id && d.active !== 'false');
                             const sectionMode = this._sectionViewMode[s.section_id] || 'structure';
+                            const isSectionCollapsed = this._collapsedSections.has(s.section_id);
 
                             // Build dept list HTML for structure mode
                             let deptListHtml = '';
@@ -483,9 +476,14 @@
                                 deptListHtml += `</div>`; // .org-dept-item
                             });
 
+                            const sectionBodyHtml = isSectionCollapsed ? '' : (sectionMode === 'structure'
+                                ? deptListHtml
+                                : `<div class="sec-config-panel" id="section-config-panel-${s.section_id}"><div class="sec-config-loading"><div class="sec-loading-spinner"></div><span>Načítám konfiguraci…</span></div></div>`);
+
                             html += `
         <div class="org-section-item">
           <div class="org-section-row">
+            <span class="org-loc-chevron${isSectionCollapsed ? '' : ' expanded'}" onclick="admin.toggleSectionExpanded('${s.section_id}')" title="Sbalit/rozbalit úsek" style="cursor:pointer;">▶</span>
             <span class="org-item-icon">🏢</span>
             <span class="org-item-name">${escapeHtml(s.name)}</span>
             <div class="org-item-actions">
@@ -499,10 +497,7 @@
               ${sectionMode === 'structure' ? `<button class="org-action-btn btn-add-primary" onclick="admin.showDeptModal(null,'${s.section_id}')" title="Přidat oddělení">+ Oddělení</button>` : ''}
             </div>
           </div>
-          ${sectionMode === 'structure'
-                                    ? deptListHtml
-                                    : `<div class="sec-config-panel" id="section-config-panel-${s.section_id}"><div class="sec-config-loading"><div class="sec-loading-spinner"></div><span>Načítám konfiguraci…</span></div></div>`
-                                }
+          ${sectionBodyHtml}
         </div>`;
                         });
                     }
@@ -530,6 +525,23 @@
             this.renderOrgTree();
         },
 
+        /**
+         * Přepne stav sbalení jednotlivého úseku uvnitř lokace.
+         */
+        toggleSectionExpanded: function (sectionId) {
+            const wasCollapsed = this._collapsedSections.has(sectionId);
+            if (wasCollapsed) {
+                this._collapsedSections.delete(sectionId);
+            } else {
+                this._collapsedSections.add(sectionId);
+            }
+            this.renderOrgTree();
+            // Právě rozbaleno v režimu Zobrazení → obsah panelu byl při sbalení pryč z DOM, dopiš ho znovu
+            if (wasCollapsed && this._sectionViewMode[sectionId] === 'config') {
+                this.loadSectionConfig(sectionId);
+            }
+        },
+
         // ─── SECTION VIEW CONFIG ─────────────────────────────────────────────────
 
         /**
@@ -555,12 +567,15 @@
                 const result = await callServer('getSectionViewConfig', sectionId);
                 this._sectionConfigs[sectionId] = (result && result.success && result.data)
                     ? result.data
-                    : { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
+                    : { section_id: sectionId, show_leader_first: false, show_team_headers: false, show_no_department_row: true, containers: [] };
                 if (this._sectionConfigs[sectionId].show_team_headers === undefined) {
                     this._sectionConfigs[sectionId].show_team_headers = false;
                 }
+                if (this._sectionConfigs[sectionId].show_no_department_row === undefined) {
+                    this._sectionConfigs[sectionId].show_no_department_row = true;
+                }
             } catch (e) {
-                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, show_no_department_row: true, containers: [] };
             }
             this.renderSectionConfigPanel(sectionId);
         },
@@ -635,6 +650,17 @@
         <label class="sec-toggle-switch">
             <input type="checkbox" ${cfg.show_team_headers ? 'checked' : ''}
                    onchange="admin._sectionConfigs['${sectionId}'].show_team_headers = this.checked">
+            <span class="sec-toggle-slider"></span>
+        </label>
+    </div>
+    <div class="sec-config-leader-toggle">
+        <label class="sec-toggle-label">
+            <span class="sec-toggle-icon">📂</span>
+            <span>Zobrazovat řádek "Bez oddělení"</span>
+        </label>
+        <label class="sec-toggle-switch">
+            <input type="checkbox" ${cfg.show_no_department_row !== false ? 'checked' : ''}
+                   onchange="admin._sectionConfigs['${sectionId}'].show_no_department_row = this.checked">
             <span class="sec-toggle-slider"></span>
         </label>
     </div>
@@ -738,7 +764,7 @@
             else if (type === 'employee') { const x = d.sectionUsers.find(i => i.user_id === refId); label = x ? `${x.first_name} ${x.last_name}` : refId; }
 
             if (!this._sectionConfigs[sectionId]) {
-                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, containers: [] };
+                this._sectionConfigs[sectionId] = { section_id: sectionId, show_leader_first: false, show_team_headers: false, show_no_department_row: true, containers: [] };
             }
             this._sectionConfigs[sectionId].containers.push({
                 id: '_c_' + Date.now(),

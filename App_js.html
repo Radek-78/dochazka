@@ -4551,7 +4551,11 @@
                 (employees || []).filter(emp => (!emp.department_id || !deptIds.has(emp.department_id)) && !renderedDefault.has(emp.user_id))
             ).sort(compareEmployeesCs);
             if (noDeptEmployees.length > 0) {
-                html += `<div class="dept-header"><div class="dept-label-sticky">Bez oddělení</div></div>`;
+                // Nadpisový řádek "Bez oddělení" lze v konfiguraci úseku vypnout - zaměstnanci se pak
+                // vykreslí bez něj, nezmizí.
+                if (!cfg || cfg.show_no_department_row !== false) {
+                    html += `<div class="dept-header"><div class="dept-label-sticky">Bez oddělení</div></div>`;
+                }
                 noDeptEmployees.forEach(emp => {
                     html += empRow(emp);
                     renderedDefault.add(emp.user_id);
