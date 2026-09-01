@@ -4493,10 +4493,23 @@
             // ── Default: render by departments, teams and Czech alphabetical order ─
             const renderedDefault = new Set();
 
+            // Optional: vedoucí úseku jako první (stejná logika jako v useConfig větvi)
+            if (cfg && cfg.show_leader_first) {
+                const userSectionId = plannerData.user && plannerData.user.section_id;
+                const leader = (employees || []).find(e =>
+                    (e.org_role === 'SECTION_LEADER' || e.org_role === 'SECTION_DEPUTY') &&
+                    (!userSectionId || e.section_id === userSectionId)
+                );
+                if (leader) {
+                    html += empRow(leader);
+                    renderedDefault.add(leader.user_id);
+                }
+            }
+
             // Zaměstnanci bez oddělení (nebo s oddělením které neexistuje v seznamu)
             const deptIds = new Set((departments || []).map(d => d.department_id));
             let noDeptEmployees = activeForMonth(
-                (employees || []).filter(emp => !emp.department_id || !deptIds.has(emp.department_id))
+                (employees || []).filter(emp => (!emp.department_id || !deptIds.has(emp.department_id)) && !renderedDefault.has(emp.user_id))
             ).sort(compareEmployeesCs);
             if (noDeptEmployees.length > 0) {
                 html += `<div class="dept-header"><div class="dept-label-sticky">Bez oddělení</div></div>`;

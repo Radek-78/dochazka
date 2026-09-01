@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.15.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.15.1",
+    "date": "2026-09-01",
+    "changes": [
+      "Oprava: dlouhý název úseku v řádku dnů se nyní zalomí do více řádků místo aby přetékal přes dny (opravován byl v předchozí verzi omylem jiný, nesouvisející element)",
+      "Oprava: přepínač \"Vedoucí úseku jako první v seznamu\" nyní funguje i u úseků bez nakonfigurovaného pořadí zobrazení (kontejnerů) - dřív fungoval jen pokud měl úsek kontejnery nastavené"
+    ]
+  },
   {
     "version": "2.15.0",
     "date": "2026-09-01",
