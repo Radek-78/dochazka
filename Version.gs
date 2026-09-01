@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.15.3";
+const APP_VERSION = "2.15.4";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.15.4",
+    "date": "2026-09-01",
+    "changes": [
+      "Planner: jde nyní odškrtnout náhled úplně všech skupin (dřív musela zůstat zaškrtnutá vždy alespoň jedna) - týká se hlavně SUPERADMINa, který díky přístupu napříč úseky vidí i skupiny bez vlastního členství"
+    ]
+  },
   {
     "version": "2.15.3",
     "date": "2026-09-01",

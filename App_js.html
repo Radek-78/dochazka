@@ -5031,6 +5031,7 @@
        ========================================================= */
 
     let _activePlannerGroups = []; // IDs of groups being viewed
+    let _plannerGroupsInitialized = false; // true po prvním automatickém výběru (pak lze odškrtnout i úplně všechny)
 
     function renderMonthlyPlanner() {
         const grid = document.getElementById('monthly-grid');
@@ -5043,10 +5044,12 @@
             let groupsHtml = '';
             const groups = plannerData.plannerGroups || [];
 
-            // Pokud není vybraná žádná skupina, vybereme automaticky ty, kde je uživatel členem
-            // (skupiny viditelné jen díky SUPERADMIN přístupu zůstanou odškrtnuté, dokud si je sám nezaškrtne)
-            if (_activePlannerGroups.length === 0 && groups.length > 0) {
+            // Při prvním načtení vybereme automaticky skupiny, kde je uživatel členem
+            // (skupiny viditelné jen díky SUPERADMIN přístupu zůstanou odškrtnuté, dokud si je sám nezaškrtne).
+            // Jen jednou - jinak by se po ručním odškrtnutí úplně všech skupin výběr sám doplnil zpět.
+            if (!_plannerGroupsInitialized && groups.length > 0) {
                 _activePlannerGroups = groups.filter(g => g.is_member !== false).map(g => String(g.group_id));
+                _plannerGroupsInitialized = true;
             }
 
             groups.forEach(g => {
@@ -5170,7 +5173,7 @@
         groupId = String(groupId);
         const idx = _activePlannerGroups.indexOf(groupId);
         if (idx === -1) _activePlannerGroups.push(groupId);
-        else if (_activePlannerGroups.length > 1) _activePlannerGroups.splice(idx, 1);
+        else _activePlannerGroups.splice(idx, 1);
         renderMonthlyPlanner();
     }
 

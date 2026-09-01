@@ -8,4 +8,4 @@
  * Při každém nasazení (viz CLAUDE.md, sekce "Deploy tohoto projektu") se toto
  * číslo aktualizuje na stejnou hodnotu jako APP_VERSION ve Version.gs.
  */
-const DEPLOYED_VERSION = "2.15.3";
+const DEPLOYED_VERSION = "2.15.4";
