@@ -163,10 +163,10 @@ var Backup = {
       .everyDays(1)
       .create();
 
-    // Snapshot dochĂˇzky kaĹľdou hodinu (častějjší interval pro v2.8.0)
+    // Snapshot dochĂˇzky (sníženo z 1h na 12h kvůli zátěži - denní plná záloha už chrání dostatečně)
     ScriptApp.newTrigger('runAttendanceSafetySnapshot')
       .timeBased()
-      .everyHours(1)
+      .everyHours(12)
       .create();
 
     // GDPR purge analýza — 1. den každého měsíce v 01:00

@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.16.0";
+const APP_VERSION = "2.16.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.16.1",
+    "date": "2026-09-09",
+    "changes": [
+      "Snížena zátěž: snapshot docházky (bezpečnostní pojistka mezi denními zálohami) běží nově co 12 hodin místo každou hodinu - denní plná záloha chrání dostatečně"
+    ]
+  },
   {
     "version": "2.16.0",
     "date": "2026-09-01",
