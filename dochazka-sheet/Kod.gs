@@ -872,6 +872,93 @@ function _dsPodpisListu(mesic, radky, N) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw));
 }
 
+// ── dávkové operace přes Advanced Sheets API ────────────────────────────
+// Rozměry a rámečky se v Apps Scriptu nastavují po jednom volání; u mřížky
+// s mezerovými řádky/sloupci to dělá ~70 volání na měsíc a stovky rámečků
+// při importu. Sheets API to zvládne jedním requestem. Když služba není
+// zapnutá (Rozšíření → Apps Script → Služby → Google Sheets API), kód
+// automaticky spadne zpět na původní volání — jen pomaleji.
+
+var _DS_DAVKA_MAX = 500;   // requestů na jeden batchUpdate
+
+function _dsMaSheetsApi() {
+  return typeof Sheets !== 'undefined' && !!Sheets && !!Sheets.Spreadsheets;
+}
+
+function _dsPosliDavku(sheet, requests) {
+  SpreadsheetApp.flush();                       // Sheets API čte uložený stav
+  var id = sheet.getParent().getId();
+  for (var i = 0; i < requests.length; i += _DS_DAVKA_MAX) {
+    Sheets.Spreadsheets.batchUpdate({ requests: requests.slice(i, i + _DS_DAVKA_MAX) }, id);
+  }
+}
+
+function _dsRgbApi(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return { red: 0, green: 0, blue: 0 };
+  return {
+    red: parseInt(m[1], 16) / 255,
+    green: parseInt(m[2], 16) / 255,
+    blue: parseInt(m[3], 16) / 255
+  };
+}
+
+/**
+ * Rozměry řádků/sloupců dávkově.
+ * polozky = [{ typ: 'ROWS'|'COLUMNS', od: 1-based, pocet, px }]
+ * Pozdější položka přebíjí dřívější (stejné pořadí jako u jednotlivých volání).
+ */
+function _dsRozmeryDavkove(sheet, polozky) {
+  if (!polozky.length) return;
+  if (_dsMaSheetsApi()) {
+    var sid = sheet.getSheetId();
+    _dsPosliDavku(sheet, polozky.map(function (p) {
+      return {
+        updateDimensionProperties: {
+          range: { sheetId: sid, dimension: p.typ, startIndex: p.od - 1, endIndex: p.od - 1 + p.pocet },
+          properties: { pixelSize: p.px },
+          fields: 'pixelSize'
+        }
+      };
+    }));
+    return;
+  }
+  polozky.forEach(function (p) {
+    if (p.typ === 'ROWS') sheet.setRowHeights(p.od, p.pocet, p.px);
+    else sheet.setColumnWidths(p.od, p.pocet, p.px);
+  });
+}
+
+/**
+ * Rámečky buněk dávkově.
+ * polozky = [{ row, col, rows, cols, barva }] — barva null/'' znamená rámeček zrušit.
+ */
+function _dsRameckyDavkove(sheet, polozky) {
+  if (!polozky.length) return;
+  if (_dsMaSheetsApi()) {
+    var sid = sheet.getSheetId();
+    _dsPosliDavku(sheet, polozky.map(function (p) {
+      var okraj = p.barva ? { style: 'SOLID_MEDIUM', color: _dsRgbApi(p.barva) } : { style: 'NONE' };
+      return {
+        updateBorders: {
+          range: {
+            sheetId: sid,
+            startRowIndex: p.row - 1, endRowIndex: p.row - 1 + (p.rows || 1),
+            startColumnIndex: p.col - 1, endColumnIndex: p.col - 1 + (p.cols || 1)
+          },
+          top: okraj, bottom: okraj, left: okraj, right: okraj
+        }
+      };
+    }));
+    return;
+  }
+  polozky.forEach(function (p) {
+    var r = sheet.getRange(p.row, p.col, p.rows || 1, p.cols || 1);
+    if (p.barva) r.setBorder(true, true, true, true, false, false, p.barva, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    else r.setBorder(false, false, false, false, false, false, null, null);
+  });
+}
+
 function _dsRichLabel(label, style) {
   var s = String(label || '');
   var b = SpreadsheetApp.newRichTextValue().setText(s);
@@ -1116,17 +1203,26 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   // ── rozměry ──
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
-  sheet.setColumnWidth(1, 170);
-  sheet.setColumnWidth(den1 - 1, DS_MEZ_PX);          // mezera mezi jménem a dny
-  sheet.setColumnWidths(den1, dnyW, 22);
-  for (var sm = 1; sm <= N; sm++) sheet.setColumnWidth(_gDop(sm) + 2, DS_MEZ_PX);   // mezerové sloupce mezi dny
-  sheet.setColumnWidth(souhrnCol, 90);
   sheet.getRange(prvni, souhrnCol, dataR, 1).setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sheet.setRowHeight(1, 26);
-  sheet.setRowHeight(mezR, DS_MEZ_PX);
-  sheet.setRowHeights(prvni, dataR, 30);
-  radky.forEach(function (it, j) { sheet.setRowHeight(_gRadek(j) + 1, DS_MEZ_PX); });   // mezerové řádky
-  gapRadky.forEach(function (fr) { sheet.setRowHeight(fr, 8); });
+
+  // všechny šířky a výšky jedním requestem (pořadí = pozdější přebíjí dřívější)
+  var rozmery = [
+    { typ: 'COLUMNS', od: 1, pocet: 1, px: 170 },
+    { typ: 'COLUMNS', od: den1 - 1, pocet: 1, px: DS_MEZ_PX },   // mezera mezi jménem a dny
+    { typ: 'COLUMNS', od: den1, pocet: dnyW, px: 22 },
+    { typ: 'COLUMNS', od: souhrnCol, pocet: 1, px: 90 },
+    { typ: 'ROWS', od: 1, pocet: 1, px: 26 },
+    { typ: 'ROWS', od: mezR, pocet: 1, px: DS_MEZ_PX },
+    { typ: 'ROWS', od: prvni, pocet: dataR, px: 30 }
+  ];
+  for (var sm = 1; sm <= N; sm++) {                              // mezerové sloupce mezi dny
+    rozmery.push({ typ: 'COLUMNS', od: _gDop(sm) + 2, pocet: 1, px: DS_MEZ_PX });
+  }
+  radky.forEach(function (it, j) {                               // mezerové řádky
+    rozmery.push({ typ: 'ROWS', od: _gRadek(j) + 1, pocet: 1, px: DS_MEZ_PX });
+  });
+  gapRadky.forEach(function (fr) { rozmery.push({ typ: 'ROWS', od: fr, pocet: 1, px: 8 }); });
+  _dsRozmeryDavkove(sheet, rozmery);
 
   sheet.getRange(prvni, 1, dataR, souhrnCol).protect()
     .setDescription('Docházková mřížka — edituj přes menu 📋 Docházka')
@@ -1183,7 +1279,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
     for (var c0 = 0; c0 < dnyW; c0++) rr.push(vychozi);
     fc.push(rr);
   }
-  var CERV = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
+  var ramecky = [];
   var zvyrazneno = 0;
   for (var i = 0; i < nRows; i++) {
     var uid = String(uids[i][0] || '').trim();
@@ -1201,15 +1297,15 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
       if (chybi) {
         if (deskSet[vDop]) fc[i][idx] = DS_BARVA_BEZ_STOLU;
         if (!full && deskSet[vOdp]) fc[i][idx + 1] = DS_BARVA_BEZ_STOLU;
-        if (!jenPismo) sheet.getRange(absRow, _gDop(d), 1, 2)
-          .setBorder(true, true, true, true, false, false, DS_BARVA_BEZ_STOLU, CERV);
         zvyrazneno++;
-      } else if (!jenPismo) {
-        sheet.getRange(absRow, _gDop(d), 1, 2).setBorder(false, false, false, false, false, false, null, null);
+      }
+      if (!jenPismo) {
+        ramecky.push({ row: absRow, col: _gDop(d), rows: 1, cols: 2, barva: chybi ? DS_BARVA_BEZ_STOLU : null });
       }
     }
   }
   sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, dnyW).setFontColors(fc);
+  _dsRameckyDavkove(sheet, ramecky);
   return zvyrazneno;
 }
 
