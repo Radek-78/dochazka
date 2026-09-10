@@ -51,7 +51,7 @@ var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
 var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
-var DS_DEN1_COL = 2;             // den 1 dopoledne = sloupec 2 (B)
+var DS_DEN1_COL = 3;             // A = jméno, B = 1px mezera, C = den 1 dopoledne
 var DS_HLAVICKA_RADKU = 3;      // zmražené řádky: 1 titulek, 2 čísla dnů, 3 dny v týdnu
 var DS_PRVNI_DATA_RADEK = 5;    // ř. 4 = 1px mezera pod hlavičkou
 var DS_MEZ_PX = 2;             // velikost „1px" mezer mezi buňkami (řádky i sloupce)
@@ -739,7 +739,7 @@ function _dsRadkyProMesic(radky, mesic) {
 // ── měsíční list ─────────────────────────────────────────────────────────
 
 // Bumpuj při JAKÉKOLI změně struktury listu (kvůli fast-path porovnání podpisu).
-var DS_BUILD_VER = 3;
+var DS_BUILD_VER = 4;
 
 /** Podpis struktury listu (hash) — když se nezmění, přestavba se přeskočí. */
 function _dsPodpisListu(mesic, radky, N) {
@@ -803,8 +803,8 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
 
   // ── ř. 1: titulek + e-mail ──
   sheet.getRange(1, 1, 1, souhrnCol).setBackground('#004fac').setFontColor('#ffffff').setFontWeight('bold');
-  var titEnd = Math.max(2, souhrnCol - 6);
-  sheet.getRange(1, 2, 1, titEnd - 1).merge()
+  var titEnd = Math.max(den1, souhrnCol - 6);
+  sheet.getRange(1, den1, 1, titEnd - den1 + 1).merge()
     .setValue(USEK_NAZEV + ' — ' + DS_MESICE[mesic - 1].toUpperCase() + ' ' + ROK)
     .setFontSize(13).setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange(1, titEnd + 1, 1, souhrnCol - titEnd).merge()
@@ -914,10 +914,10 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
       rtA[pi] = [rtb.build()];
       if (it.u.vedouci) bgAll[pi][0] = '#ffedd5';
 
-      // víkendy/svátky do buněk dne
+      // víkendy/svátky do buněk dne (bgAll je indexovaný od sloupce 1)
       for (var dv = 1; dv <= N; dv++) {
         if (!klas[_gDop(dv)]) continue;
-        var off = _gDop(dv) - den1;
+        var off = _gDop(dv) - 1;
         bgAll[pi][off] = BG_MRIZ[klas[_gDop(dv)]];
         bgAll[pi][off + 1] = BG_MRIZ[klas[_gDop(dv)]];
       }
@@ -998,8 +998,9 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
   sheet.setColumnWidth(1, 170);
+  sheet.setColumnWidth(den1 - 1, DS_MEZ_PX);          // mezera mezi jménem a dny
   sheet.setColumnWidths(den1, dnyW, 22);
-  for (var sm = 1; sm <= N; sm++) sheet.setColumnWidth(_gDop(sm) + 2, DS_MEZ_PX);   // mezerové sloupce
+  for (var sm = 1; sm <= N; sm++) sheet.setColumnWidth(_gDop(sm) + 2, DS_MEZ_PX);   // mezerové sloupce mezi dny
   sheet.setColumnWidth(souhrnCol, 90);
   sheet.getRange(prvni, souhrnCol, dataR, 1).setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 26);
