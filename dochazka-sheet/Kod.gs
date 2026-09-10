@@ -485,9 +485,11 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   r2[souhrnCol - 1] = 'Dovolená';
   r3[souhrnCol - 1] = '(dny)';
   sheet.getRange(2, 1, 1, souhrnCol).setValues([r2])
-    .setBackground('#f1f5f9').setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center');
+    .setBackground('#f1f5f9').setFontWeight('bold').setFontSize(10)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange(3, 1, 1, souhrnCol).setValues([r3])
-    .setBackground('#f1f5f9').setFontColor('#64748b').setFontSize(9).setHorizontalAlignment('center');
+    .setBackground('#f1f5f9').setFontColor('#64748b').setFontSize(9)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.getRange(2, 1).setHorizontalAlignment('left');
   for (var d2 = 1; d2 <= pocetDnu; d2++) {
     sheet.getRange(2, den1 + 2 * (d2 - 1), 2, 2).mergeAcross();
@@ -511,7 +513,8 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
     bg.push(rr);
   }
   mrizka.setBackgrounds(bg);
-  mrizka.setNumberFormat('@').setHorizontalAlignment('center').setFontWeight('bold').setFontSize(10);
+  mrizka.setNumberFormat('@').setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setFontWeight('bold').setFontSize(10);
 
   // ── levý sloupec (jen nadpisy) + skrytý user_id ──
   var colA = radky.map(function (it) { return [it.typ === 'emp' ? '' : (it.label || '')]; });
