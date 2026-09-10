@@ -1400,21 +1400,44 @@ function nactiRezervace() {
     (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný') + '\n' +
     'Kancelářských dnů bez rezervace (červený rámeček): ' + zvyrazneno + '\n' +
-    (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.\n\nListy v TRANSACTION:\n' + d.listyTrans +
-      '\n\nListy v CORE:\n' + d.listyCore +
+    (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.' + d.listy() +
       '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
     (d.zdroj && d.celkem > 0 && d.letos === 0 ? '\n⚠ Žádná rezervace pro rok ' + ROK + '.' : '') +
     (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — spusť Pomocné listy → Aktualizovat list Stoly.' : ''));
 }
 
-/** Najde tabulku podle víc možných názvů napříč víc sešity. Vrací {rows, zdroj}. */
-function _dsCtiKdekoliv(sesity, nazvy) {
+/**
+ * Najde tabulku podle víc možných názvů napříč víc sešity. Vrací {rows, zdroj}.
+ * Nalezené místo si zapamatuje do DocumentProperties (`propKlic`), takže příště
+ * jde rovnou tam místo prohledávání až 10 kombinací sešit × název.
+ */
+function _dsCtiKdekoliv(sesity, nazvy, propKlic) {
+  var props = propKlic ? PropertiesService.getDocumentProperties() : null;
+
+  function zkus(sesit, nazev) {
+    var sh = sesit.ss.getSheetByName(nazev);
+    if (!sh || sh.getLastRow() < 2) return null;
+    if (props) props.setProperty(propKlic, sesit.jmeno + '|' + nazev);
+    return { rows: _dsCtiSheet(sh), zdroj: sesit.jmeno + ' → ' + nazev };
+  }
+
+  // 1) zapamatovaná kombinace
+  var znama = props ? props.getProperty(propKlic) : null;
+  if (znama) {
+    var p = znama.split('|');
+    var sesit = sesity.filter(function (s) { return s.jmeno === p[0]; })[0];
+    if (sesit) {
+      var hit = zkus(sesit, p[1]);
+      if (hit) return hit;
+      props.deleteProperty(propKlic);   // přesunulo se / vyprázdnilo → hledej znovu
+    }
+  }
+
+  // 2) plné hledání
   for (var i = 0; i < sesity.length; i++) {
     for (var j = 0; j < nazvy.length; j++) {
-      var sh = sesity[i].ss.getSheetByName(nazvy[j]);
-      if (sh && sh.getLastRow() >= 2) {
-        return { rows: _dsCti(sesity[i].ss, nazvy[j]), zdroj: sesity[i].jmeno + ' → ' + nazvy[j] };
-      }
+      var hit2 = zkus(sesity[i], nazvy[j]);
+      if (hit2) return hit2;
     }
   }
   return { rows: [], zdroj: '' };
@@ -1422,12 +1445,18 @@ function _dsCtiKdekoliv(sesity, nazvy) {
 
 /**
  * Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK).
- * Vrací { count, stoly, celkem, letos, bezStolu, zdroj, listyTrans, listyCore }.
+ * Vrací { count, stoly, celkem, letos, bezStolu, zdroj, listy() }.
+ * `listy()` je LÍNÉ — seznam listů obou sešitů se načte, jen když se tabulka
+ * nenajde a je potřeba ho vypsat do chybové hlášky.
  */
 function _dmImportRezervace(ss, core, trans) {
-  var d = { count: 0, stoly: 0, celkem: 0, letos: 0, bezStolu: 0, zdroj: '', listyTrans: '', listyCore: '' };
-  d.listyTrans = trans.getSheets().map(function (s) { return s.getName(); }).join(', ');
-  d.listyCore = core.getSheets().map(function (s) { return s.getName(); }).join(', ');
+  var d = {
+    count: 0, stoly: 0, celkem: 0, letos: 0, bezStolu: 0, zdroj: '',
+    listy: function () {
+      function nazvy(x) { return x.getSheets().map(function (s) { return s.getName(); }).join(', '); }
+      return '\n\nListy v TRANSACTION:\n' + nazvy(trans) + '\n\nListy v CORE:\n' + nazvy(core);
+    }
+  };
 
   var stoly = _dsCtiStoly(ss);
   d.stoly = stoly.length;
@@ -1441,7 +1470,8 @@ function _dmImportRezervace(ss, core, trans) {
   // rezervace stolů bývají v CORE (v TRANSACTION je list často prázdný) → CORE první
   var nalez = _dsCtiKdekoliv(
     [{ ss: core, jmeno: 'CORE' }, { ss: trans, jmeno: 'TRANSACTION' }],
-    ['MAP_RESERVATIONS', 'map_reservations', 'MAP_RESERVATION', 'RESERVATIONS', 'DESK_RESERVATIONS']
+    ['MAP_RESERVATIONS', 'map_reservations', 'MAP_RESERVATION', 'RESERVATIONS', 'DESK_RESERVATIONS'],
+    'ZDROJ_REZERVACI'
   );
   d.zdroj = nalez.zdroj;
 
