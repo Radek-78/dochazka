@@ -2,6 +2,7 @@
 .claude/**
 .sixth/**
 node_modules/**
+dochazka-sheet/**
 
 .gitignore
 AGENTS.md
