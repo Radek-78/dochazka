@@ -140,7 +140,7 @@
     }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-    function onInit(d) { S.init = d; S.mesic = d.mesic; S.rok = d.rok; loadMonth(); }
+    function onInit(d) { S.init = d; S.init.userId = String(d.userId); S.mesic = d.mesic; S.rok = d.rok; loadMonth(); }
 
     function loadMonth() {
       document.getElementById('app').innerHTML = '<div class="msg">Načítám měsíc…</div>';
@@ -251,7 +251,7 @@
         .withFailureHandler(function (e) {
           document.getElementById('derr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
-        .dm_stul({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen, stul: stul });
+        .dm_stul({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen, stul: stul, deskAbbr: S.init.deskAbbr });
     }
 
     function tileHtml(s, sel, expr) {
@@ -304,7 +304,7 @@
         .withFailureHandler(function (e) {
           document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
-        .dm_uloz({ userId: S.init.userId, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr });
+        .dm_uloz({ userId: S.init.userId, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr });
     }
 
     // ── hromadné zadání ──
@@ -364,7 +364,7 @@
         .dm_hromadne({
           userId: S.init.userId, mesic: S.mesic, odDen: od, doDen: doo,
           jenVsedni: document.getElementById('bVsedni').checked,
-          rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr
+          rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr
         });
     }
   </script>
