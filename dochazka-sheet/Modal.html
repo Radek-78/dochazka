@@ -133,7 +133,7 @@
   <div class="pick" id="desk">
     <div class="pcard">
       <div class="ptitle" id="dtitle"></div>
-      <div class="tiles" id="deskTiles"></div>
+      <div id="deskTiles"></div>
       <div class="pact">
         <button class="btn danger" onclick="deskSend('')">Bez stolu</button>
         <button class="btn ghost" onclick="closeDesk()">Zavřít</button>
@@ -246,7 +246,10 @@
     }
     function deskMapHtml(den) {
       var m = S.init.mapa;
-      var h = '<div class="dmap" style="grid-template-columns:repeat(' + m.cols + ',minmax(46px,1fr))">';
+      var h = '<div class="dklegend"><b style="color:#16a34a">&#9646;</b> volný &nbsp; '
+        + '<b style="color:#2563eb">&#9646;</b> tvůj (klik = uvolnit) &nbsp; '
+        + '<b style="color:#dc2626">&#9646;</b> obsazený &nbsp; <b style="color:#ea580c">&#9646;</b> trvalý</div>';
+      h += '<div class="dmap" style="grid-template-columns:repeat(' + m.cols + ',minmax(46px,1fr))">';
       m.desks.forEach(function (d) {
         var st = deskState(d, den);
         var klik = st.s === 'mine' ? ' onclick="deskSend(\'\')"'
@@ -256,13 +259,11 @@
           + (st.kdo ? '<span class="wh">' + esc(st.kdo) + '</span>' : '')
           + '</div>';
       });
-      h += '</div><div class="dklegend"><b style="color:#16a34a">▮</b> volný &nbsp; '
-        + '<b style="color:#2563eb">▮</b> tvůj (klik = uvolnit) &nbsp; '
-        + '<b style="color:#dc2626">▮</b> obsazený &nbsp; <b style="color:#ea580c">▮</b> trvalý</div>';
+      h += '</div>';
       return h;
     }
     function deskListHtml(den) {
-      return (S.init.stoly || []).map(function (d) {
+      var inner = (S.init.stoly || []).map(function (d) {
         var st = deskState(d, den);
         var stav = { free: 'volný', mine: 'tvůj', mineperm: 'tvůj natrvalo', taken: 'obsazený', perm: 'trvalý' }[st.s];
         var klik = st.s === 'mine' ? "deskSend('')" : (st.s === 'free' ? "deskSend('" + d.label + "')" : '');
@@ -271,6 +272,7 @@
           + '<span class="ab" style="background:#e2e8f0;color:#334155">' + esc(d.label) + '</span>'
           + '<span class="nm">' + stav + (st.kdo ? '<br>' + esc(st.kdo) : '') + '</span></div>';
       }).join('');
+      return inner ? '<div class="tiles">' + inner + '</div>' : '';
     }
     function openDesk(den) {
       S.deskDen = den;
@@ -325,24 +327,35 @@
     }
     function selHalf(which, ab) { if (which === 'dop') S.dopSel = ab; else S.odpSel = ab; buildTiles(); updateDeskRow(); }
 
-    function applyFull(ab) { send('FULL', ab, '', (S.init.deskAbbr || []).indexOf(ab) !== -1); }
+    function maybeOpenDesk(needD) {
+      if (needD && !mojeRez(S.den) && !maTrvalyStul()) { S.deskDen = S.den; openDesk(S.den); }
+      else closePick();
+    }
+    function applyFull(ab) {
+      maybeOpenDesk((S.init.deskAbbr || []).indexOf(ab) !== -1);
+      send('FULL', ab, '');
+    }
     function applyHalf() {
       var da = S.init.deskAbbr || [];
-      send('HALF', S.dopSel, S.odpSel, da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1);
+      maybeOpenDesk(da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1);
+      send('HALF', S.dopSel, S.odpSel);
     }
-    function applyClear() { send('CLEAR', '', '', false); }
+    function applyClear() { closePick(); send('CLEAR', '', ''); }
 
-    function send(rezim, dop, odp, thenDesk) {
+    function send(rezim, dop, odp) {
       document.getElementById('perr').textContent = 'Ukládám…';
       google.script.run
         .withSuccessHandler(function (res) {
           for (var i = 0; i < S.dny.length; i++) if (S.dny[i].den === res.den.den) S.dny[i] = res.den;
           S.souhrn = res.souhrn;
-          if (thenDesk && !mojeRez(S.den)) { render(); openDesk(S.den); }
-          else { closePick(); render(); }
+          if (res.rezMesic) S.rezMesic = res.rezMesic;
+          render();
         })
         .withFailureHandler(function (e) {
-          document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
+          var msg = e && e.message ? e.message : e;
+          if (document.getElementById('pick').classList.contains('on'))
+            document.getElementById('perr').innerHTML = '<span class="err">' + esc(msg) + '</span>';
+          else alert('Uložení dne selhalo: ' + msg);
         })
         .dm_uloz({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr });
     }
@@ -395,6 +408,7 @@
       google.script.run
         .withSuccessHandler(function (res) {
           S.dny = res.dny; S.souhrn = res.souhrn;
+          if (res.rezMesic) S.rezMesic = res.rezMesic;
           closeBulk();
           render();
         })

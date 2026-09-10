@@ -984,6 +984,33 @@ function _dmMaTrvalyStul(ss, jmeno) {
   return _dsCtiStoly(ss).some(function (s) { return s.trvale && s.trvale === jmeno; });
 }
 
+/** Smaže rezervaci uživatele pro daný den (list Rezervace). Vrací true, když něco smazal. */
+function _dmZrusRezervaci(ss, userId, mesic, den) {
+  var sh = ss.getSheetByName('Rezervace');
+  if (!sh) return false;
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return false;
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  var dateStr = ROK + '-' + ('0' + mesic).slice(-2) + '-' + ('0' + den).slice(-2);
+  var smazano = false;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][H['user_id']]).trim() === String(userId) &&
+      _dsFmtDatum(data[i][H['Datum']]) === dateStr) {
+      sh.getRange(i + 1, 1, 1, 4).clearContent();
+      smazano = true;
+    }
+  }
+  return smazano;
+}
+
+/** Potřebuje status(y) daného dne stůl? */
+function _dmPotrebaStul(rezim, dop, odp, deskAbbr) {
+  if (rezim === 'CLEAR') return false;
+  var da = deskAbbr || [];
+  return da.indexOf(String(dop || '').trim()) !== -1 || da.indexOf(String(odp || '').trim()) !== -1;
+}
+
 /** Nastaví/zruší červený rámeček u jednoho dne podle stavu rezervace. */
 function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   var dopCol = DS_DEN1_COL + 2 * (den - 1);
@@ -1419,8 +1446,12 @@ function dm_uloz(payload) {
     var mr = _dmMojeRadka(sheet, payload.userId);
     _dmZapisDen(sheet, mr.row, payload.den, payload.rezim, payload.dop, payload.odp);
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
+    var ssU = SpreadsheetApp.getActiveSpreadsheet();
+    // status už nepotřebuje stůl → zruš případnou rezervaci
+    if (!_dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr)) {
+      _dmZrusRezervaci(ssU, payload.userId, payload.mesic, payload.den);
+    }
     try {
-      var ssU = SpreadsheetApp.getActiveSpreadsheet();
       var maR = _dmRezMesic(ssU, payload.mesic).some(function (r) {
         return String(r.uid) === String(payload.userId) && r.den === payload.den && r.stul;
       });
@@ -1428,7 +1459,7 @@ function dm_uloz(payload) {
     } catch (e) {}
     var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
     try { sheet.getRange(mr.row, DS_DEN1_COL + 2 * (payload.den - 1)).activate(); } catch (e) {}
-    return { den: den, souhrn: souhrn };
+    return { den: den, souhrn: souhrn, rezMesic: _dmRezMesic(ssU, payload.mesic) };
   } finally {
     lock.releaseLock();
   }
@@ -1444,18 +1475,20 @@ function dm_hromadne(payload) {
     var N = _dmDniVMesici(payload.mesic);
     var od = Math.max(1, Math.min(N, Number(payload.odDen) || 1));
     var doo = Math.max(od, Math.min(N, Number(payload.doDen) || N));
+    var ssH = SpreadsheetApp.getActiveSpreadsheet();
+    var potrebaStul = _dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr);
     for (var d = od; d <= doo; d++) {
       if (payload.jenVsedni) {
         var dow = new Date(ROK, payload.mesic - 1, d).getDay();
         if (dow === 0 || dow === 6) continue;
       }
       _dmZapisDen(sheet, mr.row, d, payload.rezim, payload.dop, payload.odp);
+      if (!potrebaStul) _dmZrusRezervaci(ssH, payload.userId, payload.mesic, d);
     }
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
     try {
       var da = payload.deskAbbr || [];
       if (da.length) {
-        var ssH = SpreadsheetApp.getActiveSpreadsheet();
         var trvaly = _dmMaTrvalyStul(ssH, payload.jmeno);
         var rezDny = {};
         _dmRezMesic(ssH, payload.mesic).forEach(function (r) {
@@ -1471,7 +1504,7 @@ function dm_hromadne(payload) {
       }
     } catch (e) {}
     try { sheet.getRange(mr.row, 1).activate(); } catch (e) {}
-    return { dny: _dmDenData(sheet, mr.row, payload.mesic), souhrn: souhrn };
+    return { dny: _dmDenData(sheet, mr.row, payload.mesic), souhrn: souhrn, rezMesic: _dmRezMesic(ssH, payload.mesic) };
   } finally {
     lock.releaseLock();
   }
