@@ -771,7 +771,7 @@ function _dsRadkyProMesic(radky, mesic) {
 // ── měsíční list ─────────────────────────────────────────────────────────
 
 // Bumpuj při JAKÉKOLI změně struktury listu (kvůli fast-path porovnání podpisu).
-var DS_BUILD_VER = 4;
+var DS_BUILD_VER = 5;
 
 /** Podpis struktury listu (hash) — když se nezmění, přestavba se přeskočí. */
 function _dsPodpisListu(mesic, radky, N) {
@@ -1021,8 +1021,8 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   var rezM = _dmRezMesic(ss, mesic);
   _dmObnovStulyList(sheet, mesic, deskAbbr, rezM, 'jen_pismo');
 
-  // ── ohraničení: vnější rámeček + rámy bloků; vnitřní dělení dělají 1px mezery ──
-  sheet.getRange(prvni, 1, dataR, souhrnCol)
+  // ── ohraničení: vnější rámeček (hrany v mezerových řádcích) + rámy bloků; vnitřní dělení dělají 1px mezery ──
+  sheet.getRange(mezR, 1, dataR + 1, souhrnCol)
     .setBorder(true, true, true, true, false, false, '#cbd5e1', SpreadsheetApp.BorderStyle.SOLID);
   bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
 
@@ -1192,9 +1192,15 @@ function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   else pair.setBorder(false, false, false, false, false, false, null, null);
 }
 
+/**
+ * Rám oddělení. Horní i dolní hranu kreslí do 1px mezerových řádků těsně NAD a POD blokem,
+ * takže se nikde nepotká s rámečkem buňky (např. červený rámeček „Kancelář bez stolu").
+ */
 function _dsRamOddeleni(sheet, r1, r2, lastCol) {
   if (r2 < r1) return;
-  sheet.getRange(r1, 1, r2 - r1 + 1, lastCol)
+  var top = Math.max(DS_PRVNI_DATA_RADEK - 1, r1 - 1);   // mezerový řádek nad blokem
+  var bot = r2 + 1;                                        // mezerový řádek pod blokem
+  sheet.getRange(top, 1, bot - top + 1, lastCol)
     .setBorder(true, true, true, true, false, false, '#64748b', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 }
 
