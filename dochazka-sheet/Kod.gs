@@ -536,6 +536,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   var tz = Session.getScriptTimeZone();
   var ST_JMENO = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(10).setForegroundColor('#1e293b').build();
   var ST_POZICE = SpreadsheetApp.newTextStyle().setBold(false).setFontSize(8).setForegroundColor('#64748b').build();
+  var ST_KONEC = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(8).setForegroundColor('#dc2626').build();
   function jePosledni(u) {
     return u.do && u.do.getFullYear() === ROK && (u.do.getMonth() + 1) === mesic;
   }
@@ -557,16 +558,19 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
       sheet.setRowHeight(row, 8);
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#ffffff');
     } else {
-      var nm = it.u.jmeno;
-      var radek2 = [];
-      if (it.u.pozice) radek2.push(it.u.pozice);
-      if (jePosledni(it.u)) radek2.push('do ' + Utilities.formatDate(it.u.do, tz, 'd.M.yyyy'));
-      var text = nm;
-      var styly = [[0, nm.length, ST_JMENO]];
-      if (radek2.length) {
-        var p0 = text.length + 1;
-        text += '\n' + radek2.join(' · ');
-        styly.push([p0, text.length, ST_POZICE]);
+      var text = it.u.jmeno;
+      var styly = [[0, text.length, ST_JMENO]];
+      var seg = [];
+      if (it.u.pozice) seg.push({ t: it.u.pozice, st: ST_POZICE });
+      if (jePosledni(it.u)) seg.push({ t: 'do ' + Utilities.formatDate(it.u.do, tz, 'd.M.yyyy'), st: ST_KONEC });
+      if (seg.length) {
+        text += '\n';
+        seg.forEach(function (sg, i) {
+          if (i > 0) { var s0 = text.length; text += '  ·  '; styly.push([s0, text.length, ST_POZICE]); }
+          var b0 = text.length;
+          text += sg.t;
+          styly.push([b0, text.length, sg.st]);
+        });
       }
       var rtb = SpreadsheetApp.newRichTextValue().setText(text);
       styly.forEach(function (s) { rtb.setTextStyle(s[0], s[1], s[2]); });
@@ -588,9 +592,14 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   });
   var dnesVzorec = '=AND(YEAR(TODAY())=' + ROK + ',MONTH(TODAY())=' + mesic +
     ',OR(COLUMN()=' + den1 + '+2*(DAY(TODAY())-1),COLUMN()=' + den1 + '+2*(DAY(TODAY())-1)+1))';
+  // hlavička dnů — silné zvýraznění (je zmrazená, takže vždy vidět)
   pravidla.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(dnesVzorec).setBackground('#fde047')
-    .setRanges([mrizka, sheet.getRange(2, den1, 2, 2 * pocetDnu)]).build());
+    .whenFormulaSatisfied(dnesVzorec).setBackground('#facc15').setBold(true)
+    .setRanges([sheet.getRange(2, den1, 2, 2 * pocetDnu)]).build());
+  // mřížka — jemné zvýraznění (na obsazených buňkách vítězí barva statusu)
+  pravidla.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(dnesVzorec).setBackground('#fef9c3')
+    .setRanges([mrizka]).build());
   sheet.setConditionalFormatRules(pravidla);
 
   // ── rámy, zmrazení, rozměry ──
@@ -602,6 +611,8 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   sheet.setColumnWidth(1, 170);
   sheet.setColumnWidths(den1, 2 * pocetDnu, 22);
   sheet.setColumnWidth(souhrnCol, 90);
+  sheet.getRange(prvniData, souhrnCol, pocetRadku, 1)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sheet.setRowHeight(1, 26);
 
   sheet.getRange(prvniData, 1, pocetRadku, souhrnCol).protect()
@@ -855,6 +866,8 @@ function dm_uloz(payload) {
 
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
     var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
+    // udržet pohled listu u řádku uživatele (jinak po zápisu skáče nahoru)
+    try { sheet.getRange(mr.row, dopCol).activate(); } catch (e) {}
     return { den: den, souhrn: souhrn };
   } finally {
     lock.releaseLock();
