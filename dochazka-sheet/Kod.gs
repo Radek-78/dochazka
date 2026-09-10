@@ -29,8 +29,8 @@
  * ============================================================================
  */
 
-var ZDROJ_CORE_ID = 'SEM_VLOZ_ID_CORE_DB';
-var USEK_NAZEV = 'SEM_VLOZ_NAZEV_USEKU';
+var ZDROJ_CORE_ID = '13RKMeOxnXVsJ7omEVElPP2BCJe5_bqtFYklbmE5YZ6g';
+var USEK_NAZEV = 'DL Plánování a řízení zásob';
 var ROK = new Date().getFullYear();
 
 var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
