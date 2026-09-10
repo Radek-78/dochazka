@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 14px; color: #1e293b; font-size: 13px; }
+    .msg { color: #94a3b8; font-size: 12px; }
+    .err { color: #dc2626; font-weight: 700; }
+
+    .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .who { font-weight: 800; }
+    .nav { display: flex; align-items: center; gap: 8px; }
+    .nav button { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-weight: 800; }
+    .period { font-weight: 900; min-width: 140px; text-align: center; }
+
+    .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .dow { text-align: center; font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 2px 0; }
+    .cell { min-height: 54px; border: 1px solid #e2e8f0; border-radius: 7px; padding: 3px; cursor: pointer; background: #fff; }
+    .cell:hover { border-color: #94a3b8; }
+    .cell.wknd { background: #f1f5f9; }
+    .cell.blank { visibility: hidden; }
+    .cell .num { font-size: 10px; color: #64748b; font-weight: 700; }
+    .chip { margin-top: 3px; border-radius: 5px; font-weight: 900; font-size: 12px; text-align: center; padding: 6px 2px; }
+    .halves { display: flex; gap: 2px; margin-top: 3px; }
+    .halves .h { flex: 1; border-radius: 4px; font-weight: 900; font-size: 10px; text-align: center; padding: 6px 1px; min-height: 16px; background: #f1f5f9; }
+
+    .foot { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .sum { font-weight: 800; }
+    .btn { border: none; border-radius: 7px; padding: 8px 18px; font-weight: 800; cursor: pointer; }
+    .btn.primary { background: #004fac; color: #fff; }
+    .btn.ghost { background: #f1f5f9; color: #334155; }
+    .btn.danger { background: #fee2e2; color: #b91c1c; }
+
+    .pick { position: fixed; inset: 0; background: rgba(15, 23, 42, .4); display: none; align-items: center; justify-content: center; }
+    .pick.on { display: flex; }
+    .pcard { background: #fff; border-radius: 12px; padding: 16px; width: min(600px, 94vw); max-height: 90vh; overflow: auto; }
+    .ptitle { font-weight: 900; font-size: 15px; margin-bottom: 10px; }
+    .mode { display: flex; margin-bottom: 12px; }
+    .mode button { flex: 1; border: 1.5px solid #cbd5e1; background: #f8fafc; padding: 8px; font-weight: 800; cursor: pointer; }
+    .mode button:first-child { border-radius: 8px 0 0 8px; }
+    .mode button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+    .mode button.act { background: #004fac; color: #fff; border-color: #004fac; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+    .tile { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 4px; text-align: center; cursor: pointer; }
+    .tile.sel { outline: 3px solid #004fac; }
+    .tile .ab { display: inline-block; min-width: 28px; padding: 4px 6px; border-radius: 6px; font-weight: 900; }
+    .tile .nm { font-size: 9px; color: #475569; margin-top: 4px; display: block; line-height: 1.15; }
+    .tile.none .ab { background: #e2e8f0; color: #475569; }
+    .hsec { margin-bottom: 10px; }
+    .hsec .lbl { font-weight: 800; font-size: 11px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
+    .pact { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div id="app"><div class="msg">Načítám…</div></div>
+
+  <div class="pick" id="pick">
+    <div class="pcard">
+      <div class="ptitle" id="ptitle"></div>
+      <div class="mode">
+        <button id="mFull" onclick="setMode('FULL')">CELÝ DEN</button>
+        <button id="mHalf" onclick="setMode('HALF')">½ DEN</button>
+      </div>
+      <div id="pFull"><div class="tiles" id="tilesFull"></div></div>
+      <div id="pHalf" style="display:none">
+        <div class="hsec"><div class="lbl">Dopoledne</div><div class="tiles" id="tilesDop"></div></div>
+        <div class="hsec"><div class="lbl">Odpoledne</div><div class="tiles" id="tilesOdp"></div></div>
+      </div>
+      <div class="pact">
+        <button class="btn danger" onclick="applyClear()">Vymazat den</button>
+        <div>
+          <button class="btn ghost" onclick="closePick()">Zavřít</button>
+          <button class="btn primary" id="btnHalf" style="display:none" onclick="applyHalf()">Uložit půlden</button>
+        </div>
+      </div>
+      <div class="msg" id="perr" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <script>
+    var S = { init: null, mesic: null, rok: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '' };
+    var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
+    var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+
+    google.script.run.withSuccessHandler(onInit).withFailureHandler(fatal).dm_init();
+
+    function fatal(e) {
+      document.getElementById('app').innerHTML = '<div class="err">' + esc(e && e.message ? e.message : e) + '</div>';
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+    function onInit(d) { S.init = d; S.mesic = d.mesic; S.rok = d.rok; loadMonth(); }
+
+    function loadMonth() {
+      document.getElementById('app').innerHTML = '<div class="msg">Načítám měsíc…</div>';
+      google.script.run.withSuccessHandler(onMonth).withFailureHandler(fatal)
+        .dm_mesic({ userId: S.init.userId, mesic: S.mesic });
+    }
+    function onMonth(m) { S.dny = m.dny; S.souhrn = m.souhrn; render(); }
+
+    function st(ab) { var a = S.init.statusy.filter(function (x) { return x.abbr === ab; }); return a.length ? a[0] : null; }
+
+    function render() {
+      var h = '';
+      h += '<div class="hdr"><div class="who">' + esc(S.init.jmeno) + ' &middot; ' + esc(S.init.usek) + '</div>'
+        + '<div class="nav"><button onclick="chgMonth(-1)">&#9664;</button>'
+        + '<span class="period">' + MES[S.mesic - 1].toUpperCase() + ' ' + S.rok + '</span>'
+        + '<button onclick="chgMonth(1)">&#9654;</button></div></div>';
+      h += '<div class="grid">';
+      DOW.forEach(function (x) { h += '<div class="dow">' + x + '</div>'; });
+      var lead = (S.dny[0].dow + 6) % 7;
+      for (var i = 0; i < lead; i++) h += '<div class="cell blank"></div>';
+      S.dny.forEach(function (day) {
+        h += '<div class="cell' + (day.weekend ? ' wknd' : '') + '" onclick="openPick(' + day.den + ')">';
+        h += '<div class="num">' + day.den + '</div>';
+        if (day.full) { if (day.dop) h += chip(day.dop); }
+        else { h += '<div class="halves">' + half(day.dop) + half(day.odp) + '</div>'; }
+        h += '</div>';
+      });
+      h += '</div>';
+      h += '<div class="foot"><span class="sum">Dovolená: ' + (S.souhrn || 0) + ' dní</span>'
+        + '<button class="btn primary" onclick="google.script.host.close()">Hotovo</button></div>';
+      document.getElementById('app').innerHTML = h;
+    }
+
+    function chip(ab) { var s = st(ab); return '<div class="chip" style="background:' + (s ? s.color : '#e2e8f0') + ';color:' + (s ? s.fg : '#000') + '">' + esc(ab) + '</div>'; }
+    function half(ab) { if (!ab) return '<div class="h"></div>'; var s = st(ab); return '<div class="h" style="background:' + (s ? s.color : '#e2e8f0') + ';color:' + (s ? s.fg : '#000') + '">' + esc(ab) + '</div>'; }
+
+    function chgMonth(delta) { var m = S.mesic + delta; if (m < 1 || m > 12) return; S.mesic = m; loadMonth(); }
+
+    // ── picker ──
+    function openPick(den) {
+      S.den = den;
+      var day = S.dny.filter(function (x) { return x.den === den; })[0];
+      S.mode = day.full ? 'FULL' : 'HALF';
+      S.dopSel = day.dop || '';
+      S.odpSel = day.odp || '';
+      document.getElementById('ptitle').textContent = den + '. ' + MES[S.mesic - 1] + ' ' + S.rok;
+      document.getElementById('perr').textContent = '';
+      buildTiles();
+      setMode(S.mode);
+      document.getElementById('pick').classList.add('on');
+    }
+    function closePick() { document.getElementById('pick').classList.remove('on'); }
+
+    function tileHtml(s, sel, expr) {
+      return '<div class="tile' + (sel ? ' sel' : '') + '" onclick="' + expr + '">'
+        + '<span class="ab" style="background:' + s.color + ';color:' + s.fg + '">' + esc(s.abbr) + '</span>'
+        + '<span class="nm">' + esc(s.name) + '</span></div>';
+    }
+    function noneHtml(sel, expr) {
+      return '<div class="tile none' + (sel ? ' sel' : '') + '" onclick="' + expr + '">'
+        + '<span class="ab">&mdash;</span><span class="nm">práce / nic</span></div>';
+    }
+    function buildTiles() {
+      document.getElementById('tilesFull').innerHTML =
+        S.init.statusy.map(function (s) { return tileHtml(s, false, "applyFull('" + s.abbr + "')"); }).join('');
+      document.getElementById('tilesDop').innerHTML =
+        noneHtml(S.dopSel === '', "selHalf('dop','')") +
+        S.init.statusy.map(function (s) { return tileHtml(s, S.dopSel === s.abbr, "selHalf('dop','" + s.abbr + "')"); }).join('');
+      document.getElementById('tilesOdp').innerHTML =
+        noneHtml(S.odpSel === '', "selHalf('odp','')") +
+        S.init.statusy.map(function (s) { return tileHtml(s, S.odpSel === s.abbr, "selHalf('odp','" + s.abbr + "')"); }).join('');
+    }
+
+    function setMode(m) {
+      S.mode = m;
+      document.getElementById('mFull').classList.toggle('act', m === 'FULL');
+      document.getElementById('mHalf').classList.toggle('act', m === 'HALF');
+      document.getElementById('pFull').style.display = m === 'FULL' ? '' : 'none';
+      document.getElementById('pHalf').style.display = m === 'HALF' ? '' : 'none';
+      document.getElementById('btnHalf').style.display = m === 'HALF' ? '' : 'none';
+    }
+    function selHalf(which, ab) { if (which === 'dop') S.dopSel = ab; else S.odpSel = ab; buildTiles(); }
+
+    function applyFull(ab) { send('FULL', ab, ''); }
+    function applyHalf() { send('HALF', S.dopSel, S.odpSel); }
+    function applyClear() { send('CLEAR', '', ''); }
+
+    function send(rezim, dop, odp) {
+      document.getElementById('perr').textContent = 'Ukládám…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          for (var i = 0; i < S.dny.length; i++) if (S.dny[i].den === res.den.den) S.dny[i] = res.den;
+          S.souhrn = res.souhrn;
+          closePick();
+          render();
+        })
+        .withFailureHandler(function (e) {
+          document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
+        })
+        .dm_uloz({ userId: S.init.userId, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr });
+    }
+  </script>
+</body>
+</html>
