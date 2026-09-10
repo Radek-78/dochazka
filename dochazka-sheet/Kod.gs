@@ -988,7 +988,7 @@ function nactiDochazku() {
     if (shb) _dmObnovStulyList(shb, mb, deskAbbr, null);
   }
 
-  ui.alert('Načteno ' + pocet + ' dní docházky a ' + rez + ' rezervací stolů.');
+  ui.alert('Načteno ' + pocet + ' dní docházky a ' + rez.count + ' rezervací stolů.');
 }
 
 /** Načte jen rezervace stolů z živé aplikace (bez docházky). */
@@ -1010,20 +1010,36 @@ function nactiRezervace() {
     if (a && String(s.allows_desk_reservation) === 'true' && deskAbbr.indexOf(a) === -1) deskAbbr.push(a);
   });
 
-  var rez = _dmImportRezervace(ss, core, trans);
+  var d = _dmImportRezervace(ss, core, trans);
 
   for (var mb = 1; mb <= 12; mb++) {
     var shb = ss.getSheetByName(_dsNazevMesice(mb));
     if (shb) _dmObnovStulyList(shb, mb, deskAbbr, null);
   }
 
-  ui.alert('Načteno ' + rez + ' rezervací stolů.');
+  if (d.stoly === 0) {
+    ui.alert('List "Stoly" je prázdný nebo chybí.\n\nNejdřív spusť 🔄 Postavit / obnovit listy — ten vytvoří list Stoly z OFFICE_MAPS živé aplikace. Bez stolů se rezervace nedají spárovat.');
+    return;
+  }
+  ui.alert('Načteno ' + d.count + ' rezervací stolů.\n\n' +
+    'Stolů v listu: ' + d.stoly + '\n' +
+    'Řádků MAP_RESERVATIONS: ' + d.celkem + '\n' +
+    'Z toho pro rok ' + ROK + ': ' + d.letos + '\n' +
+    (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
+    (d.celkem === 0 ? '\n⚠ Tabulka MAP_RESERVATIONS je prázdná / nedostupná — zkontroluj ZDROJ_TRANSACTION_ID.' : '') +
+    (d.celkem > 0 && d.letos === 0 ? '\n⚠ Žádná rezervace pro rok ' + ROK + '.' : '') +
+    (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — přegeneruj listy.' : ''));
 }
 
-/** Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK). */
+/**
+ * Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK).
+ * Vrací { count, stoly, celkem, letos, bezStolu } pro diagnostiku.
+ */
 function _dmImportRezervace(ss, core, trans) {
+  var d = { count: 0, stoly: 0, celkem: 0, letos: 0, bezStolu: 0 };
   var stoly = _dsCtiStoly(ss);
-  if (stoly.length === 0) return 0;
+  d.stoly = stoly.length;
+  if (stoly.length === 0) return d;
   var labelByCell = {};
   stoly.forEach(function (s) { if (s.cell_id) labelByCell[s.cell_id] = s.stul; });
 
@@ -1035,15 +1051,18 @@ function _dmImportRezervace(ss, core, trans) {
 
   var out = [];
   _dsCti(trans, 'MAP_RESERVATIONS').forEach(function (r) {
+    d.celkem++;
     if (String(r.active) === 'false') return;
-    var datum = String(r.date || '').substring(0, 10);
+    var datum = _dsFmtDatum(r.date);
     if (datum.substring(0, 4) !== String(ROK)) return;
+    d.letos++;
     var stul = labelByCell[String(r.cell_id).trim()];
-    if (!stul) return;
+    if (!stul) { d.bezStolu++; return; }
     out.push([datum, stul, jmenoByUid[String(r.user_id).trim()] || '', String(r.user_id).trim()]);
   });
-  if (out.length) sh.getRange(2, 1, out.length, 4).setValues(out);
-  return out.length;
+  if (out.length) sh.getRange(2, 1, out.length, 4).setNumberFormat('@').setValues(out);
+  d.count = out.length;
+  return d;
 }
 
 function _dmImportMesic(sheet, mesic, zapisy, vacAbbr) {
