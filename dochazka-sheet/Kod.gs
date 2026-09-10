@@ -28,7 +28,7 @@
  */
 
 var ZDROJ_CORE_ID = '13RKMeOxnXVsJ7omEVElPP2BCJe5_bqtFYklbmE5YZ6g';
-var ZDROJ_TRANSACTION_ID = 'SEM_VLOZ_ID_TRANSACTION_DB';   // pro "Načíst docházku z aplikace"
+var ZDROJ_TRANSACTION_ID = '1gJsTyi8r0yKaJ1ODOIT9x9XM6Dvdc8rKf1QucYLwBB0';   // pro "Načíst docházku z aplikace"
 var USEK_NAZEV = 'DL Plánování a řízení zásob';
 var ROK = new Date().getFullYear();
 
