@@ -44,10 +44,9 @@ var DS_FONT = 'Lidl Font Cond Pro';
 // Vzhled chipu statusu v mřížce: 0 = plná barva statusu + bílý text,
 // 0.5–0.85 = jen jemný tón barvy na bílé + tmavý čitelný text (ohraničení pak víc vynikne).
 var DS_CHIP_TON = 0.74;
-// Symbol za zkratkou u kancelářského dne bez rezervace stolu (jen zobrazení, hodnota buňky se nemění).
-var DS_ZNACKA_BEZ_STOLU = '°';
-var _DS_NF_PLAIN = '@';
-var _DS_NF_ZNACKA = '@"' + DS_ZNACKA_BEZ_STOLU + '"';
+// Kancelářský den bez rezervace stolu: zkratka statusu se vypíše touto barvou (jinak DS_BARVA_TEXT).
+var DS_BARVA_TEXT = '#1e293b';
+var DS_BARVA_BEZ_STOLU = '#dc2626';
 var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
 var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
@@ -891,8 +890,9 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
     if (!zk) return;
     var barva = _dsHex(s.color, '#94a3b8');
     var pr = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(zk).setBold(true).setRanges([mrizka]);
-    if (DS_CHIP_TON > 0) pr.setBackground(_dsSvetleji(barva, DS_CHIP_TON)).setFontColor('#1e293b');
-    else pr.setBackground(barva).setFontColor(_dsHex(s.text_color, '#ffffff'));
+    // barvu písma NEřídí CF (tu nastavuje skript kvůli červené u kanceláře bez stolu)
+    if (DS_CHIP_TON > 0) pr.setBackground(_dsSvetleji(barva, DS_CHIP_TON));
+    else pr.setBackground(barva);
     pravidla.push(pr.build());
   });
   sheet.setConditionalFormatRules(pravidla);
@@ -923,7 +923,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   _dsFont(sheet);
 }
 
-/** Projde měsíční list a označí kancelářské dny bez rezervace symbolem za zkratkou (číselný formát). Vrací počet. */
+/** Projde měsíční list a vypíše zkratku statusu červeně u kancelářských dnů bez rezervace. Vrací počet. */
 function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var da = deskAbbr || [];
   if (!da.length) return 0;
@@ -956,12 +956,13 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
     if (s.trvale && uidByJmeno[s.trvale]) trvalyUid[uidByJmeno[s.trvale]] = 1;
   });
 
-  // číselný formát mřížky: '@' všude, '@"°"' u půlky dne s kanceláří bez stolu
-  var nf = [];
+  // barva písma v celé mřížce: výchozí × červená u kanceláře bez stolu
+  var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
+  var fc = [];
   for (var r0 = 0; r0 < nRows; r0++) {
     var rr = [];
-    for (var c0 = 0; c0 < 2 * N; c0++) rr.push(_DS_NF_PLAIN);
-    nf.push(rr);
+    for (var c0 = 0; c0 < 2 * N; c0++) rr.push(vychozi);
+    fc.push(rr);
   }
   var zvyrazneno = 0;
   for (var i = 0; i < nRows; i++) {
@@ -977,12 +978,12 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
       var vOdp = full ? '' : String(grid[i][idx + 1] || '').trim();
       var maRez = !!rezSet[uid + '_' + d];
       var oznac = false;
-      if (deskSet[vDop] && !maRez) { nf[i][idx] = _DS_NF_ZNACKA; oznac = true; }
-      if (!full && deskSet[vOdp] && !maRez) { nf[i][idx + 1] = _DS_NF_ZNACKA; oznac = true; }
+      if (deskSet[vDop] && !maRez) { fc[i][idx] = DS_BARVA_BEZ_STOLU; oznac = true; }
+      if (!full && deskSet[vOdp] && !maRez) { fc[i][idx + 1] = DS_BARVA_BEZ_STOLU; oznac = true; }
       if (oznac) zvyrazneno++;
     }
   }
-  sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, 2 * N).setNumberFormats(nf);
+  sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, 2 * N).setFontColors(fc);
   return zvyrazneno;
 }
 
@@ -1029,18 +1030,20 @@ function _dmPotrebaStul(rezim, dop, odp, deskAbbr) {
   return da.indexOf(String(dop || '').trim()) !== -1 || da.indexOf(String(odp || '').trim()) !== -1;
 }
 
-/** Nastaví/zruší značku „bez stolu" (symbol za zkratkou) u jednoho dne. */
+/** Zkratku statusu u jednoho dne vypíše červeně (kancelář bez stolu) nebo výchozí barvou. */
 function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   var dopCol = DS_DEN1_COL + 2 * (den - 1);
   var pair = sheet.getRange(row, dopCol, 1, 2);
   var vals = pair.getValues()[0];
   var full = pair.isPartOfMerge();
   var da = deskAbbr || [];
-  var dopMark = da.indexOf(String(vals[0] || '').trim()) !== -1 && !maRezervaci;
-  var odpMark = !full && da.indexOf(String(vals[1] || '').trim()) !== -1 && !maRezervaci;
-  sheet.getRange(row, dopCol).setNumberFormat(dopMark ? _DS_NF_ZNACKA : _DS_NF_PLAIN);
-  sheet.getRange(row, dopCol + 1).setNumberFormat(odpMark ? _DS_NF_ZNACKA : _DS_NF_PLAIN);
-  // úklid případného staršího červeného spodního okraje
+  var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
+  var dopRed = da.indexOf(String(vals[0] || '').trim()) !== -1 && !maRezervaci;
+  var odpRed = !full && da.indexOf(String(vals[1] || '').trim()) !== -1 && !maRezervaci;
+  sheet.getRange(row, dopCol).setFontColor(dopRed ? DS_BARVA_BEZ_STOLU : vychozi);
+  sheet.getRange(row, dopCol + 1).setFontColor(odpRed ? DS_BARVA_BEZ_STOLU : vychozi);
+  // úklid případné staré značky / okraje z dřívějška
+  pair.setNumberFormat('@');
   pair.setBorder(null, null, true, null, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
 }
 
@@ -1183,7 +1186,7 @@ function nactiDochazku() {
 
   ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v ATTENDANCE_STATUSES není allows_desk_reservation)') + '\n' +
-    'Kancelářských dnů bez rezervace (symbol °): ' + zvyrazneno + '\n\n' +
+    'Kancelářských dnů bez rezervace (zkratka červeně): ' + zvyrazneno + '\n\n' +
     'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');
 }
 
@@ -1221,7 +1224,7 @@ function nactiRezervace() {
     'Z toho pro rok ' + ROK + ': ' + d.letos + '\n' +
     (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný') + '\n' +
-    'Kancelářských dnů bez rezervace (symbol °): ' + zvyrazneno + '\n' +
+    'Kancelářských dnů bez rezervace (zkratka červeně): ' + zvyrazneno + '\n' +
     (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.\n\nListy v TRANSACTION:\n' + d.listyTrans +
       '\n\nListy v CORE:\n' + d.listyCore +
       '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
