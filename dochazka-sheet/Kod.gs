@@ -44,6 +44,10 @@ var DS_FONT = 'Lidl Font Cond Pro';
 // Vzhled chipu statusu v mřížce: 0 = plná barva statusu + bílý text,
 // 0.5–0.85 = jen jemný tón barvy na bílé + tmavý čitelný text (ohraničení pak víc vynikne).
 var DS_CHIP_TON = 0.74;
+// Symbol za zkratkou u kancelářského dne bez rezervace stolu (jen zobrazení, hodnota buňky se nemění).
+var DS_ZNACKA_BEZ_STOLU = '°';
+var _DS_NF_PLAIN = '@';
+var _DS_NF_ZNACKA = '@"' + DS_ZNACKA_BEZ_STOLU + '"';
 var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
 var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
@@ -919,7 +923,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   _dsFont(sheet);
 }
 
-/** Projde celý měsíční list a nastaví červený proužek u kancelářských dnů bez rezervace stolu. Vrací počet zvýrazněných dnů. */
+/** Projde měsíční list a označí kancelářské dny bez rezervace symbolem za zkratkou (číselný formát). Vrací počet. */
 function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var da = deskAbbr || [];
   if (!da.length) return 0;
@@ -952,33 +956,34 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
     if (s.trvale && uidByJmeno[s.trvale]) trvalyUid[uidByJmeno[s.trvale]] = 1;
   });
 
+  // číselný formát mřížky: '@' všude, '@"°"' u půlky dne s kanceláří bez stolu
+  var nf = [];
+  for (var r0 = 0; r0 < nRows; r0++) {
+    var rr = [];
+    for (var c0 = 0; c0 < 2 * N; c0++) rr.push(_DS_NF_PLAIN);
+    nf.push(rr);
+  }
   var zvyrazneno = 0;
   for (var i = 0; i < nRows; i++) {
     var uid = String(uids[i][0] || '').trim();
     if (!uid) continue;
     var absRow = DS_PRVNI_DATA_RADEK + i;
+    var maStul = trvalyUid[uid];
     for (var d = 1; d <= N; d++) {
-      var dopCol = den1 + 2 * (d - 1);
-      var idx = dopCol - den1;
-      var full = !!merged[absRow + '_' + dopCol];
+      if (maStul) continue;
+      var idx = 2 * (d - 1);
+      var full = !!merged[absRow + '_' + (den1 + idx)];
       var vDop = String(grid[i][idx] || '').trim();
       var vOdp = full ? '' : String(grid[i][idx + 1] || '').trim();
-      var potreba = deskSet[vDop] || (!full && deskSet[vOdp]);
-      if (!potreba) continue;
-      var maStul = rezSet[uid + '_' + d] || trvalyUid[uid];
-      _dmRamecekStul(sheet.getRange(absRow, dopCol, 1, 2), !maStul);
-      if (!maStul) zvyrazneno++;
+      var maRez = !!rezSet[uid + '_' + d];
+      var oznac = false;
+      if (deskSet[vDop] && !maRez) { nf[i][idx] = _DS_NF_ZNACKA; oznac = true; }
+      if (!full && deskSet[vOdp] && !maRez) { nf[i][idx + 1] = _DS_NF_ZNACKA; oznac = true; }
+      if (oznac) zvyrazneno++;
     }
   }
+  sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, 2 * N).setNumberFormats(nf);
   return zvyrazneno;
-}
-
-/** Indikace „kancelář bez stolu" — červené levá/pravá/spodní hrana dvojice dne (bez horní, ať nekříží rám oddělení). */
-function _dmRamecekStul(pair, cerveny) {
-  pair.setBorder(
-    null, true, true, true, null, null,
-    cerveny ? '#dc2626' : '#e2e8f0',
-    cerveny ? SpreadsheetApp.BorderStyle.SOLID_MEDIUM : SpreadsheetApp.BorderStyle.SOLID);
 }
 
 /** Zkratky statusů, které vyžadují rezervaci stolu (allows_desk_reservation). */
@@ -1024,15 +1029,19 @@ function _dmPotrebaStul(rezim, dop, odp, deskAbbr) {
   return da.indexOf(String(dop || '').trim()) !== -1 || da.indexOf(String(odp || '').trim()) !== -1;
 }
 
-/** Nastaví/zruší červený rámeček u jednoho dne podle stavu rezervace. */
+/** Nastaví/zruší značku „bez stolu" (symbol za zkratkou) u jednoho dne. */
 function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   var dopCol = DS_DEN1_COL + 2 * (den - 1);
   var pair = sheet.getRange(row, dopCol, 1, 2);
   var vals = pair.getValues()[0];
+  var full = pair.isPartOfMerge();
   var da = deskAbbr || [];
-  var potreba = da.indexOf(String(vals[0] || '').trim()) !== -1 ||
-    (!pair.isPartOfMerge() && da.indexOf(String(vals[1] || '').trim()) !== -1);
-  _dmRamecekStul(pair, potreba && !maRezervaci);
+  var dopMark = da.indexOf(String(vals[0] || '').trim()) !== -1 && !maRezervaci;
+  var odpMark = !full && da.indexOf(String(vals[1] || '').trim()) !== -1 && !maRezervaci;
+  sheet.getRange(row, dopCol).setNumberFormat(dopMark ? _DS_NF_ZNACKA : _DS_NF_PLAIN);
+  sheet.getRange(row, dopCol + 1).setNumberFormat(odpMark ? _DS_NF_ZNACKA : _DS_NF_PLAIN);
+  // úklid případného staršího červeného spodního okraje
+  pair.setBorder(null, null, true, null, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
 }
 
 function _dsRamOddeleni(sheet, r1, r2, lastCol) {
@@ -1174,7 +1183,7 @@ function nactiDochazku() {
 
   ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v ATTENDANCE_STATUSES není allows_desk_reservation)') + '\n' +
-    'Kancelářských dnů bez rezervace (červený proužek): ' + zvyrazneno + '\n\n' +
+    'Kancelářských dnů bez rezervace (symbol °): ' + zvyrazneno + '\n\n' +
     'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');
 }
 
@@ -1212,7 +1221,7 @@ function nactiRezervace() {
     'Z toho pro rok ' + ROK + ': ' + d.letos + '\n' +
     (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný') + '\n' +
-    'Kancelářských dnů bez rezervace (červený proužek): ' + zvyrazneno + '\n' +
+    'Kancelářských dnů bez rezervace (symbol °): ' + zvyrazneno + '\n' +
     (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.\n\nListy v TRANSACTION:\n' + d.listyTrans +
       '\n\nListy v CORE:\n' + d.listyCore +
       '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
