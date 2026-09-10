@@ -65,6 +65,9 @@ function _gUid(N) { return DS_DEN1_COL + N * DS_DEN_KROK + 1; }           // skr
 function _gRadek(j) { return DS_PRVNI_DATA_RADEK + j * 2; }               // fyzický řádek logického řádku j (mezera je +1)
 function _gDenZeSloupce(dopCol) { return (dopCol - DS_DEN1_COL) / DS_DEN_KROK + 1; }
 var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
+// „Trvale (jméno)" je pro člověka, „trvale_uid" je to, podle čeho se opravdu páruje
+// (jména se mohou shodovat). Oba skryté sloupce jsou na konci.
+var DS_STOLY_HLAVICKA = ['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id', 'trvale_uid'];
 var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
 
 // ── cache čtení na jeden běh skriptu ────────────────────────────────────
@@ -216,6 +219,14 @@ function smazCacheZdroju() {
   SpreadsheetApp.getUi().alert('Smazáno ' + n + ' cache listů. Zdroje se teď čtou živě z CORE.');
 }
 
+/** Hláška o stolech, u kterých se jméno trvalého majitele nedá jednoznačně přiřadit. */
+function _dsHlaskaNejasneStoly(nejasne) {
+  if (!nejasne || !nejasne.length) return '';
+  return '\n\n⚠ U těchto stolů nejde jméno jednoznačně přiřadit (shodná jména v listu Uživatelé):\n' +
+    nejasne.map(function (x) { return '   ' + x.stul + ' — ' + x.jmeno + ' (' + x.kolik + ' osob)'; }).join('\n') +
+    '\nVypiš k nim ručně user_id do skrytého sloupce trvale_uid v listu Stoly.';
+}
+
 /** Jen zajistí pomocné listy (Uživatelé, Pořadí, Stoly, Rezervace) — bez měsíců. */
 function vytvorPomocneListy() {
   _dsNactiZdroj();
@@ -226,6 +237,7 @@ function vytvorPomocneListy() {
     return (sh ? '✓ ' : '– ') + n + (sh ? '  (' + radku + ' řádků)' : '  chybí');
   }).join('\n');
   SpreadsheetApp.getUi().alert('Pomocné listy:\n\n' + stav +
+    _dsHlaskaNejasneStoly(_dsDoplnTrvaleUid(ss)) +
     '\n\nMěsíční listy zůstaly beze změny.');
 }
 
@@ -247,6 +259,7 @@ function aktualizujStoly() {
   var pocet = _dsSeedStoly(ss, usek, usersById, true);
   _dsListMapa(ss, usek, usersById);
   ui.alert('List Stoly přegenerován — ' + (pocet || 0) + ' stolů. List Mapa aktualizován.' +
+    _dsHlaskaNejasneStoly(_dsDoplnTrvaleUid(ss)) +
     (ss.getSheetByName('Z_OFFICE_MAPS') ? '\n\n(Čteno z cache Z_*. Pro živá data „Smazat cache zdrojů".)' : ''));
 }
 
@@ -314,6 +327,7 @@ function _dsNactiZdroj() {
   _dsListPoradi(ss, lide);                 // vytvoří jen pokud chybí
   var poradi = _dsCtiPoradi(ss);
   _dsSeedStoly(ss, usek, usersById);       // vytvoří list Stoly jen pokud chybí
+  _dsDoplnTrvaleUid(ss);                   // dohledá user_id k ručně zapsaným jménům
   _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
   _dsListMapa(ss, usek, usersById);        // náhledová mapa stolů (vždy přegeneruje)
 
@@ -510,9 +524,11 @@ function _dsNactiMapu(usek) {
  */
 function _dsSeedStoly(ss, usek, usersById, force) {
   var existuje = ss.getSheetByName('Stoly');
+  if (existuje) _dsUpgradeStolyHlavicku(existuje);
   if (existuje && !force) return;
 
   var mapa = _dsNactiMapu(usek);
+  var W = DS_STOLY_HLAVICKA.length;
 
   var stare = {};
   if (existuje) _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) stare[s.cell_id] = s; });
@@ -520,31 +536,79 @@ function _dsSeedStoly(ss, usek, usersById, force) {
   var radky = [];
   (mapa ? mapa.desks : []).forEach(function (c) {
     var id = c.id || '';
-    var owner = c.permUid ? (usersById[c.permUid] || '') : '';
     var st = stare[id];
     radky.push([
       c.label || id || '',
-      st ? st.trvale : owner,
+      st ? st.trvale : (c.permUid ? (usersById[c.permUid] || '') : ''),
       st ? (st.aktivni ? 'ano' : '') : 'ano',
-      id
+      id,
+      st ? st.trvaleUid : (c.permUid || '')
     ]);
   });
 
   var sh = existuje || ss.insertSheet('Stoly', 2);
   if (!existuje) {
-    sh.getRange(1, 1, 1, 4).setValues([['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id']])
+    sh.getRange(1, 1, 1, W).setValues([DS_STOLY_HLAVICKA])
       .setFontWeight('bold').setBackground('#f1f5f9');
     sh.setColumnWidth(1, 120);
     sh.setColumnWidth(2, 180);
     sh.setColumnWidth(3, 70);
-    sh.hideColumns(4);
+    sh.hideColumns(4, 2);          // cell_id + trvale_uid
     sh.setFrozenRows(1);
   }
-  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
-  if (radky.length) sh.getRange(2, 1, radky.length, 4).setValues(radky);
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
+  if (radky.length) sh.getRange(2, 1, radky.length, W).setValues(radky);
   _dsFont(sh);
   _dsCacheZrus('STOLY');
+  _dsDoplnTrvaleUid(ss);
   return radky.length;
+}
+
+/** Doplní do staršího listu Stoly chybějící skrytý sloupec trvale_uid. */
+function _dsUpgradeStolyHlavicku(sh) {
+  var lastC = sh.getLastColumn();
+  var hlav = sh.getRange(1, 1, 1, lastC).getValues()[0].map(function (x) { return String(x).trim(); });
+  if (hlav.indexOf('trvale_uid') !== -1) return;
+  sh.getRange(1, lastC + 1).setValue('trvale_uid').setFontWeight('bold').setBackground('#f1f5f9');
+  sh.hideColumns(lastC + 1);
+  _dsCacheZrus('STOLY');
+}
+
+/**
+ * Kde je vyplněné jen jméno trvalého majitele, dohledá k němu user_id a zapíše
+ * ho do trvale_uid (podle listu Uživatelé). Jednoznačná jména vyřeší sama,
+ * u shodných jmen sloupec nechá prázdný a vrátí je k ručnímu dořešení.
+ * Zapisuje jen když se něco změnilo. Vrací [{stul, jmeno, kolik}].
+ */
+function _dsDoplnTrvaleUid(ss) {
+  var sh = ss.getSheetByName('Stoly');
+  if (!sh) return [];
+  var t = _dsTabulka(sh);
+  var col = t.H['trvale_uid'];
+  if (col === undefined || !t.radky.length) return [];
+
+  var podleJmena = {};
+  _dsCtiUzivatele(ss).forEach(function (u) {
+    (podleJmena[u.jmeno] = podleJmena[u.jmeno] || []).push(String(u.user_id));
+  });
+
+  var zmena = false, nejasne = [];
+  var hodnoty = t.radky.map(function (x) {
+    var uid = String(t.v(x.r, 'trvale_uid') || '').trim();
+    var jmeno = String(t.v(x.r, 'Trvale (jméno)') || '').trim();
+    if (!jmeno) { if (uid) zmena = true; return ['']; }     // jméno smazáno → smaž i uid
+    if (uid) return [uid];                                   // už vyřešeno
+    var kandidati = podleJmena[jmeno] || [];
+    if (kandidati.length === 1) { zmena = true; return [kandidati[0]]; }
+    nejasne.push({ stul: String(t.v(x.r, 'Stůl') || '').trim(), jmeno: jmeno, kolik: kandidati.length });
+    return [''];
+  });
+
+  if (zmena) {
+    sh.getRange(2, col + 1, hodnoty.length, 1).setValues(hodnoty);
+    _dsCacheZrus('STOLY');
+  }
+  return nejasne;
 }
 
 /**
@@ -630,6 +694,7 @@ function _dsCtiStoly(ss) {
       out.push({
         stul: lbl,
         trvale: String(t.v(x.r, 'Trvale (jméno)') || '').trim(),
+        trvaleUid: String(t.v(x.r, 'trvale_uid') || '').trim(),
         aktivni: /^ano$/i.test(String(t.v(x.r, 'Aktivní') || '').trim()),
         cell_id: String(t.v(x.r, 'cell_id') || '').trim()
       });
@@ -793,7 +858,7 @@ function _dsRadkyProMesic(radky, mesic) {
 // ── měsíční list ─────────────────────────────────────────────────────────
 
 // Bumpuj při JAKÉKOLI změně struktury listu (kvůli fast-path porovnání podpisu).
-var DS_BUILD_VER = 5;
+var DS_BUILD_VER = 6;
 
 /** Podpis struktury listu (hash) — když se nezmění, přestavba se přeskočí. */
 function _dsPodpisListu(mesic, radky, N) {
@@ -1109,13 +1174,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
     if (r.stul) rezSet[String(r.uid) + '_' + r.den] = 1;
   });
 
-  // uživatelé s natrvalo přiřazeným stolem → nikdy neindikovat
-  var trvalyUid = {};
-  var uidByJmeno = {};
-  _dsCtiUzivatele(ss).forEach(function (u) { uidByJmeno[u.jmeno] = String(u.user_id); });
-  _dsCtiStoly(ss).forEach(function (s) {
-    if (s.trvale && uidByJmeno[s.trvale]) trvalyUid[uidByJmeno[s.trvale]] = 1;
-  });
+  var trvalyUid = _dmTrvaleStolyUid(ss);   // uživatelé s trvalým stolem → nikdy neindikovat
 
   var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
   var fc = [];
@@ -1164,10 +1223,35 @@ function _dsDeskAbbr() {
   return out;
 }
 
-/** Má uživatel (podle jména) natrvalo přiřazený stůl v listu Stoly? */
-function _dmMaTrvalyStul(ss, jmeno) {
-  if (!jmeno) return false;
-  return _dsCtiStoly(ss).some(function (s) { return s.trvale && s.trvale === jmeno; });
+/**
+ * Patří stůl natrvalo tomuto uživateli?
+ * Rozhoduje user_id; jméno je jen záloha pro starší listy Stoly, kde trvale_uid
+ * ještě není vyplněné. Díky tomu si dva lidé se stejným jménem nepřebijí stůl.
+ */
+function _dmStulPatri(desk, userId, jmeno) {
+  if (!desk) return false;
+  if (desk.trvaleUid) return desk.trvaleUid === String(userId);
+  return !!desk.trvale && desk.trvale === jmeno;
+}
+
+/** { user_id: 1 } pro všechny, kdo mají natrvalo přiřazený nějaký stůl. */
+function _dmTrvaleStolyUid(ss) {
+  var uidByJmeno = {};
+  _dsCtiUzivatele(ss).forEach(function (u) {
+    if (uidByJmeno[u.jmeno] === undefined) uidByJmeno[u.jmeno] = String(u.user_id);
+    else uidByJmeno[u.jmeno] = null;          // shodné jméno → přes jméno nerozhodneme
+  });
+  var out = {};
+  _dsCtiStoly(ss).forEach(function (s) {
+    if (s.trvaleUid) { out[s.trvaleUid] = 1; return; }
+    if (s.trvale && uidByJmeno[s.trvale]) out[uidByJmeno[s.trvale]] = 1;
+  });
+  return out;
+}
+
+/** Má uživatel natrvalo přiřazený stůl v listu Stoly? */
+function _dmMaTrvalyStul(ss, userId, jmeno) {
+  return _dsCtiStoly(ss).some(function (s) { return _dmStulPatri(s, userId, jmeno); });
 }
 
 /** Smaže rezervaci uživatele pro daný den (list Rezervace). Vrací true, když něco smazal. */
@@ -1605,9 +1689,11 @@ function dm_init() {
     });
 
   var stolyRows = _dsCtiStoly(ss).filter(function (s) { return s.aktivni; });
-  var stoly = stolyRows.map(function (s) { return { label: s.stul, trvale: s.trvale }; });
-  var trvaleByCell = {};
-  stolyRows.forEach(function (s) { if (s.cell_id) trvaleByCell[s.cell_id] = s.trvale; });
+  var stoly = stolyRows.map(function (s) {
+    return { label: s.stul, trvale: s.trvale, trvaleUid: s.trvaleUid };
+  });
+  var stulByCell = {};
+  stolyRows.forEach(function (s) { if (s.cell_id) stulByCell[s.cell_id] = s; });
   var aktivniLabel = {};
   stolyRows.forEach(function (s) { aktivniLabel[s.stul] = 1; });
 
@@ -1622,7 +1708,11 @@ function dm_init() {
       desks: mapaRaw.desks
         .filter(function (d) { return aktivniLabel[d.label]; })
         .map(function (d) {
-          return { label: d.label, row: d.row, col: d.col, trvale: trvaleByCell[d.id] || '' };
+          var s = stulByCell[d.id];
+          return {
+            label: d.label, row: d.row, col: d.col,
+            trvale: (s && s.trvale) || '', trvaleUid: (s && s.trvaleUid) || ''
+          };
         })
     };
   }
@@ -1668,8 +1758,8 @@ function dm_stul(payload) {
       maStul = true;
       var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === payload.stul && s.aktivni; })[0];
       if (!desk) throw new Error('Stůl "' + payload.stul + '" neexistuje nebo není aktivní.');
-      if (desk.trvale && desk.trvale !== payload.jmeno) {
-        throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + desk.trvale + '.');
+      if ((desk.trvale || desk.trvaleUid) && !_dmStulPatri(desk, payload.userId, payload.jmeno)) {
+        throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + (desk.trvale || '—') + '.');
       }
       var kolize = vDen.filter(function (r) {
         return r.stul === payload.stul && r.uid !== String(payload.userId);
@@ -1686,7 +1776,7 @@ function dm_stul(payload) {
     try {
       var msh = _dmListMesice(payload.mesic);
       var mmr = _dmMojeRadka(msh, payload.userId);
-      _dmObnovStul(msh, mmr.row, payload.den, payload.deskAbbr || [], maStul || _dmMaTrvalyStul(ss, payload.jmeno));
+      _dmObnovStul(msh, mmr.row, payload.den, payload.deskAbbr || [], maStul || _dmMaTrvalyStul(ss, payload.userId, payload.jmeno));
       PropertiesService.getDocumentProperties().deleteProperty('REZ_' + payload.mesic);
     } catch (e) {}
     return { rezMesic: _dmRezMesic(ss, payload.mesic) };
@@ -1712,7 +1802,7 @@ function dm_uloz(payload) {
       var maR = _dmRezMesic(ssU, payload.mesic).some(function (r) {
         return String(r.uid) === String(payload.userId) && r.den === payload.den && r.stul;
       });
-      _dmObnovStul(sheet, mr.row, payload.den, payload.deskAbbr || [], maR || _dmMaTrvalyStul(ssU, payload.jmeno));
+      _dmObnovStul(sheet, mr.row, payload.den, payload.deskAbbr || [], maR || _dmMaTrvalyStul(ssU, payload.userId, payload.jmeno));
     } catch (e) {}
     var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
     try { sheet.getRange(mr.row, _gDop(payload.den)).activate(); } catch (e) {}
@@ -1746,7 +1836,7 @@ function dm_hromadne(payload) {
     try {
       var da = payload.deskAbbr || [];
       if (da.length) {
-        var trvaly = _dmMaTrvalyStul(ssH, payload.jmeno);
+        var trvaly = _dmMaTrvalyStul(ssH, payload.userId, payload.jmeno);
         var rezDny = {};
         _dmRezMesic(ssH, payload.mesic).forEach(function (r) {
           if (String(r.uid) === String(payload.userId) && r.stul) rezDny[r.den] = 1;

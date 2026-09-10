@@ -168,9 +168,13 @@
       var r = S.rezMesic.filter(function (x) { return x.uid === S.init.userId && x.den === den; })[0];
       return r ? r.stul : '';
     }
-    function maTrvalyStul() {
-      return (S.init.stoly || []).some(function (s) { return (s.trvale || '') === S.init.jmeno; });
+    // Trvalý stůl se páruje přes user_id; jméno je jen záloha pro starší list Stoly.
+    function stulJeMuj(d) {
+      if (!d) return false;
+      if (d.trvaleUid) return String(d.trvaleUid) === S.init.userId;
+      return !!d.trvale && d.trvale === S.init.jmeno;
     }
+    function maTrvalyStul() { return (S.init.stoly || []).some(stulJeMuj); }
     function needsDesk(day) {
       var da = S.init.deskAbbr || [];
       if (!day || maTrvalyStul()) return false;
@@ -240,8 +244,8 @@
     function deskState(d, den) {
       var b = S.rezMesic.filter(function (r) { return r.den === den && r.stul === d.label; })[0];
       if (b) return b.uid === S.init.userId ? { s: 'mine', kdo: '' } : { s: 'taken', kdo: b.jmeno };
-      if (d.trvale && d.trvale === S.init.jmeno) return { s: 'mineperm', kdo: 'tvůj natrvalo' };
-      if (d.trvale) return { s: 'perm', kdo: d.trvale };
+      if (stulJeMuj(d)) return { s: 'mineperm', kdo: 'tvůj natrvalo' };
+      if (d.trvale || d.trvaleUid) return { s: 'perm', kdo: d.trvale || 'natrvalo obsazený' };
       return { s: 'free', kdo: '' };
     }
     function deskMapHtml(den) {
