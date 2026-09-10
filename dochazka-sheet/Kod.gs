@@ -643,6 +643,9 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   // ── rámy, zmrazení, rozměry ──
   sheet.getRange(prvniData, 1, pocetRadku, souhrnCol)
     .setBorder(true, true, true, true, false, true, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
+  // tenké svislé čáry mezi dny v celé mřížce
+  sheet.getRange(prvniData, den1, pocetRadku, 2 * pocetDnu)
+    .setBorder(null, null, null, null, true, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
   bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
