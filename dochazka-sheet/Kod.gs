@@ -65,6 +65,21 @@ function _gUid(N) { return DS_DEN1_COL + N * DS_DEN_KROK + 1; }           // skr
 function _gRadek(j) { return DS_PRVNI_DATA_RADEK + j * 2; }               // fyzický řádek logického řádku j (mezera je +1)
 function _gDenZeSloupce(dopCol) { return (dopCol - DS_DEN1_COL) / DS_DEN_KROK + 1; }
 var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
+var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
+
+// ── cache čtení na jeden běh skriptu ────────────────────────────────────
+// Apps Script vyhodnocuje soubor znovu při každém spuštění, takže tahle cache
+// žije právě jeden běh. Pomocné listy se tím čtou 1× místo 7–12×.
+// KAŽDÝ zápis do cachovaného listu musí zavolat _dsCacheZrus(klíč)!
+var _DS_CACHE = {};
+function _dsCache(klic, fn) {
+  if (!(klic in _DS_CACHE)) _DS_CACHE[klic] = fn();
+  return _DS_CACHE[klic];
+}
+function _dsCacheZrus(klic) {
+  if (klic === undefined) _DS_CACHE = {};
+  else delete _DS_CACHE[klic];
+}
 
 
 function onOpen() {
@@ -184,6 +199,7 @@ function cachujZdroje() {
     cil.hideSheet();
     hlaska.push('✓ ' + t + '  (' + Math.max(0, data.length - 1) + ' řádků)');
   });
+  _dsCacheZrus();
   ui.alert('Zdroje nacachovány do skrytých listů Z_*:\n\n' + hlaska.join('\n') +
     '\n\nSetup i modal teď čtou z cache. Pro čerstvá data spusť znovu, nebo „Smazat cache".');
 }
@@ -196,6 +212,7 @@ function smazCacheZdroju() {
     var sh = ss.getSheetByName('Z_' + t);
     if (sh) { ss.deleteSheet(sh); n++; }
   });
+  _dsCacheZrus();
   SpreadsheetApp.getUi().alert('Smazáno ' + n + ' cache listů. Zdroje se teď čtou živě z CORE.');
 }
 
@@ -345,6 +362,7 @@ function _dsListUzivatele(ss, liveLide) {
     }
   }
 
+  _dsCacheZrus('UZIVATELE');
   var uidIdx = DS_UZIV_HLAVICKA.indexOf('user_id') + 1;
   sh.setColumnWidth(1, 180);
   sh.setColumnWidth(2, 150);
@@ -378,34 +396,36 @@ function _dsUpgradeUzivHlavicku(sh, liveLide) {
   if (vals.length) sh.getRange(2, tymIdx + 2, vals.length, 1).setValues(vals);
 }
 
-/** Přečte list Uživatelé jako zdroj pravdy (podle názvů sloupců). */
+/** Přečte list Uživatelé jako zdroj pravdy (cache na jeden běh, podle názvů sloupců). */
 function _dsCtiUzivatele(ss) {
-  var sh = ss.getSheetByName('Uživatelé');
-  if (!sh) return [];
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var H = {};
-  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-  function v(r, name) { return H[name] === undefined ? '' : r[H[name]]; }
-  var out = [];
-  for (var i = 1; i < data.length; i++) {
-    var r = data[i];
-    var jmeno = String(v(r, 'Jméno') || '').trim();
-    var uid = String(v(r, 'user_id') || '').trim();
-    if (!jmeno && !uid) continue;
-    out.push({
-      user_id: uid,
-      jmeno: jmeno,
-      oddNazev: String(v(r, 'Oddělení') || '').trim(),
-      tymNazev: String(v(r, 'Tým') || '').trim(),
-      pozice: String(v(r, 'Pozice') || '').trim(),
-      email: String(v(r, 'E-mail') || '').trim(),
-      vedouci: /^ano$/i.test(String(v(r, 'Vedoucí') || '').trim()),
-      od: _dsParseDatum(v(r, 'Od')),
-      do: _dsParseDatum(v(r, 'Do'))
-    });
-  }
-  return out;
+  return _dsCache('UZIVATELE', function () {
+    var sh = ss.getSheetByName('Uživatelé');
+    if (!sh) return [];
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+    function v(r, name) { return H[name] === undefined ? '' : r[H[name]]; }
+    var out = [];
+    for (var i = 1; i < data.length; i++) {
+      var r = data[i];
+      var jmeno = String(v(r, 'Jméno') || '').trim();
+      var uid = String(v(r, 'user_id') || '').trim();
+      if (!jmeno && !uid) continue;
+      out.push({
+        user_id: uid,
+        jmeno: jmeno,
+        oddNazev: String(v(r, 'Oddělení') || '').trim(),
+        tymNazev: String(v(r, 'Tým') || '').trim(),
+        pozice: String(v(r, 'Pozice') || '').trim(),
+        email: String(v(r, 'E-mail') || '').trim(),
+        vedouci: /^ano$/i.test(String(v(r, 'Vedoucí') || '').trim()),
+        od: _dsParseDatum(v(r, 'Od')),
+        do: _dsParseDatum(v(r, 'Do'))
+      });
+    }
+    return out;
+  });
 }
 
 
@@ -534,6 +554,7 @@ function _dsSeedStoly(ss, usek, usersById, force) {
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
   if (radky.length) sh.getRange(2, 1, radky.length, 4).setValues(radky);
   _dsFont(sh);
+  _dsCacheZrus('STOLY');
   return radky.length;
 }
 
@@ -587,13 +608,15 @@ function _dsListMapa(ss, usek, usersById) {
     .setDescription('Mapa je jen náhled — generuje se z OFFICE_MAPS.');
 }
 
-/** Vytvoří list Rezervace — jen pokud chybí. Vrátí ho. */
+/**
+ * Vytvoří list Rezervace — jen pokud chybí. Vrátí ho.
+ * Sloupec Datum se formátuje jako text jen při vzniku listu; oba zapisovací
+ * cesty (dm_stul, _dmImportRezervace) si formát nastavují na svých buňkách,
+ * takže tady se nesmí přeformátovávat celý sloupec (běželo by to při každé rezervaci).
+ */
 function _dsListRezervace(ss) {
   var sh = ss.getSheetByName('Rezervace');
-  if (sh) {
-    sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');   // datum drž jako text
-    return sh;
-  }
+  if (sh) return sh;
   sh = ss.insertSheet('Rezervace');
   sh.getRange(1, 1, 1, 4).setValues([['Datum', 'Stůl', 'Jméno', 'user_id']])
     .setFontWeight('bold').setBackground('#f1f5f9');
@@ -607,50 +630,71 @@ function _dsListRezervace(ss) {
   return sh;
 }
 
-/** Přečte aktivní stoly. */
+/** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
 function _dsCtiStoly(ss) {
-  var sh = ss.getSheetByName('Stoly');
-  if (!sh) return [];
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var H = {};
-  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-  function v(r, n) { return H[n] === undefined ? '' : r[H[n]]; }
-  var out = [];
-  for (var i = 1; i < data.length; i++) {
-    var lbl = String(v(data[i], 'Stůl') || '').trim();
-    if (!lbl) continue;
-    out.push({
-      stul: lbl,
-      trvale: String(v(data[i], 'Trvale (jméno)') || '').trim(),
-      aktivni: /^ano$/i.test(String(v(data[i], 'Aktivní') || '').trim()),
-      cell_id: String(v(data[i], 'cell_id') || '').trim()
-    });
-  }
-  return out;
+  return _dsCache('STOLY', function () {
+    var sh = ss.getSheetByName('Stoly');
+    if (!sh) return [];
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+    function v(r, n) { return H[n] === undefined ? '' : r[H[n]]; }
+    var out = [];
+    for (var i = 1; i < data.length; i++) {
+      var lbl = String(v(data[i], 'Stůl') || '').trim();
+      if (!lbl) continue;
+      out.push({
+        stul: lbl,
+        trvale: String(v(data[i], 'Trvale (jméno)') || '').trim(),
+        aktivni: /^ano$/i.test(String(v(data[i], 'Aktivní') || '').trim()),
+        cell_id: String(v(data[i], 'cell_id') || '').trim()
+      });
+    }
+    return out;
+  });
 }
 
-/** Rezervace v daném měsíci: [{den, stul, jmeno, uid}]. */
+/**
+ * Celý list Rezervace přečtený JEDNOU za běh skriptu.
+ * { rows:[{radek,datum,rok,mesic,den,stul,jmeno,uid}], volne:[čísla prázdných řádků], dalsi:první řádek za daty }
+ */
+function _dmCtiRezervace(ss) {
+  return _dsCache('REZERVACE', function () {
+    var prazdny = { rows: [], volne: [], dalsi: 2 };
+    var sh = ss.getSheetByName('Rezervace');
+    if (!sh) return prazdny;
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return prazdny;
+    var H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+    if (H['Datum'] === undefined || H['user_id'] === undefined) return prazdny;
+
+    var rows = [], volne = [];
+    for (var i = 1; i < data.length; i++) {
+      var d = _dsFmtDatum(data[i][H['Datum']]);
+      var uid = String(data[i][H['user_id']] || '').trim();
+      if (!d && !uid) { volne.push(i + 1); continue; }
+      rows.push({
+        radek: i + 1,
+        datum: d,
+        rok: Number(d.substring(0, 4)) || 0,
+        mesic: Number(d.substring(5, 7)) || 0,
+        den: Number(d.substring(8, 10)) || 0,
+        stul: String(data[i][H['Stůl']] || '').trim(),
+        jmeno: String(data[i][H['Jméno']] || '').trim(),
+        uid: uid
+      });
+    }
+    return { rows: rows, volne: volne, dalsi: data.length + 1 };
+  });
+}
+
+/** Rezervace v daném měsíci: [{den, stul, jmeno, uid, …}]. */
 function _dmRezMesic(ss, mesic) {
-  var sh = ss.getSheetByName('Rezervace');
-  if (!sh) return [];
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var H = {};
-  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-  var pref = ROK + '-' + ('0' + mesic).slice(-2) + '-';
-  var out = [];
-  for (var i = 1; i < data.length; i++) {
-    var d = _dsFmtDatum(data[i][H['Datum']]);
-    if (d.indexOf(pref) !== 0) continue;
-    out.push({
-      den: Number(d.substring(8, 10)),
-      stul: String(data[i][H['Stůl']] || '').trim(),
-      jmeno: String(data[i][H['Jméno']] || '').trim(),
-      uid: String(data[i][H['user_id']] || '').trim()
-    });
-  }
-  return out;
+  return _dmCtiRezervace(ss).rows.filter(function (r) {
+    return r.rok === ROK && r.mesic === mesic;
+  });
 }
 
 
@@ -781,7 +825,7 @@ function _dsPodpisListu(mesic, radky, N) {
     var konec = (u.do && u.do.getFullYear() === ROK && (u.do.getMonth() + 1) === mesic) ? 1 : 0;
     return 'emp:' + u.user_id + '|' + u.jmeno + '|' + (u.pozice || '') + '|' + (u.vedouci ? 1 : 0) + '|' + konec;
   });
-  var raw = 'v' + DS_BUILD_VER + '|d' + N + '|t' + DS_CHIP_TON + '|' + kl.join('¶');
+  var raw = 'v' + DS_BUILD_VER + '|r' + ROK + '|d' + N + '|t' + DS_CHIP_TON + '|' + kl.join('¶');
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw));
 }
 
@@ -1152,19 +1196,13 @@ function _dmMaTrvalyStul(ss, jmeno) {
 function _dmZrusRezervaci(ss, userId, mesic, den) {
   var sh = ss.getSheetByName('Rezervace');
   if (!sh) return false;
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return false;
-  var H = {};
-  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-  var dateStr = ROK + '-' + ('0' + mesic).slice(-2) + '-' + ('0' + den).slice(-2);
   var smazano = false;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][H['user_id']]).trim() === String(userId) &&
-      _dsFmtDatum(data[i][H['Datum']]) === dateStr) {
-      sh.getRange(i + 1, 1, 1, 4).clearContent();
-      smazano = true;
-    }
-  }
+  _dmRezMesic(ss, mesic).forEach(function (r) {
+    if (r.den !== den || r.uid !== String(userId)) return;
+    sh.getRange(r.radek, 1, 1, 4).clearContent();
+    smazano = true;
+  });
+  if (smazano) _dsCacheZrus('REZERVACE');
   return smazano;
 }
 
@@ -1423,6 +1461,7 @@ function _dmImportRezervace(ss, core, trans) {
   });
   if (out.length) sh.getRange(2, 1, out.length, 4).setNumberFormat('@').setValues(out);
   d.count = out.length;
+  _dsCacheZrus('REZERVACE');
   return d;
 }
 
@@ -1546,22 +1585,13 @@ function dm_stul(payload) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = _dsListRezervace(ss);
     var dateStr = ROK + '-' + ('0' + payload.mesic).slice(-2) + '-' + ('0' + payload.den).slice(-2);
-    var data = sh.getDataRange().getValues();
-    var H = {};
-    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-
-    var mojeRadka = -1;
-    var volnyRadek = -1;
-    for (var i = 1; i < data.length; i++) {
-      var dRow = _dsFmtDatum(data[i][H['Datum']]);
-      var uRow = String(data[i][H['user_id']]).trim();
-      if (!dRow && !uRow) { if (volnyRadek === -1) volnyRadek = i + 1; continue; }
-      if (uRow === String(payload.userId) && dRow === dateStr) { mojeRadka = i + 1; break; }
-    }
+    var rez = _dmCtiRezervace(ss);                        // jediné čtení listu za běh
+    var vDen = _dmRezMesic(ss, payload.mesic).filter(function (r) { return r.den === payload.den; });
+    var moje = vDen.filter(function (r) { return r.uid === String(payload.userId); })[0];
 
     var maStul = false;
     if (!payload.stul) {
-      if (mojeRadka !== -1) sh.getRange(mojeRadka, 1, 1, 4).clearContent();
+      if (moje) sh.getRange(moje.radek, 1, 1, 4).clearContent();
     } else {
       maStul = true;
       var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === payload.stul && s.aktivni; })[0];
@@ -1569,21 +1599,18 @@ function dm_stul(payload) {
       if (desk.trvale && desk.trvale !== payload.jmeno) {
         throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + desk.trvale + '.');
       }
-      for (var j = 1; j < data.length; j++) {
-        if (_dsFmtDatum(data[j][H['Datum']]) === dateStr &&
-          String(data[j][H['Stůl']]).trim() === payload.stul &&
-          String(data[j][H['user_id']]).trim() !== String(payload.userId)) {
-          throw new Error('Stůl ' + payload.stul + ' je ' + dateStr + ' obsazený: ' + data[j][H['Jméno']] + '.');
-        }
+      var kolize = vDen.filter(function (r) {
+        return r.stul === payload.stul && r.uid !== String(payload.userId);
+      })[0];
+      if (kolize) {
+        throw new Error('Stůl ' + payload.stul + ' je ' + dateStr + ' obsazený: ' + kolize.jmeno + '.');
       }
-      var cil = mojeRadka !== -1 ? mojeRadka : (volnyRadek !== -1 ? volnyRadek : data.length + 1);
-      var nr = ['', '', '', ''];
-      nr[H['Datum']] = dateStr;
-      nr[H['Stůl']] = payload.stul;
-      nr[H['Jméno']] = payload.jmeno;
-      nr[H['user_id']] = payload.userId;
-      sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']]).setValues([nr]);
+      var cil = moje ? moje.radek : (rez.volne.length ? rez.volne[0] : rez.dalsi);
+      sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']])
+        .setValues([[dateStr, payload.stul, payload.jmeno, payload.userId]]);
     }
+    _dsCacheZrus('REZERVACE');                            // list se změnil
+
     try {
       var msh = _dmListMesice(payload.mesic);
       var mmr = _dmMojeRadka(msh, payload.userId);
@@ -1765,7 +1792,7 @@ function _dmPrepocitejSouhrn(sheet, row, mesic, vacAbbr) {
 // ── společné pomocné funkce ──────────────────────────────────────────────
 
 // ── cache zdrojů z CORE (jen pro vývoj: „Cachovat zdroje z aplikace") ──
-var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
+// Seznam tabulek je nahoře u konstant (DS_ZDROJ_TABULKY).
 var _DS_CORE = null;
 function _dsCore() {
   if (!_DS_CORE) {
@@ -1774,11 +1801,13 @@ function _dsCore() {
   }
   return _DS_CORE;
 }
-/** Čte tabulku z CORE — přednostně z lokální cache „Z_<název>", jinak živě z CORE. */
+/** Čte tabulku z CORE — přednostně z lokální cache „Z_<název>", jinak živě z CORE (1× za běh). */
 function _dsZdroj(name) {
-  var lok = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Z_' + name);
-  if (lok && lok.getLastRow() >= 2) return _dsCtiSheet(lok);
-  return _dsCtiSheet(_dsCore().getSheetByName(name));
+  return _dsCache('ZDROJ_' + name, function () {
+    var lok = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Z_' + name);
+    if (lok && lok.getLastRow() >= 2) return _dsCtiSheet(lok);
+    return _dsCtiSheet(_dsCore().getSheetByName(name));
+  });
 }
 
 function _dsCti(ss, listName) {
