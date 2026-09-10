@@ -532,11 +532,10 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
     sheet.getRange(prvniData, den1 + 2 * (dd - 1), pocetRadku, 2).mergeAcross();
   }
 
-  // ── styl nadpisů, zaměstnanců (jméno + pozice + příp. konec), gapů ──
+  // ── styl nadpisů, zaměstnanců (jméno + řádek s pozicí / koncem), gapů ──
   var tz = Session.getScriptTimeZone();
   var ST_JMENO = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(10).setForegroundColor('#1e293b').build();
   var ST_POZICE = SpreadsheetApp.newTextStyle().setBold(false).setFontSize(8).setForegroundColor('#64748b').build();
-  var ST_KONEC = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(9).setForegroundColor('#dc2626').build();
   function jePosledni(u) {
     return u.do && u.do.getFullYear() === ROK && (u.do.getMonth() + 1) === mesic;
   }
@@ -558,26 +557,21 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
       sheet.setRowHeight(row, 8);
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#ffffff');
     } else {
-      var nm = (it.u.vedouci ? '👑 ' : '') + it.u.jmeno;
+      var nm = it.u.jmeno;
+      var radek2 = [];
+      if (it.u.pozice) radek2.push(it.u.pozice);
+      if (jePosledni(it.u)) radek2.push('do ' + Utilities.formatDate(it.u.do, tz, 'd.M.yyyy'));
       var text = nm;
       var styly = [[0, nm.length, ST_JMENO]];
-      if (it.u.pozice) {
+      if (radek2.length) {
         var p0 = text.length + 1;
-        text += '\n' + it.u.pozice;
+        text += '\n' + radek2.join(' · ');
         styly.push([p0, text.length, ST_POZICE]);
-      }
-      var vyska = 30;
-      if (jePosledni(it.u)) {
-        var k0 = text.length + 1;
-        text += '\ndo ' + Utilities.formatDate(it.u.do, tz, 'd.M.yyyy');
-        styly.push([k0, text.length, ST_KONEC]);
-        vyska = 46;
       }
       var rtb = SpreadsheetApp.newRichTextValue().setText(text);
       styly.forEach(function (s) { rtb.setTextStyle(s[0], s[1], s[2]); });
       sheet.getRange(row, 1).setRichTextValue(rtb.build());
       if (it.u.vedouci) sheet.getRange(row, 1).setBackground('#ffedd5');
-      if (vyska !== 30) sheet.setRowHeight(row, vyska);
     }
   }
   if (blokStart !== -1) bloky.push([prvniData + blokStart, prvniData + radky.length - 1]);
