@@ -179,6 +179,7 @@ function _dsNactiZdroj() {
   var videno = {};
   var statusyUnik = [];
   var vacAbbr = [];
+  var deskAbbr = [];
   _dsCti(core, 'ATTENDANCE_STATUSES')
     .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
     .forEach(function (s) {
@@ -187,7 +188,11 @@ function _dsNactiZdroj() {
       videno[z] = true;
       statusyUnik.push(s);
       if (String(s.is_vacation) === 'true') vacAbbr.push(z);
+      if (String(s.allows_desk_reservation) === 'true') deskAbbr.push(z);
     });
+
+  var usersById = {};
+  _dsCti(core, 'USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   _dsListUzivatele(ss, liveLide);          // vytvoří nebo doplní nováčky
@@ -195,8 +200,13 @@ function _dsNactiZdroj() {
   if (lide.length === 0) throw new Error('List Uživatelé je prázdný.');
   _dsListPoradi(ss, lide);                 // vytvoří jen pokud chybí
   var poradi = _dsCtiPoradi(ss);
+  _dsSeedStoly(ss, core, usek, usersById); // vytvoří list Stoly jen pokud chybí
+  _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
 
-  return { radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik, vacAbbr: vacAbbr };
+  return {
+    radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik,
+    vacAbbr: vacAbbr, deskAbbr: deskAbbr
+  };
 }
 
 
@@ -359,6 +369,101 @@ function _dsCtiPoradi(ss) {
     }
   }
   return { nahore: nahore, oddPoradi: oddPoradi, tymPoradi: tymPoradi };
+}
+
+
+// ── listy Stoly a Rezervace ─────────────────────────────────────────────
+
+/** Vytvoří list Stoly z živé OFFICE_MAPS — jen pokud chybí. */
+function _dsSeedStoly(ss, core, usek, usersById) {
+  if (ss.getSheetByName('Stoly')) return;
+  var mapa = _dsCti(core, 'OFFICE_MAPS').filter(function (m) {
+    return m.section_id === usek.section_id && String(m.active) !== 'false';
+  })[0];
+
+  var radky = [];
+  if (mapa) {
+    var cells = [];
+    try { cells = JSON.parse(mapa.cells_json || '[]'); } catch (e) { cells = []; }
+    cells.forEach(function (c) {
+      if (String(c.type) !== 'desk') return;
+      var owner = c.permanent_user_id ? (usersById[c.permanent_user_id] || '') : '';
+      radky.push([c.label || c.id || '', owner, 'ano', c.id || '']);
+    });
+  }
+
+  var sh = ss.insertSheet('Stoly', 2);
+  sh.getRange(1, 1, 1, 4).setValues([['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id']])
+    .setFontWeight('bold').setBackground('#f1f5f9');
+  if (radky.length) sh.getRange(2, 1, radky.length, 4).setValues(radky);
+  sh.setColumnWidth(1, 120);
+  sh.setColumnWidth(2, 180);
+  sh.setColumnWidth(3, 70);
+  sh.hideColumns(4);
+  sh.setFrozenRows(1);
+  _dsFont(sh);
+}
+
+/** Vytvoří list Rezervace — jen pokud chybí. Vrátí ho. */
+function _dsListRezervace(ss) {
+  var sh = ss.getSheetByName('Rezervace');
+  if (sh) return sh;
+  sh = ss.insertSheet('Rezervace');
+  sh.getRange(1, 1, 1, 4).setValues([['Datum', 'Stůl', 'Jméno', 'user_id']])
+    .setFontWeight('bold').setBackground('#f1f5f9');
+  sh.setColumnWidth(1, 110);
+  sh.setColumnWidth(2, 110);
+  sh.setColumnWidth(3, 180);
+  sh.hideColumns(4);
+  sh.setFrozenRows(1);
+  _dsFont(sh);
+  return sh;
+}
+
+/** Přečte aktivní stoly. */
+function _dsCtiStoly(ss) {
+  var sh = ss.getSheetByName('Stoly');
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  function v(r, n) { return H[n] === undefined ? '' : r[H[n]]; }
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var lbl = String(v(data[i], 'Stůl') || '').trim();
+    if (!lbl) continue;
+    out.push({
+      stul: lbl,
+      trvale: String(v(data[i], 'Trvale (jméno)') || '').trim(),
+      aktivni: /^ano$/i.test(String(v(data[i], 'Aktivní') || '').trim()),
+      cell_id: String(v(data[i], 'cell_id') || '').trim()
+    });
+  }
+  return out;
+}
+
+/** Rezervace v daném měsíci: [{den, stul, jmeno, uid}]. */
+function _dmRezMesic(ss, mesic) {
+  var sh = ss.getSheetByName('Rezervace');
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  var pref = ROK + '-' + ('0' + mesic).slice(-2) + '-';
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var d = String(data[i][H['Datum']] || '').substring(0, 10);
+    if (d.indexOf(pref) !== 0) continue;
+    out.push({
+      den: Number(d.substring(8, 10)),
+      stul: String(data[i][H['Stůl']] || '').trim(),
+      jmeno: String(data[i][H['Jméno']] || '').trim(),
+      uid: String(data[i][H['user_id']] || '').trim()
+    });
+  }
+  return out;
 }
 
 
@@ -663,6 +768,20 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   // ── vrátit zachovanou docházku ──
   _dsVratDochazku(sheet, mesic, radky, zachovano, vacAbbr || []);
 
+  // ── poznámky s rezervovanými stoly ──
+  var rez = _dmRezMesic(ss, mesic);
+  if (rez.length) {
+    var rowByUid = {};
+    for (var ri = 0; ri < radky.length; ri++) {
+      if (radky[ri].typ === 'emp') rowByUid[String(radky[ri].u.user_id)] = prvniData + ri;
+    }
+    rez.forEach(function (r) {
+      var rw = rowByUid[r.uid];
+      if (!rw || !r.stul) return;
+      sheet.getRange(rw, den1 + 2 * (r.den - 1)).setNote('Stůl: ' + r.stul);
+    });
+  }
+
   _dsFont(sheet);
 }
 
@@ -794,7 +913,35 @@ function nactiDochazku() {
   Object.keys(podleM).forEach(function (mm) {
     pocet += _dmImportMesic(ss.getSheetByName(_dsNazevMesice(Number(mm))), Number(mm), podleM[mm], vacAbbr);
   });
-  ui.alert('Načteno ' + pocet + ' dní docházky.');
+
+  var rez = _dmImportRezervace(ss, core, trans);
+  ui.alert('Načteno ' + pocet + ' dní docházky a ' + rez + ' rezervací stolů.');
+}
+
+/** Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK). */
+function _dmImportRezervace(ss, core, trans) {
+  var stoly = _dsCtiStoly(ss);
+  if (stoly.length === 0) return 0;
+  var labelByCell = {};
+  stoly.forEach(function (s) { if (s.cell_id) labelByCell[s.cell_id] = s.stul; });
+
+  var jmenoByUid = {};
+  _dsCti(core, 'USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
+
+  var sh = _dsListRezervace(ss);
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
+
+  var out = [];
+  _dsCti(trans, 'MAP_RESERVATIONS').forEach(function (r) {
+    if (String(r.active) === 'false') return;
+    var datum = String(r.date || '').substring(0, 10);
+    if (datum.substring(0, 4) !== String(ROK)) return;
+    var stul = labelByCell[String(r.cell_id).trim()];
+    if (!stul) return;
+    out.push([datum, stul, jmenoByUid[String(r.user_id).trim()] || '', String(r.user_id).trim()]);
+  });
+  if (out.length) sh.getRange(2, 1, out.length, 4).setValues(out);
+  return out.length;
 }
 
 function _dmImportMesic(sheet, mesic, zapisy, vacAbbr) {
@@ -861,26 +1008,85 @@ function dm_init() {
       statusy.push({
         abbr: ab, name: s.name || '',
         color: _dsHex(s.color, '#94a3b8'), fg: _dsHex(s.text_color, '#ffffff'),
-        vac: String(s.is_vacation) === 'true'
+        vac: String(s.is_vacation) === 'true',
+        desk: String(s.allows_desk_reservation) === 'true'
       });
     });
+
+  var stoly = _dsCtiStoly(ss)
+    .filter(function (s) { return s.aktivni; })
+    .map(function (s) { return { label: s.stul, trvale: s.trvale }; });
 
   return {
     rok: ROK, mesic: mesic, userId: me.user_id, jmeno: _dsJmeno(me), usek: USEK_NAZEV,
     statusy: statusy,
-    vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; })
+    vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
+    deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; }),
+    stoly: stoly
   };
 }
 
 function dm_mesic(payload) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = _dmListMesice(payload.mesic);
   var mr = _dmMojeRadka(sheet, payload.userId);
   var souhrnCol = DS_DEN1_COL + 2 * _dmDniVMesici(payload.mesic);
   return {
     mesic: payload.mesic, rok: ROK,
     dny: _dmDenData(sheet, mr.row, payload.mesic),
-    souhrn: sheet.getRange(mr.row, souhrnCol).getValue()
+    souhrn: sheet.getRange(mr.row, souhrnCol).getValue(),
+    rezMesic: _dmRezMesic(ss, payload.mesic)
   };
+}
+
+/** Rezervace / uvolnění stolu. payload: {userId, jmeno, mesic, den, stul} (stul='' = uvolnit) */
+function dm_stul(payload) {
+  var lock = LockService.getDocumentLock();
+  lock.waitLock(15000);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = _dsListRezervace(ss);
+    var dateStr = ROK + '-' + ('0' + payload.mesic).slice(-2) + '-' + ('0' + payload.den).slice(-2);
+    var data = sh.getDataRange().getValues();
+    var H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+
+    var mojeRadka = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][H['user_id']]).trim() === String(payload.userId) &&
+        String(data[i][H['Datum']]).substring(0, 10) === dateStr) { mojeRadka = i + 1; break; }
+    }
+
+    if (!payload.stul) {
+      if (mojeRadka !== -1) sh.deleteRow(mojeRadka);
+    } else {
+      var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === payload.stul && s.aktivni; })[0];
+      if (!desk) throw new Error('Stůl "' + payload.stul + '" neexistuje nebo není aktivní.');
+      if (desk.trvale && desk.trvale !== payload.jmeno) {
+        throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + desk.trvale + '.');
+      }
+      for (var j = 1; j < data.length; j++) {
+        if (String(data[j][H['Datum']]).substring(0, 10) === dateStr &&
+          String(data[j][H['Stůl']]).trim() === payload.stul &&
+          String(data[j][H['user_id']]).trim() !== String(payload.userId)) {
+          throw new Error('Stůl ' + payload.stul + ' je ' + dateStr + ' obsazený: ' + data[j][H['Jméno']] + '.');
+        }
+      }
+      if (mojeRadka !== -1) {
+        sh.getRange(mojeRadka, H['Stůl'] + 1).setValue(payload.stul);
+      } else {
+        var nr = ['', '', '', ''];
+        nr[H['Datum']] = dateStr;
+        nr[H['Stůl']] = payload.stul;
+        nr[H['Jméno']] = payload.jmeno;
+        nr[H['user_id']] = payload.userId;
+        sh.appendRow(nr);
+      }
+    }
+    return { rezMesic: _dmRezMesic(ss, payload.mesic) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function dm_uloz(payload) {

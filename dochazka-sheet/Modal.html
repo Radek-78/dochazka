@@ -20,7 +20,9 @@
     .cell:hover { border-color: #94a3b8; }
     .cell.wknd { background: #f1f5f9; }
     .cell.blank { visibility: hidden; }
+    .cell.nodesk { border-color: #ef4444; border-width: 2px; }
     .cell .num { font-size: 10px; color: #64748b; font-weight: 700; }
+    .cell .dlbl { font-size: 9px; color: #0369a1; font-weight: 800; margin-top: 2px; }
     .chip { margin-top: 3px; border-radius: 5px; font-weight: 900; font-size: 12px; text-align: center; padding: 6px 2px; }
     .halves { display: flex; gap: 2px; margin-top: 3px; }
     .halves .h { flex: 1; border-radius: 4px; font-weight: 900; font-size: 10px; text-align: center; padding: 6px 1px; min-height: 16px; background: #f1f5f9; }
@@ -71,6 +73,9 @@
         <div class="hsec"><div class="lbl">Dopoledne</div><div class="tiles" id="tilesDop"></div></div>
         <div class="hsec"><div class="lbl">Odpoledne</div><div class="tiles" id="tilesOdp"></div></div>
       </div>
+      <div id="deskRow" style="display:none;margin-top:10px">
+        <button class="btn ghost" style="width:100%" onclick="openDesk(S.den)">🪑 Stůl: <span id="deskCur"></span></button>
+      </div>
       <div class="pact">
         <button class="btn danger" onclick="applyClear()">Vymazat den</button>
         <div>
@@ -110,9 +115,21 @@
     </div>
   </div>
 
+  <div class="pick" id="desk">
+    <div class="pcard">
+      <div class="ptitle" id="dtitle"></div>
+      <div class="tiles" id="deskTiles"></div>
+      <div class="pact">
+        <button class="btn danger" onclick="deskSend('')">Bez stolu</button>
+        <button class="btn ghost" onclick="closeDesk()">Zavřít</button>
+      </div>
+      <div class="msg" id="derr" style="margin-top:8px"></div>
+    </div>
+  </div>
+
   <script>
     var S = { init: null, mesic: null, rok: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
-      bMode: 'FULL', bDop: '', bOdp: '' };
+      bMode: 'FULL', bDop: '', bOdp: '', rezMesic: [], deskDen: null };
     var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
@@ -130,7 +147,18 @@
       google.script.run.withSuccessHandler(onMonth).withFailureHandler(fatal)
         .dm_mesic({ userId: S.init.userId, mesic: S.mesic });
     }
-    function onMonth(m) { S.dny = m.dny; S.souhrn = m.souhrn; render(); }
+    function onMonth(m) { S.dny = m.dny; S.souhrn = m.souhrn; S.rezMesic = m.rezMesic || []; render(); }
+
+    function mojeRez(den) {
+      var r = S.rezMesic.filter(function (x) { return x.uid === S.init.userId && x.den === den; })[0];
+      return r ? r.stul : '';
+    }
+    function needsDesk(day) {
+      var da = S.init.deskAbbr || [];
+      if (!day) return false;
+      if (day.full) return da.indexOf(day.dop) !== -1;
+      return da.indexOf(day.dop) !== -1 || da.indexOf(day.odp) !== -1;
+    }
 
     function st(ab) { var a = S.init.statusy.filter(function (x) { return x.abbr === ab; }); return a.length ? a[0] : null; }
 
@@ -145,10 +173,13 @@
       var lead = (S.dny[0].dow + 6) % 7;
       for (var i = 0; i < lead; i++) h += '<div class="cell blank"></div>';
       S.dny.forEach(function (day) {
-        h += '<div class="cell' + (day.weekend ? ' wknd' : '') + '" onclick="openPick(' + day.den + ')">';
+        var mr = mojeRez(day.den);
+        var cls = (day.weekend ? ' wknd' : '') + (needsDesk(day) && !mr ? ' nodesk' : '');
+        h += '<div class="cell' + cls + '" onclick="openPick(' + day.den + ')">';
         h += '<div class="num">' + day.den + '</div>';
         if (day.full) { if (day.dop) h += chip(day.dop); }
         else { h += '<div class="halves">' + half(day.dop) + half(day.odp) + '</div>'; }
+        if (mr) h += '<div class="dlbl">🪑 ' + esc(mr) + '</div>';
         h += '</div>';
       });
       h += '</div>';
@@ -174,9 +205,54 @@
       document.getElementById('perr').textContent = '';
       buildTiles();
       setMode(S.mode);
+      updateDeskRow();
       document.getElementById('pick').classList.add('on');
     }
     function closePick() { document.getElementById('pick').classList.remove('on'); }
+
+    function updateDeskRow() {
+      var da = S.init.deskAbbr || [];
+      var wd = S.mode === 'FULL' ? da.indexOf(S.dopSel) !== -1
+        : (da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1);
+      document.getElementById('deskRow').style.display = wd ? '' : 'none';
+      document.getElementById('deskCur').textContent = mojeRez(S.den) || 'vybrat';
+    }
+
+    // ── výběr stolu ──
+    function openDesk(den) {
+      S.deskDen = den;
+      document.getElementById('dtitle').textContent = 'Stůl — ' + den + '. ' + MES[S.mesic - 1] + ' ' + S.rok;
+      document.getElementById('derr').textContent = '';
+      var html = (S.init.stoly || []).map(function (d) {
+        var b = S.rezMesic.filter(function (r) { return r.den === den && r.stul === d.label; })[0];
+        var stav, kdo = '', klik = '', cls = '';
+        if (b) {
+          if (b.uid === S.init.userId) { stav = 'tvůj'; klik = "deskSend('" + d.label + "')"; cls = ' sel'; }
+          else { stav = 'obsazený'; kdo = b.jmeno; }
+        } else if (d.trvale && d.trvale !== S.init.jmeno) {
+          stav = 'trvalý'; kdo = d.trvale;
+        } else {
+          stav = 'volný'; klik = "deskSend('" + d.label + "')";
+        }
+        return '<div class="tile' + cls + (klik ? '' : ' none') + '" '
+          + (klik ? 'onclick="' + klik + '"' : 'style="opacity:.55;cursor:default"') + '>'
+          + '<span class="ab" style="background:#e2e8f0;color:#334155">' + esc(d.label) + '</span>'
+          + '<span class="nm">' + stav + (kdo ? '<br>' + esc(kdo) : '') + '</span></div>';
+      }).join('');
+      document.getElementById('deskTiles').innerHTML = html || '<div class="msg">Žádné stoly.</div>';
+      closePick();
+      document.getElementById('desk').classList.add('on');
+    }
+    function closeDesk() { document.getElementById('desk').classList.remove('on'); }
+    function deskSend(stul) {
+      document.getElementById('derr').textContent = 'Ukládám…';
+      google.script.run
+        .withSuccessHandler(function (res) { S.rezMesic = res.rezMesic; closeDesk(); render(); })
+        .withFailureHandler(function (e) {
+          document.getElementById('derr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
+        })
+        .dm_stul({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen, stul: stul });
+    }
 
     function tileHtml(s, sel, expr) {
       return '<div class="tile' + (sel ? ' sel' : '') + '" onclick="' + expr + '">'
@@ -205,21 +281,25 @@
       document.getElementById('pFull').style.display = m === 'FULL' ? '' : 'none';
       document.getElementById('pHalf').style.display = m === 'HALF' ? '' : 'none';
       document.getElementById('btnHalf').style.display = m === 'HALF' ? '' : 'none';
+      updateDeskRow();
     }
-    function selHalf(which, ab) { if (which === 'dop') S.dopSel = ab; else S.odpSel = ab; buildTiles(); }
+    function selHalf(which, ab) { if (which === 'dop') S.dopSel = ab; else S.odpSel = ab; buildTiles(); updateDeskRow(); }
 
-    function applyFull(ab) { send('FULL', ab, ''); }
-    function applyHalf() { send('HALF', S.dopSel, S.odpSel); }
-    function applyClear() { send('CLEAR', '', ''); }
+    function applyFull(ab) { send('FULL', ab, '', (S.init.deskAbbr || []).indexOf(ab) !== -1); }
+    function applyHalf() {
+      var da = S.init.deskAbbr || [];
+      send('HALF', S.dopSel, S.odpSel, da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1);
+    }
+    function applyClear() { send('CLEAR', '', '', false); }
 
-    function send(rezim, dop, odp) {
+    function send(rezim, dop, odp, thenDesk) {
       document.getElementById('perr').textContent = 'Ukládám…';
       google.script.run
         .withSuccessHandler(function (res) {
           for (var i = 0; i < S.dny.length; i++) if (S.dny[i].den === res.den.den) S.dny[i] = res.den;
           S.souhrn = res.souhrn;
-          closePick();
-          render();
+          if (thenDesk && !mojeRez(S.den)) { render(); openDesk(S.den); }
+          else { closePick(); render(); }
         })
         .withFailureHandler(function (e) {
           document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
