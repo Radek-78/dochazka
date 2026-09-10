@@ -153,9 +153,12 @@
       var r = S.rezMesic.filter(function (x) { return x.uid === S.init.userId && x.den === den; })[0];
       return r ? r.stul : '';
     }
+    function maTrvalyStul() {
+      return (S.init.stoly || []).some(function (s) { return (s.trvale || '') === S.init.jmeno; });
+    }
     function needsDesk(day) {
       var da = S.init.deskAbbr || [];
-      if (!day) return false;
+      if (!day || maTrvalyStul()) return false;
       if (day.full) return da.indexOf(day.dop) !== -1;
       return da.indexOf(day.dop) !== -1 || da.indexOf(day.odp) !== -1;
     }
@@ -304,7 +307,7 @@
         .withFailureHandler(function (e) {
           document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
-        .dm_uloz({ userId: S.init.userId, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr });
+        .dm_uloz({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr });
     }
 
     // ── hromadné zadání ──
@@ -362,7 +365,7 @@
           document.getElementById('berr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
         .dm_hromadne({
-          userId: S.init.userId, mesic: S.mesic, odDen: od, doDen: doo,
+          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, odDen: od, doDen: doo,
           jenVsedni: document.getElementById('bVsedni').checked,
           rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr
         });

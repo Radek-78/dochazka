@@ -855,6 +855,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var deskSet = {};
   da.forEach(function (a) { deskSet[String(a).trim()] = 1; });
 
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var N = _dmDniVMesici(mesic);
   var den1 = DS_DEN1_COL;
   var uidCol = den1 + 2 * N + 1;
@@ -868,8 +869,16 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   rng.getMergedRanges().forEach(function (mr) { merged[mr.getRow() + '_' + mr.getColumn()] = 1; });
 
   var rezSet = {};
-  (rezMesicArr || _dmRezMesic(SpreadsheetApp.getActiveSpreadsheet(), mesic)).forEach(function (r) {
+  (rezMesicArr || _dmRezMesic(ss, mesic)).forEach(function (r) {
     if (r.stul) rezSet[String(r.uid) + '_' + r.den] = 1;
+  });
+
+  // uživatelé s natrvalo přiřazeným stolem → nikdy neindikovat
+  var trvalyUid = {};
+  var uidByJmeno = {};
+  _dsCtiUzivatele(ss).forEach(function (u) { uidByJmeno[u.jmeno] = String(u.user_id); });
+  _dsCtiStoly(ss).forEach(function (s) {
+    if (s.trvale && uidByJmeno[s.trvale]) trvalyUid[uidByJmeno[s.trvale]] = 1;
   });
 
   for (var i = 0; i < nRows; i++) {
@@ -884,15 +893,19 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
       var vOdp = full ? '' : String(grid[i][idx + 1] || '').trim();
       var potreba = deskSet[vDop] || (!full && deskSet[vOdp]);
       if (!potreba) continue;
-      if (rezSet[uid + '_' + d]) {
-        sheet.getRange(absRow, dopCol, 1, 2)
-          .setBorder(true, true, true, true, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
-      } else {
-        sheet.getRange(absRow, dopCol, 1, 2)
-          .setBorder(true, true, true, true, null, null, '#dc2626', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-      }
+      var maStul = rezSet[uid + '_' + d] || trvalyUid[uid];
+      sheet.getRange(absRow, dopCol, 1, 2).setBorder(
+        true, true, true, true, null, null,
+        maStul ? '#e2e8f0' : '#dc2626',
+        maStul ? SpreadsheetApp.BorderStyle.SOLID : SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
     }
   }
+}
+
+/** Má uživatel (podle jména) natrvalo přiřazený stůl v listu Stoly? */
+function _dmMaTrvalyStul(ss, jmeno) {
+  if (!jmeno) return false;
+  return _dsCtiStoly(ss).some(function (s) { return s.trvale && s.trvale === jmeno; });
 }
 
 /** Nastaví/zruší červený rámeček u jednoho dne podle stavu rezervace. */
@@ -1295,7 +1308,7 @@ function dm_stul(payload) {
     try {
       var msh = _dmListMesice(payload.mesic);
       var mmr = _dmMojeRadka(msh, payload.userId);
-      _dmObnovStul(msh, mmr.row, payload.den, payload.deskAbbr || [], maStul);
+      _dmObnovStul(msh, mmr.row, payload.den, payload.deskAbbr || [], maStul || _dmMaTrvalyStul(ss, payload.jmeno));
     } catch (e) {}
     return { rezMesic: _dmRezMesic(ss, payload.mesic) };
   } finally {
@@ -1316,7 +1329,7 @@ function dm_uloz(payload) {
       var maR = _dmRezMesic(ssU, payload.mesic).some(function (r) {
         return String(r.uid) === String(payload.userId) && r.den === payload.den && r.stul;
       });
-      _dmObnovStul(sheet, mr.row, payload.den, payload.deskAbbr || [], maR);
+      _dmObnovStul(sheet, mr.row, payload.den, payload.deskAbbr || [], maR || _dmMaTrvalyStul(ssU, payload.jmeno));
     } catch (e) {}
     var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
     try { sheet.getRange(mr.row, DS_DEN1_COL + 2 * (payload.den - 1)).activate(); } catch (e) {}
@@ -1347,8 +1360,10 @@ function dm_hromadne(payload) {
     try {
       var da = payload.deskAbbr || [];
       if (da.length) {
+        var ssH = SpreadsheetApp.getActiveSpreadsheet();
+        var trvaly = _dmMaTrvalyStul(ssH, payload.jmeno);
         var rezDny = {};
-        _dmRezMesic(SpreadsheetApp.getActiveSpreadsheet(), payload.mesic).forEach(function (r) {
+        _dmRezMesic(ssH, payload.mesic).forEach(function (r) {
           if (String(r.uid) === String(payload.userId) && r.stul) rezDny[r.den] = 1;
         });
         for (var dd = od; dd <= doo; dd++) {
@@ -1356,7 +1371,7 @@ function dm_hromadne(payload) {
             var w = new Date(ROK, payload.mesic - 1, dd).getDay();
             if (w === 0 || w === 6) continue;
           }
-          _dmObnovStul(sheet, mr.row, dd, da, !!rezDny[dd]);
+          _dmObnovStul(sheet, mr.row, dd, da, !!rezDny[dd] || trvaly);
         }
       }
     } catch (e) {}
