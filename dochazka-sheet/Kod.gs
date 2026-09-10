@@ -1465,9 +1465,31 @@ function _dmImportRezervace(ss, core, trans) {
   return d;
 }
 
+/**
+ * Zapíše importované dny do měsíčního listu DÁVKOVĚ.
+ * 1 čtení mřížky + 1 zápis hodnot + 1 zápis souhrnů; slučování se řeší jen
+ * u dnů, které opravdu mění stav (celý den ↔ půlden) — těch je málo.
+ * Dny, které v importu nejsou, zůstávají beze změny.
+ */
 function _dmImportMesic(sheet, mesic, zapisy, vacAbbr) {
-  if (!sheet) return 0;
+  if (!sheet || !zapisy || !zapisy.length) return 0;
 
+  var N = _dmDniVMesici(mesic);
+  var den1 = DS_DEN1_COL;
+  var dnyW = N * DS_DEN_KROK;
+  var prvni = DS_PRVNI_DATA_RADEK;
+  var last = sheet.getLastRow();
+  if (last < prvni) return 0;
+  var nRows = last - prvni + 1;
+
+  // ── jedno čtení: hodnoty mřížky, stav sloučení, skrytý sloupec user_id ──
+  var rng = sheet.getRange(prvni, den1, nRows, dnyW);
+  var grid = rng.getValues();
+  var merged = {};
+  rng.getMergedRanges().forEach(function (mr) { merged[mr.getRow() + '_' + mr.getColumn()] = 1; });
+  var uids = sheet.getRange(prvni, _gUid(N), nRows, 1).getValues();
+
+  // ── sloučit záznamy po dnech (AM/PM/ALL_DAY) ──
   var poDni = {};   // "row_den" -> { row, den, all, am, pm }
   zapisy.forEach(function (z) {
     var key = z.row + '_' + z.den;
@@ -1477,27 +1499,56 @@ function _dmImportMesic(sheet, mesic, zapisy, vacAbbr) {
     else e.all = z.ab;
   });
 
-  var dotcene = {};
-  var n = 0;
+  // ── promítnout do pole v paměti + posbírat nutné změny slučování ──
+  var slouc = [], rozdel = [], n = 0;
   Object.keys(poDni).forEach(function (k) {
     var e = poDni[k];
+    var i = e.row - prvni;
+    if (i < 0 || i >= nRows) return;                 // řádek mimo list
     var dopCol = _gDop(e.den);
-    var pair = sheet.getRange(e.row, dopCol, 1, 2);
+    var idx = dopCol - den1;
+    var jeSloucen = !!merged[e.row + '_' + dopCol];
     if (e.all) {
-      if (!pair.isPartOfMerge()) pair.merge();
-      sheet.getRange(e.row, dopCol).setValue(e.all);
+      grid[i][idx] = e.all;
+      grid[i][idx + 1] = '';
+      if (!jeSloucen) slouc.push([e.row, dopCol]);
     } else {
-      if (pair.isPartOfMerge()) pair.breakApart();
-      sheet.getRange(e.row, dopCol).setValue(e.am);
-      sheet.getRange(e.row, dopCol + 1).setValue(e.pm);
+      grid[i][idx] = e.am;
+      grid[i][idx + 1] = e.pm;
+      if (jeSloucen) rozdel.push([e.row, dopCol]);
     }
-    dotcene[e.row] = 1;
     n++;
   });
 
-  Object.keys(dotcene).forEach(function (row) {
-    _dmPrepocitejSouhrn(sheet, Number(row), mesic, vacAbbr);
-  });
+  // Pořadí je důležité: půldny rozbít PŘED zápisem (jinak by se odpolední
+  // hodnota ztratila ve sloučené buňce), celodenní sloučit AŽ PO zápisu
+  // (sloučení si ponechá levou = správnou hodnotu).
+  rozdel.forEach(function (p) { sheet.getRange(p[0], p[1], 1, 2).breakApart(); });
+  rng.setValues(grid);
+  slouc.forEach(function (p) { sheet.getRange(p[0], p[1], 1, 2).merge(); });
+
+  // ── souhrn dovolené: spočítat v paměti, zapsat jedním voláním ──
+  slouc.forEach(function (p) { merged[p[0] + '_' + p[1]] = 1; });
+  rozdel.forEach(function (p) { delete merged[p[0] + '_' + p[1]]; });
+  var vac = {};
+  (vacAbbr || []).forEach(function (a) { vac[String(a).trim()] = 1; });
+
+  var souhrn = [];
+  for (var i2 = 0; i2 < nRows; i2++) {
+    if (!String(uids[i2][0] || '').trim()) { souhrn.push(['']); continue; }   // mezera / nadpis
+    var dny = 0;
+    for (var d = 1; d <= N; d++) {
+      var c = _gDop(d), o = c - den1;
+      if (merged[(prvni + i2) + '_' + c]) {
+        if (vac[String(grid[i2][o] || '').trim()]) dny += 1;
+      } else {
+        if (vac[String(grid[i2][o] || '').trim()]) dny += 0.5;
+        if (vac[String(grid[i2][o + 1] || '').trim()]) dny += 0.5;
+      }
+    }
+    souhrn.push([dny]);
+  }
+  sheet.getRange(prvni, _gSouhrn(N), nRows, 1).setValues(souhrn);
   return n;
 }
 
