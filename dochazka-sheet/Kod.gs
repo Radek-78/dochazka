@@ -14,7 +14,7 @@
  *    "Zadat můj měsíc"                    → modal s měsíčním pohledem přihlášeného
  *    "Postavit / obnovit všechny měsíce"  → přegeneruje 12 měsíčních listů
  *    "Postavit / obnovit jen tento měsíc" → přegeneruje jen list otevřeného měsíce
- *    "Načíst docházku z aplikace"         → import ATTENDANCE + rezervací
+ *    "Načíst docházku z aplikace"         → import jen ATTENDANCE (bez rezervací)
  *    "Načíst rezervace stolů z aplikace"  → import jen MAP_RESERVATIONS
  *    "Pomocné listy"                      → vytvořit chybějící / aktualizovat Stoly + Mapa
  *                                           (bez přegenerování měsíců)
@@ -919,10 +919,10 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   _dsFont(sheet);
 }
 
-/** Projde celý měsíční list a nastaví červený proužek u kancelářských dnů bez rezervace stolu. */
+/** Projde celý měsíční list a nastaví červený proužek u kancelářských dnů bez rezervace stolu. Vrací počet zvýrazněných dnů. */
 function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var da = deskAbbr || [];
-  if (!da.length) return;
+  if (!da.length) return 0;
   var deskSet = {};
   da.forEach(function (a) { deskSet[String(a).trim()] = 1; });
 
@@ -931,7 +931,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var den1 = DS_DEN1_COL;
   var uidCol = den1 + 2 * N + 1;
   var last = sheet.getLastRow();
-  if (last < DS_PRVNI_DATA_RADEK) return;
+  if (last < DS_PRVNI_DATA_RADEK) return 0;
   var nRows = last - DS_PRVNI_DATA_RADEK + 1;
   var uids = sheet.getRange(DS_PRVNI_DATA_RADEK, uidCol, nRows, 1).getValues();
   var rng = sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, 2 * N);
@@ -952,6 +952,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
     if (s.trvale && uidByJmeno[s.trvale]) trvalyUid[uidByJmeno[s.trvale]] = 1;
   });
 
+  var zvyrazneno = 0;
   for (var i = 0; i < nRows; i++) {
     var uid = String(uids[i][0] || '').trim();
     if (!uid) continue;
@@ -966,16 +967,28 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
       if (!potreba) continue;
       var maStul = rezSet[uid + '_' + d] || trvalyUid[uid];
       _dmRamecekStul(sheet.getRange(absRow, dopCol, 1, 2), !maStul);
+      if (!maStul) zvyrazneno++;
     }
   }
+  return zvyrazneno;
 }
 
-/** Indikace „kancelář bez stolu" — jemný červený spodní proužek pod dvojicí dne (jinak tenká šedá). */
+/** Indikace „kancelář bez stolu" — červené levá/pravá/spodní hrana dvojice dne (bez horní, ať nekříží rám oddělení). */
 function _dmRamecekStul(pair, cerveny) {
   pair.setBorder(
-    null, null, true, null, null, null,
+    null, true, true, true, null, null,
     cerveny ? '#dc2626' : '#e2e8f0',
     cerveny ? SpreadsheetApp.BorderStyle.SOLID_MEDIUM : SpreadsheetApp.BorderStyle.SOLID);
+}
+
+/** Zkratky statusů, které vyžadují rezervaci stolu (allows_desk_reservation). */
+function _dsDeskAbbr(core) {
+  var out = [];
+  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
+    var a = String(s.abbreviation || '').trim();
+    if (a && String(s.allows_desk_reservation) === 'true' && out.indexOf(a) === -1) out.push(a);
+  });
+  return out;
 }
 
 /** Má uživatel (podle jména) natrvalo přiřazený stůl v listu Stoly? */
@@ -1107,14 +1120,13 @@ function nactiDochazku() {
 
   var abbr = {};
   var vacAbbr = [];
-  var deskAbbr = [];
   _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
     var a = String(s.abbreviation || '').trim();
     if (!a) return;
     abbr[String(s.status_id).trim()] = a;
     if (String(s.is_vacation) === 'true' && vacAbbr.indexOf(a) === -1) vacAbbr.push(a);
-    if (String(s.allows_desk_reservation) === 'true' && deskAbbr.indexOf(a) === -1) deskAbbr.push(a);
   });
+  var deskAbbr = _dsDeskAbbr(core);
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var radkaVMesici = {};   // user_id -> { mesic -> row }
@@ -1153,14 +1165,17 @@ function nactiDochazku() {
     pocet += _dmImportMesic(ss.getSheetByName(_dsNazevMesice(Number(mm))), Number(mm), podleM[mm], vacAbbr);
   });
 
-  var rez = _dmImportRezervace(ss, core, trans);
-
+  // rezervace stolů se sem NEnačítají — jsou zvlášť přes „🪑 Načíst rezervace stolů z aplikace".
+  var zvyrazneno = 0;
   for (var mb = 1; mb <= 12; mb++) {
     var shb = ss.getSheetByName(_dsNazevMesice(mb));
-    if (shb) _dmObnovStulyList(shb, mb, deskAbbr, null);
+    if (shb) zvyrazneno += _dmObnovStulyList(shb, mb, deskAbbr, null);
   }
 
-  ui.alert('Načteno ' + pocet + ' dní docházky a ' + rez.count + ' rezervací stolů.');
+  ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
+    'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v ATTENDANCE_STATUSES není allows_desk_reservation)') + '\n' +
+    'Kancelářských dnů bez rezervace (červený proužek): ' + zvyrazneno + '\n\n' +
+    'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');
 }
 
 /** Načte jen rezervace stolů z živé aplikace (bez docházky). */
@@ -1176,17 +1191,14 @@ function nactiRezervace() {
   var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var deskAbbr = [];
-  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
-    var a = String(s.abbreviation || '').trim();
-    if (a && String(s.allows_desk_reservation) === 'true' && deskAbbr.indexOf(a) === -1) deskAbbr.push(a);
-  });
+  var deskAbbr = _dsDeskAbbr(core);
 
   var d = _dmImportRezervace(ss, core, trans);
 
+  var zvyrazneno = 0;
   for (var mb = 1; mb <= 12; mb++) {
     var shb = ss.getSheetByName(_dsNazevMesice(mb));
-    if (shb) _dmObnovStulyList(shb, mb, deskAbbr, null);
+    if (shb) zvyrazneno += _dmObnovStulyList(shb, mb, deskAbbr, null);
   }
 
   if (d.stoly === 0) {
@@ -1199,6 +1211,8 @@ function nactiRezervace() {
     'Řádků celkem: ' + d.celkem + '\n' +
     'Z toho pro rok ' + ROK + ': ' + d.letos + '\n' +
     (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
+    'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný') + '\n' +
+    'Kancelářských dnů bez rezervace (červený proužek): ' + zvyrazneno + '\n' +
     (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.\n\nListy v TRANSACTION:\n' + d.listyTrans +
       '\n\nListy v CORE:\n' + d.listyCore +
       '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
