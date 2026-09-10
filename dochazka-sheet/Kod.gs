@@ -41,6 +41,9 @@ var USEK_NAZEV = 'DL Plánování a řízení zásob';
 var ROK = new Date().getFullYear();
 
 var DS_FONT = 'Lidl Font Cond Pro';
+// Vzhled chipu statusu v mřížce: 0 = plná barva statusu + bílý text,
+// 0.5–0.85 = jen jemný tón barvy na bílé + tmavý čitelný text (ohraničení pak víc vynikne).
+var DS_CHIP_TON = 0.74;
 var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
 var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
@@ -882,17 +885,24 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   statusyUnik.forEach(function (s) {
     var zk = String(s.abbreviation).trim();
     if (!zk) return;
-    pravidla.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo(zk).setBackground(_dsHex(s.color, '#94a3b8'))
-      .setFontColor(_dsHex(s.text_color, '#ffffff')).setBold(true)
-      .setRanges([mrizka]).build());
+    var barva = _dsHex(s.color, '#94a3b8');
+    var pr = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(zk).setBold(true).setRanges([mrizka]);
+    if (DS_CHIP_TON > 0) pr.setBackground(_dsSvetleji(barva, DS_CHIP_TON)).setFontColor('#1e293b');
+    else pr.setBackground(barva).setFontColor(_dsHex(s.text_color, '#ffffff'));
+    pravidla.push(pr.build());
   });
   sheet.setConditionalFormatRules(pravidla);
 
-  // ── rámy, zmrazení, rozměry ──
+  // ── vrátit zachovanou docházku ──
+  _dsVratDochazku(sheet, mesic, radky, zachovano, vacAbbr || []);
+
+  // ── ohraničení: 1) tenká mřížka  2) indikace kancelář-bez-stolu  3) rámy oddělení (dominantní, poslední) ──
+  sheet.getRange(prvniData, den1, pocetRadku, 2 * pocetDnu).clearNote();  // žádné poznámky se stolem
   sheet.getRange(prvniData, 1, pocetRadku, souhrnCol)
     .setBorder(true, true, true, true, false, true, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
+  _dmObnovStulyList(sheet, mesic, deskAbbr, _dmRezMesic(ss, mesic));
   bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
+
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
   sheet.setColumnWidth(1, 170);
@@ -906,25 +916,10 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
     .setDescription('Docházková mřížka — edituj přes menu 📋 Docházka')
     .setWarningOnly(true);
 
-  // ── vrátit zachovanou docházku ──
-  _dsVratDochazku(sheet, mesic, radky, zachovano, vacAbbr || []);
-
-  // ── rezervace: poznámky se stolem + červený rámeček u kancelářského dne bez stolu ──
-  var rez = _dmRezMesic(ss, mesic);
-  var rowByUid = {};
-  for (var ri = 0; ri < radky.length; ri++) {
-    if (radky[ri].typ === 'emp') rowByUid[String(radky[ri].u.user_id)] = prvniData + ri;
-  }
-  rez.forEach(function (r) {
-    var rw = rowByUid[r.uid];
-    if (rw && r.stul) sheet.getRange(rw, den1 + 2 * (r.den - 1)).setNote('Stůl: ' + r.stul);
-  });
-  _dmObnovStulyList(sheet, mesic, deskAbbr, rez);
-
   _dsFont(sheet);
 }
 
-/** Projde celý měsíční list a nastaví červený rámeček u kancelářských dnů bez rezervace stolu. */
+/** Projde celý měsíční list a nastaví červený proužek u kancelářských dnů bez rezervace stolu. */
 function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
   var da = deskAbbr || [];
   if (!da.length) return;
@@ -970,12 +965,17 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
       var potreba = deskSet[vDop] || (!full && deskSet[vOdp]);
       if (!potreba) continue;
       var maStul = rezSet[uid + '_' + d] || trvalyUid[uid];
-      sheet.getRange(absRow, dopCol, 1, 2).setBorder(
-        true, true, true, true, null, null,
-        maStul ? '#e2e8f0' : '#dc2626',
-        maStul ? SpreadsheetApp.BorderStyle.SOLID : SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+      _dmRamecekStul(sheet.getRange(absRow, dopCol, 1, 2), !maStul);
     }
   }
+}
+
+/** Indikace „kancelář bez stolu" — jemný červený spodní proužek pod dvojicí dne (jinak tenká šedá). */
+function _dmRamecekStul(pair, cerveny) {
+  pair.setBorder(
+    null, null, true, null, null, null,
+    cerveny ? '#dc2626' : '#e2e8f0',
+    cerveny ? SpreadsheetApp.BorderStyle.SOLID_MEDIUM : SpreadsheetApp.BorderStyle.SOLID);
 }
 
 /** Má uživatel (podle jména) natrvalo přiřazený stůl v listu Stoly? */
@@ -1019,11 +1019,7 @@ function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   var da = deskAbbr || [];
   var potreba = da.indexOf(String(vals[0] || '').trim()) !== -1 ||
     (!pair.isPartOfMerge() && da.indexOf(String(vals[1] || '').trim()) !== -1);
-  if (potreba && !maRezervaci) {
-    pair.setBorder(true, true, true, true, null, null, '#dc2626', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  } else {
-    pair.setBorder(true, true, true, true, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
-  }
+  _dmRamecekStul(pair, potreba && !maRezervaci);
 }
 
 function _dsRamOddeleni(sheet, r1, r2, lastCol) {
@@ -1644,6 +1640,19 @@ function _dsNazevMesice(mesic) {
 
 function _dsHex(val, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(String(val || '')) ? String(val) : fallback;
+}
+
+/** Zesvětlí hex barvu směrem k bílé; k = podíl bílé (0 = beze změny, 1 = bílá). */
+function _dsSvetleji(hex, k) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '').trim());
+  if (!m) return hex;
+  var f = Math.max(0, Math.min(1, k));
+  var out = '#';
+  for (var i = 1; i <= 3; i++) {
+    var v = Math.round(parseInt(m[i], 16) + (255 - parseInt(m[i], 16)) * f);
+    out += ('0' + v.toString(16)).slice(-2);
+  }
+  return out;
 }
 
 function _dsFont(sheet) {
