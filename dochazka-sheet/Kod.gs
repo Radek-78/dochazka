@@ -28,6 +28,7 @@
  */
 
 var ZDROJ_CORE_ID = '13RKMeOxnXVsJ7omEVElPP2BCJe5_bqtFYklbmE5YZ6g';
+var ZDROJ_TRANSACTION_ID = 'SEM_VLOZ_ID_TRANSACTION_DB';   // pro "Načíst docházku z aplikace"
 var USEK_NAZEV = 'DL Plánování a řízení zásob';
 var ROK = new Date().getFullYear();
 
@@ -44,10 +45,10 @@ var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'E-mail', 'Vedoucí', 'O
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('📋 Docházka')
-    .addItem('Zadat můj měsíc', 'otevriModal')
+    .addItem('📝 Zadat můj měsíc', 'otevriModal')
     .addSeparator()
-    .addItem('Postavit / obnovit listy', 'setup')
-    .addItem('Postavit jen aktuální měsíc', 'setupMesic')
+    .addItem('🔄 Postavit / obnovit listy', 'setup')
+    .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
     .addToUi();
 }
 
@@ -423,16 +424,26 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
     .setBackground('#004fac').setFontColor('#ffffff').setFontWeight('bold').setFontSize(13);
   sheet.getRange(1, 1).setValue(USEK_NAZEV + ' — ' + DS_MESICE[mesic - 1].toUpperCase() + ' ' + ROK);
 
+  var svatky = _dsSvatkyCR(ROK);
+  var dnesDt = new Date();
+  var dnesDop = (ROK === dnesDt.getFullYear() && mesic === dnesDt.getMonth() + 1)
+    ? den1 + 2 * (dnesDt.getDate() - 1) : 0;
+
   var r2 = [], r3 = [];
   for (var i = 0; i < souhrnCol; i++) { r2.push(''); r3.push(''); }
   r2[0] = 'Jméno';
-  var vikendDop = [];
+  var klas = {};          // dopCol -> 'dnes' | 'svatek' | 'vikend'
+  var svatekNazev = {};   // dopCol -> název svátku
   for (var d = 1; d <= pocetDnu; d++) {
     var dop = den1 + 2 * (d - 1);
     var dow = new Date(ROK, mesic - 1, d).getDay();
     r2[dop - 1] = d;
     r3[dop - 1] = DS_DNY[dow];
-    if (dow === 0 || dow === 6) vikendDop.push(dop);
+    var mmdd = ('0' + mesic).slice(-2) + '-' + ('0' + d).slice(-2);
+    if (svatky[mmdd]) svatekNazev[dop] = svatky[mmdd];
+    if (dop === dnesDop) klas[dop] = 'dnes';
+    else if (svatky[mmdd]) klas[dop] = 'svatek';
+    else if (dow === 0 || dow === 6) klas[dop] = 'vikend';
   }
   r2[souhrnCol - 1] = 'Dovolená';
   r3[souhrnCol - 1] = '(dny)';
@@ -444,14 +455,21 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
   for (var d2 = 1; d2 <= pocetDnu; d2++) {
     sheet.getRange(2, den1 + 2 * (d2 - 1), 2, 2).mergeAcross();
   }
-  vikendDop.forEach(function (c) { sheet.getRange(2, c, 2, 2).setBackground('#e9edf2'); });
+
+  var BG_HLAV = { dnes: '#fde047', svatek: '#fde8c8', vikend: '#e9edf2' };
+  var BG_MRIZ = { dnes: '#fef9c3', svatek: '#fde8c8', vikend: '#e9edf2' };
+  Object.keys(klas).forEach(function (dc) {
+    sheet.getRange(2, Number(dc), 2, 2).setBackground(BG_HLAV[klas[dc]]);
+    if (svatekNazev[dc]) sheet.getRange(3, Number(dc)).setNote(svatekNazev[dc]);
+  });
 
   var mrizka = sheet.getRange(prvniData, den1, pocetRadku, 2 * pocetDnu);
   var bg = [];
   for (var r = 0; r < pocetRadku; r++) {
     var rr = [];
     for (var c = den1; c <= poslDenCol; c++) {
-      rr.push((vikendDop.indexOf(c) !== -1 || vikendDop.indexOf(c - 1) !== -1) ? '#e9edf2' : '#ffffff');
+      var dc2 = ((c - den1) % 2 === 0) ? c : c - 1;
+      rr.push(klas[dc2] ? BG_MRIZ[klas[dc2]] : '#ffffff');
     }
     bg.push(rr);
   }
@@ -510,6 +528,107 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
     .setWarningOnly(true);
 
   _dsFont(sheet);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  IMPORT DOCHÁZKY ZE ŽIVÉ APLIKACE
+// ════════════════════════════════════════════════════════════════════════════
+
+function nactiDochazku() {
+  if (ZDROJ_TRANSACTION_ID.indexOf('VLOZ') !== -1) {
+    throw new Error('Nastav ZDROJ_TRANSACTION_ID nahoře ve skriptu (Vlastnosti skriptu živé appky → SPREADSHEET_TRANSACTION_ID).');
+  }
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('Načíst docházku z živé aplikace do všech měsíčních listů roku ' + ROK +
+    '?\nHodnoty v listech se přepíšou hodnotami z aplikace.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
+  var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
+
+  var abbr = {};
+  var vacAbbr = [];
+  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
+    var a = String(s.abbreviation || '').trim();
+    if (!a) return;
+    abbr[String(s.status_id).trim()] = a;
+    if (String(s.is_vacation) === 'true' && vacAbbr.indexOf(a) === -1) vacAbbr.push(a);
+  });
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var radkaVMesici = {};   // user_id -> { mesic -> row }
+  for (var m = 1; m <= 12; m++) {
+    var sh = ss.getSheetByName(_dsNazevMesice(m));
+    if (!sh) continue;
+    var uidCol = DS_DEN1_COL + 2 * _dmDniVMesici(m) + 1;
+    var last = sh.getLastRow();
+    if (last < DS_PRVNI_DATA_RADEK) continue;
+    var uids = sh.getRange(DS_PRVNI_DATA_RADEK, uidCol, last - DS_PRVNI_DATA_RADEK + 1, 1).getValues();
+    for (var i = 0; i < uids.length; i++) {
+      var uid = String(uids[i][0] || '').trim();
+      if (uid) (radkaVMesici[uid] = radkaVMesici[uid] || {})[m] = DS_PRVNI_DATA_RADEK + i;
+    }
+  }
+
+  var podleM = {};   // mesic -> [ {row, den, slot, ab} ]
+  _dsCti(trans, 'ATTENDANCE').forEach(function (a) {
+    if (String(a.approved).toLowerCase() === 'rejected') return;
+    var datum = String(a.date || '').substring(0, 10);
+    if (datum.substring(0, 4) !== String(ROK)) return;
+    var uid = String(a.user_id || '').trim();
+    var mm = parseInt(datum.substring(5, 7), 10);
+    var row = radkaVMesici[uid] && radkaVMesici[uid][mm];
+    if (!row) return;
+    var ab = abbr[String(a.status_id).trim()];
+    if (!ab) return;
+    (podleM[mm] = podleM[mm] || []).push({
+      row: row, den: parseInt(datum.substring(8, 10), 10),
+      slot: String(a.slot || 'ALL_DAY').toUpperCase(), ab: ab
+    });
+  });
+
+  var pocet = 0;
+  Object.keys(podleM).forEach(function (mm) {
+    pocet += _dmImportMesic(ss.getSheetByName(_dsNazevMesice(Number(mm))), Number(mm), podleM[mm], vacAbbr);
+  });
+  ui.alert('Načteno ' + pocet + ' dní docházky.');
+}
+
+function _dmImportMesic(sheet, mesic, zapisy, vacAbbr) {
+  if (!sheet) return 0;
+  var den1 = DS_DEN1_COL;
+
+  var poDni = {};   // "row_den" -> { row, den, all, am, pm }
+  zapisy.forEach(function (z) {
+    var key = z.row + '_' + z.den;
+    var e = poDni[key] || (poDni[key] = { row: z.row, den: z.den, all: '', am: '', pm: '' });
+    if (z.slot === 'AM') e.am = z.ab;
+    else if (z.slot === 'PM') e.pm = z.ab;
+    else e.all = z.ab;
+  });
+
+  var dotcene = {};
+  var n = 0;
+  Object.keys(poDni).forEach(function (k) {
+    var e = poDni[k];
+    var dopCol = den1 + 2 * (e.den - 1);
+    var pair = sheet.getRange(e.row, dopCol, 1, 2);
+    if (e.all) {
+      if (!pair.isPartOfMerge()) pair.merge();
+      sheet.getRange(e.row, dopCol).setValue(e.all);
+    } else {
+      if (pair.isPartOfMerge()) pair.breakApart();
+      sheet.getRange(e.row, dopCol).setValue(e.am);
+      sheet.getRange(e.row, dopCol + 1).setValue(e.pm);
+    }
+    dotcene[e.row] = 1;
+    n++;
+  });
+
+  Object.keys(dotcene).forEach(function (row) {
+    _dmPrepocitejSouhrn(sheet, Number(row), mesic, vacAbbr);
+  });
+  return n;
 }
 
 
@@ -681,7 +800,11 @@ function _dsCti(ss, listName) {
     var o = {};
     head.forEach(function (h, i) {
       var v = row[i];
-      o[h] = (v === null || v === undefined) ? '' : String(v).trim();
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        o[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+      } else {
+        o[h] = (v === null || v === undefined) ? '' : String(v).replace(/^'/, '').trim();
+      }
     });
     return o;
   });
@@ -726,4 +849,42 @@ function _dsParseDatum(v) {
   s = s.replace(/^'/, '');
   var d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
+}
+
+/** Státní svátky ČR pro rok → { "MM-DD": "název" }. */
+function _dsSvatkyCR(rok) {
+  var m = {
+    '01-01': 'Nový rok / Den obnovy samostatného českého státu',
+    '05-01': 'Svátek práce',
+    '05-08': 'Den vítězství',
+    '07-05': 'Den slovanských věrozvěstů Cyrila a Metoděje',
+    '07-06': 'Den upálení mistra Jana Husa',
+    '09-28': 'Den české státnosti',
+    '10-28': 'Den vzniku samostatného československého státu',
+    '11-17': 'Den boje za svobodu a demokracii',
+    '12-24': 'Štědrý den',
+    '12-25': '1. svátek vánoční',
+    '12-26': '2. svátek vánoční'
+  };
+  var e = _dsVelikonoce(rok);
+  m[e.patek] = 'Velký pátek';
+  m[e.pondeli] = 'Velikonoční pondělí';
+  return m;
+}
+
+/** Velikonoce (Meeus/Jones/Butcher) → { patek:"MM-DD", pondeli:"MM-DD" }. */
+function _dsVelikonoce(rok) {
+  var a = rok % 19, b = Math.floor(rok / 100), c = rok % 100;
+  var dd = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  var g = Math.floor((b - f + 1) / 3), h = (19 * a + b - dd - g + 15) % 30;
+  var ii = Math.floor(c / 4), k = c % 4;
+  var l = (32 + 2 * e + 2 * ii - h - k) % 7;
+  var mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  var mesic = Math.floor((h + l - 7 * mm + 114) / 31);
+  var den = ((h + l - 7 * mm + 114) % 31) + 1;
+  var nedele = new Date(rok, mesic - 1, den);
+  function fmt(x) { return ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); }
+  var patek = new Date(nedele); patek.setDate(patek.getDate() - 2);
+  var pondeli = new Date(nedele); pondeli.setDate(pondeli.getDate() + 1);
+  return { patek: fmt(patek), pondeli: fmt(pondeli) };
 }
