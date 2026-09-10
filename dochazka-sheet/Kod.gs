@@ -12,8 +12,9 @@
  *    ROK           — rok pro měsíční listy.
  *
  *  MENU 📋 Docházka:
- *    "Zadat můj měsíc"           → modal s měsíčním pohledem přihlášeného
- *    "Postavit / obnovit listy"  → (pře)postaví Uživatelé + 12 měsíčních listů
+ *    "Zadat můj měsíc"              → modal s měsíčním pohledem přihlášeného
+ *    "Postavit / obnovit listy"     → (pře)postaví Uživatelé + 12 měsíčních listů
+ *    "Postavit jen aktuální měsíc"  → přestaví jen list otevřeného měsíce
  *
  *  Model dne: dvojice sloupců (dopoledne | odpoledne).
  *    - Sloučená dvojice  = celý den (jedna hodnota).
@@ -31,8 +32,8 @@ var DS_MESICE = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
 var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
 var DS_DEN1_COL = 2;             // den 1 dopoledne = sloupec 2 (B)
-var DS_HLAVICKA_RADKU = 2;      // ř. 1 titulek, ř. 2 čísla dnů / dny v týdnu
-var DS_PRVNI_DATA_RADEK = 3;
+var DS_HLAVICKA_RADKU = 3;      // ř. 1 titulek, ř. 2 čísla dnů, ř. 3 dny v týdnu
+var DS_PRVNI_DATA_RADEK = 4;
 
 
 function onOpen() {
@@ -40,12 +41,12 @@ function onOpen() {
     .addItem('Zadat můj měsíc', 'otevriModal')
     .addSeparator()
     .addItem('Postavit / obnovit listy', 'setup')
+    .addItem('Postavit jen aktuální měsíc', 'setupMesic')
     .addToUi();
 }
 
 function otevriModal() {
-  var html = HtmlService.createHtmlOutputFromFile('Modal')
-    .setWidth(760).setHeight(660);
+  var html = HtmlService.createHtmlOutputFromFile('Modal').setWidth(760).setHeight(660);
   SpreadsheetApp.getUi().showModalDialog(html, 'Moje docházka');
 }
 
@@ -55,6 +56,34 @@ function otevriModal() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function setup() {
+  var z = _dsNactiZdroj();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  _dsListUzivatele(ss, z.lide, z.oddMap, z.tymMap);
+  for (var m = 1; m <= 12; m++) _dsListMesic(ss, m, z.radky, z.statusyUnik);
+
+  var vychozi = ss.getSheetByName('Sheet1') || ss.getSheetByName('List1');
+  if (vychozi && ss.getSheets().length > 1) ss.deleteSheet(vychozi);
+
+  var akt = ss.getSheetByName(_dsNazevMesice(new Date().getMonth() + 1));
+  if (akt) ss.setActiveSheet(akt);
+
+  SpreadsheetApp.getUi().alert('Hotovo — ' +
+    z.radky.filter(function (r) { return r.typ === 'emp'; }).length + ' zaměstnanců ve 12 listech.');
+}
+
+function setupMesic() {
+  var z = _dsNactiZdroj();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var m = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
+  _dsListMesic(ss, m, z.radky, z.statusyUnik);
+  ss.setActiveSheet(ss.getSheetByName(_dsNazevMesice(m)));
+  SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
+}
+
+
+/** Načte zdrojová data z živé DB a připraví uspořádané řádky. */
+function _dsNactiZdroj() {
   if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
   if (USEK_NAZEV.indexOf('VLOZ') !== -1) throw new Error('Nastav USEK_NAZEV nahoře ve skriptu.');
 
@@ -91,33 +120,20 @@ function setup() {
   var tymMap = {};
   tymy.forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
 
-  var zkratky = [];
   var videno = {};
   var statusyUnik = [];
   statusy.forEach(function (s) {
     var z = String(s.abbreviation).trim();
     if (!z || videno[z]) return;
     videno[z] = true;
-    zkratky.push(z);
     statusyUnik.push(s);
   });
 
-  var radky = _dsSerazeni(lide, oddeleni, tymy);
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  _dsListUzivatele(ss, lide, oddMap, tymMap);
-  for (var m = 1; m <= 12; m++) {
-    _dsListMesic(ss, m, radky, statusyUnik, zkratky);
-  }
-
-  var vychozi = ss.getSheetByName('Sheet1') || ss.getSheetByName('List1');
-  if (vychozi && ss.getSheets().length > 1) ss.deleteSheet(vychozi);
-
-  var akt = ss.getSheetByName(_dsNazevMesice(new Date().getMonth() + 1));
-  if (akt) ss.setActiveSheet(akt);
-
-  SpreadsheetApp.getUi().alert('Hotovo — ' +
-    radky.filter(function (r) { return r.typ === 'emp'; }).length + ' zaměstnanců ve 12 měsíčních listech.');
+  return {
+    radky: _dsSerazeni(lide, oddeleni, tymy),
+    statusyUnik: statusyUnik,
+    lide: lide, oddMap: oddMap, tymMap: tymMap
+  };
 }
 
 
@@ -195,7 +211,7 @@ function _dsListUzivatele(ss, lide, oddMap, tymMap) {
 }
 
 
-function _dsListMesic(ss, mesic, radky, statusyUnik, zkratky) {
+function _dsListMesic(ss, mesic, radky, statusyUnik) {
   var nazev = _dsNazevMesice(mesic);
   var stary = ss.getSheetByName(nazev);
   if (stary) ss.deleteSheet(stary);
@@ -222,30 +238,38 @@ function _dsListMesic(ss, mesic, radky, statusyUnik, zkratky) {
     .setBackground('#004fac').setFontColor('#ffffff').setFontWeight('bold').setFontSize(13);
   sheet.getRange(1, 1).setValue(USEK_NAZEV + ' — ' + DS_MESICE[mesic - 1].toUpperCase() + ' ' + ROK);
 
-  // ř. 2 hlavička
-  var hlav = new Array(souhrnCol);
-  hlav[0] = 'Jméno';
-  var vikend = {};
+  // ř. 2 = čísla dnů, ř. 3 = dny v týdnu (obě: dvojice buněk sloučená)
+  var r2 = [], r3 = [];
+  for (var i = 0; i < souhrnCol; i++) { r2.push(''); r3.push(''); }
+  r2[0] = 'Jméno';
+  var vikendDop = [];
   for (var d = 1; d <= pocetDnu; d++) {
     var dop = den1 + 2 * (d - 1);
-    var odp = dop + 1;
     var dow = new Date(ROK, mesic - 1, d).getDay();
-    hlav[dop - 1] = d;
-    hlav[odp - 1] = DS_DNY[dow];
-    if (dow === 0 || dow === 6) { vikend[dop] = 1; vikend[odp] = 1; }
+    r2[dop - 1] = d;
+    r3[dop - 1] = DS_DNY[dow];
+    if (dow === 0 || dow === 6) vikendDop.push(dop);
   }
-  hlav[souhrnCol - 1] = 'Dovolená (dny)';
-  sheet.getRange(2, 1, 1, souhrnCol).setValues([hlav])
-    .setBackground('#f1f5f9').setFontWeight('bold').setFontSize(9).setHorizontalAlignment('center');
+  r2[souhrnCol - 1] = 'Dovolená';
+  r3[souhrnCol - 1] = '(dny)';
+  sheet.getRange(2, 1, 1, souhrnCol).setValues([r2])
+    .setBackground('#f1f5f9').setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center');
+  sheet.getRange(3, 1, 1, souhrnCol).setValues([r3])
+    .setBackground('#f1f5f9').setFontColor('#64748b').setFontSize(9).setHorizontalAlignment('center');
   sheet.getRange(2, 1).setHorizontalAlignment('left');
-  Object.keys(vikend).forEach(function (c) { sheet.getRange(2, Number(c)).setBackground('#e9edf2'); });
+  for (var d2 = 1; d2 <= pocetDnu; d2++) {
+    sheet.getRange(2, den1 + 2 * (d2 - 1), 2, 2).mergeAcross();
+  }
+  vikendDop.forEach(function (c) { sheet.getRange(2, c, 2, 2).setBackground('#e9edf2'); });
 
   // denní mřížka — pozadí
   var mrizka = sheet.getRange(prvniData, den1, pocetRadku, 2 * pocetDnu);
   var bg = [];
   for (var r = 0; r < pocetRadku; r++) {
     var rr = [];
-    for (var c = den1; c <= poslDenCol; c++) rr.push(vikend[c] ? '#e9edf2' : '#ffffff');
+    for (var c = den1; c <= poslDenCol; c++) {
+      rr.push((vikendDop.indexOf(c) !== -1 || vikendDop.indexOf(c - 1) !== -1) ? '#e9edf2' : '#ffffff');
+    }
     bg.push(rr);
   }
   mrizka.setBackgrounds(bg);
@@ -258,15 +282,15 @@ function _dsListMesic(ss, mesic, radky, statusyUnik, zkratky) {
   sheet.getRange(prvniData, uidCol, pocetRadku, 1).setValues(colU);
   sheet.hideColumns(uidCol);
 
-  // výchozí stav: dvojice dnů sloučené (celý den) — 1 mergeAcross na den
+  // výchozí stav: dvojice dnů sloučené (celý den)
   for (var dd = 1; dd <= pocetDnu; dd++) {
     sheet.getRange(prvniData, den1 + 2 * (dd - 1), pocetRadku, 2).mergeAcross();
   }
 
   // styl skupinových hlaviček + tučná jména
-  for (var i = 0; i < radky.length; i++) {
-    var it = radky[i];
-    var row = prvniData + i;
+  for (var j = 0; j < radky.length; j++) {
+    var it = radky[j];
+    var row = prvniData + j;
     if (it.typ === 'dept') {
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#dbeafe').setFontColor('#1e3a8a').setFontWeight('bold');
     } else if (it.typ === 'team') {
@@ -276,13 +300,7 @@ function _dsListMesic(ss, mesic, radky, statusyUnik, zkratky) {
     }
   }
 
-  // dropdown (fallback pro ruční editaci)
-  mrizka.setDataValidation(SpreadsheetApp.newDataValidation()
-    .requireValueInList(zkratky, true).setAllowInvalid(false)
-    .setHelpText('Doporučeno zadávat přes menu 📋 Docházka → Zadat můj měsíc.')
-    .build());
-
-  // podmíněné formátování — barva podle zkratky
+  // podmíněné formátování — barva podle zkratky (statusy jdou přes modal, dropdown není)
   var pravidla = [];
   statusyUnik.forEach(function (s) {
     var z = String(s.abbreviation).trim();
@@ -314,7 +332,6 @@ function _dsListMesic(ss, mesic, radky, statusyUnik, zkratky) {
 //  MODAL — serverové funkce
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Data pro první vykreslení modalu. */
 function dm_init() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mesic = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
@@ -348,7 +365,6 @@ function dm_init() {
   };
 }
 
-/** Stav měsíce pro přihlášeného. payload: {userId, mesic} */
 function dm_mesic(payload) {
   var sheet = _dmListMesice(payload.mesic);
   var mr = _dmMojeRadka(sheet, payload.userId);
@@ -360,7 +376,6 @@ function dm_mesic(payload) {
   };
 }
 
-/** Zápis jednoho dne. payload: {userId, mesic, den, rezim:'FULL'|'HALF'|'CLEAR', dop, odp, vacAbbr} */
 function dm_uloz(payload) {
   var lock = LockService.getDocumentLock();
   lock.waitLock(15000);
@@ -392,8 +407,6 @@ function dm_uloz(payload) {
 }
 
 
-// ── modal helpers ─────────────────────────────────────────────────────────
-
 function _dmListMesice(mesic) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(_dsNazevMesice(mesic));
   if (!sheet) throw new Error('List měsíce neexistuje. Spusť „Postavit / obnovit listy".');
@@ -410,8 +423,7 @@ function _dmDniVMesici(mesic) {
 }
 
 function _dmMojeRadka(sheet, userId) {
-  var mesic = _dmMesicZListu(sheet);
-  var uidCol = DS_DEN1_COL + 2 * _dmDniVMesici(mesic) + 1;
+  var uidCol = DS_DEN1_COL + 2 * _dmDniVMesici(_dmMesicZListu(sheet)) + 1;
   var last = sheet.getLastRow();
   var n = last - DS_PRVNI_DATA_RADEK + 1;
   if (n < 1) throw new Error('Prázdný list.');
