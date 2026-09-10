@@ -50,6 +50,10 @@
     .hsec { margin-bottom: 10px; }
     .hsec .lbl { font-weight: 800; font-size: 11px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
     .pact { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
+    .rng { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .rng label { font-weight: 700; font-size: 12px; }
+    .rng input[type=number] { width: 58px; padding: 5px 6px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+    .rng .chk { display: flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -78,8 +82,37 @@
     </div>
   </div>
 
+  <div class="pick" id="bulk">
+    <div class="pcard">
+      <div class="ptitle">Hromadné zadání</div>
+      <div class="rng">
+        <label>Od dne <input type="number" id="bOd" min="1" max="31" value="1"></label>
+        <label>do dne <input type="number" id="bDo" min="1" max="31" value="31"></label>
+        <label class="chk"><input type="checkbox" id="bVsedni" checked> jen všední dny</label>
+      </div>
+      <div class="mode">
+        <button id="bmFull" onclick="bSetMode('FULL')">CELÝ DEN</button>
+        <button id="bmHalf" onclick="bSetMode('HALF')">½ DEN</button>
+      </div>
+      <div id="bpFull"><div class="tiles" id="bTilesFull"></div></div>
+      <div id="bpHalf" style="display:none">
+        <div class="hsec"><div class="lbl">Dopoledne</div><div class="tiles" id="bTilesDop"></div></div>
+        <div class="hsec"><div class="lbl">Odpoledne</div><div class="tiles" id="bTilesOdp"></div></div>
+      </div>
+      <div class="pact">
+        <button class="btn danger" onclick="bClear()">Vymazat v rozsahu</button>
+        <div>
+          <button class="btn ghost" onclick="closeBulk()">Zavřít</button>
+          <button class="btn primary" onclick="bApply()">Použít</button>
+        </div>
+      </div>
+      <div class="msg" id="berr" style="margin-top:8px"></div>
+    </div>
+  </div>
+
   <script>
-    var S = { init: null, mesic: null, rok: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '' };
+    var S = { init: null, mesic: null, rok: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
+      bMode: 'FULL', bDop: '', bOdp: '' };
     var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
@@ -120,7 +153,8 @@
       });
       h += '</div>';
       h += '<div class="foot"><span class="sum">Dovolená: ' + (S.souhrn || 0) + ' dní</span>'
-        + '<button class="btn primary" onclick="google.script.host.close()">Hotovo</button></div>';
+        + '<div style="display:flex;gap:8px"><button class="btn ghost" onclick="openBulk()">Hromadně</button>'
+        + '<button class="btn primary" onclick="google.script.host.close()">Hotovo</button></div></div>';
       document.getElementById('app').innerHTML = h;
     }
 
@@ -191,6 +225,67 @@
           document.getElementById('perr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
         .dm_uloz({ userId: S.init.userId, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr });
+    }
+
+    // ── hromadné zadání ──
+    function openBulk() {
+      S.bMode = 'FULL'; S.bDop = ''; S.bOdp = '';
+      var dvm = S.dny.length;
+      document.getElementById('bDo').max = dvm;
+      document.getElementById('bOd').max = dvm;
+      if (Number(document.getElementById('bDo').value) > dvm) document.getElementById('bDo').value = dvm;
+      document.getElementById('berr').textContent = '';
+      bBuildTiles();
+      bSetMode('FULL');
+      document.getElementById('bulk').classList.add('on');
+    }
+    function closeBulk() { document.getElementById('bulk').classList.remove('on'); }
+    function bSetMode(m) {
+      S.bMode = m;
+      document.getElementById('bmFull').classList.toggle('act', m === 'FULL');
+      document.getElementById('bmHalf').classList.toggle('act', m === 'HALF');
+      document.getElementById('bpFull').style.display = m === 'FULL' ? '' : 'none';
+      document.getElementById('bpHalf').style.display = m === 'HALF' ? '' : 'none';
+    }
+    function bBuildTiles() {
+      document.getElementById('bTilesFull').innerHTML =
+        S.init.statusy.map(function (s) { return tileHtml(s, S.bDop === s.abbr && S.bMode === 'FULL', "bSelFull('" + s.abbr + "')"); }).join('');
+      document.getElementById('bTilesDop').innerHTML =
+        noneHtml(S.bDop === '', "bSelHalf('dop','')") +
+        S.init.statusy.map(function (s) { return tileHtml(s, S.bDop === s.abbr, "bSelHalf('dop','" + s.abbr + "')"); }).join('');
+      document.getElementById('bTilesOdp').innerHTML =
+        noneHtml(S.bOdp === '', "bSelHalf('odp','')") +
+        S.init.statusy.map(function (s) { return tileHtml(s, S.bOdp === s.abbr, "bSelHalf('odp','" + s.abbr + "')"); }).join('');
+    }
+    function bSelFull(ab) { S.bDop = ab; S.bOdp = ''; bBuildTiles(); }
+    function bSelHalf(which, ab) { if (which === 'dop') S.bDop = ab; else S.bOdp = ab; bBuildTiles(); }
+    function bClear() { bSend('CLEAR', '', ''); }
+    function bApply() {
+      if (S.bMode === 'FULL') {
+        if (!S.bDop) { document.getElementById('berr').innerHTML = '<span class="err">Vyber status.</span>'; return; }
+        bSend('FULL', S.bDop, '');
+      } else {
+        bSend('HALF', S.bDop, S.bOdp);
+      }
+    }
+    function bSend(rezim, dop, odp) {
+      var od = Number(document.getElementById('bOd').value) || 1;
+      var doo = Number(document.getElementById('bDo').value) || S.dny.length;
+      document.getElementById('berr').textContent = 'Ukládám…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          S.dny = res.dny; S.souhrn = res.souhrn;
+          closeBulk();
+          render();
+        })
+        .withFailureHandler(function (e) {
+          document.getElementById('berr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
+        })
+        .dm_hromadne({
+          userId: S.init.userId, mesic: S.mesic, odDen: od, doDen: doo,
+          jenVsedni: document.getElementById('bVsedni').checked,
+          rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr
+        });
     }
   </script>
 </body>

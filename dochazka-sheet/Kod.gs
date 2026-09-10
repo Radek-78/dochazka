@@ -50,6 +50,50 @@ function onOpen() {
     .addItem('🔄 Postavit / obnovit listy', 'setup')
     .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
     .addToUi();
+  _dsOznacDnes();
+}
+
+/** Obarví v hlavičce dnů aktuálního měsíce dnešní sloupec (a odbarví včerejší). */
+function _dsOznacDnes() {
+  try {
+    var dt = new Date();
+    if (dt.getFullYear() !== ROK) return;
+    var mesic = dt.getMonth() + 1;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(_dsNazevMesice(mesic));
+    if (!sheet) return;
+    var den1 = DS_DEN1_COL;
+    var N = _dmDniVMesici(mesic);
+    var novyDop = den1 + 2 * (dt.getDate() - 1);
+
+    var props = PropertiesService.getDocumentProperties();
+    var stare = props.getProperty('DNES_SLOUPEC');
+    if (stare) {
+      var p = stare.split(':');
+      var sM = Number(p[0]), sDop = Number(p[1]);
+      if (!(sM === mesic && sDop === novyDop)) {
+        var sSheet = ss.getSheetByName(_dsNazevMesice(sM));
+        if (sSheet && sDop >= den1 && sDop <= den1 + 2 * _dmDniVMesici(sM) - 1) {
+          _dsBarvaHlavicky(sSheet, sM, sDop, false);
+        }
+      }
+    }
+    if (novyDop >= den1 && novyDop <= den1 + 2 * N - 1) {
+      _dsBarvaHlavicky(sheet, mesic, novyDop, true);
+      props.setProperty('DNES_SLOUPEC', mesic + ':' + novyDop);
+    }
+  } catch (e) { /* onOpen nesmí spadnout */ }
+}
+
+function _dsBarvaHlavicky(sheet, mesic, dopCol, dnes) {
+  var den1 = DS_DEN1_COL;
+  var d = (dopCol - den1) / 2 + 1;
+  var dow = new Date(ROK, mesic - 1, d).getDay();
+  var mmdd = ('0' + mesic).slice(-2) + '-' + ('0' + d).slice(-2);
+  var svatek = !!_dsSvatkyCR(ROK)[mmdd];
+  var bg = dnes ? '#facc15'
+    : (svatek ? '#fca5a5' : ((dow === 0 || dow === 6) ? '#e9edf2' : '#f1f5f9'));
+  sheet.getRange(2, dopCol, 2, 2).setBackground(bg);
 }
 
 function otevriModal() {
@@ -74,6 +118,8 @@ function setup() {
   var akt = ss.getSheetByName(_dsNazevMesice(new Date().getMonth() + 1));
   if (akt) ss.setActiveSheet(akt);
 
+  PropertiesService.getDocumentProperties().deleteProperty('DNES_SLOUPEC');
+  _dsOznacDnes();
   SpreadsheetApp.getUi().alert('Hotovo — 12 měsíčních listů přegenerováno z listu Uživatelé.');
 }
 
@@ -83,6 +129,8 @@ function setupMesic() {
   var m = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
   _dsListMesic(ss, m, z.radky, z.statusyUnik, z.vacAbbr);
   ss.setActiveSheet(ss.getSheetByName(_dsNazevMesice(m)));
+  PropertiesService.getDocumentProperties().deleteProperty('DNES_SLOUPEC');
+  _dsOznacDnes();
   SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
 }
 
@@ -580,7 +628,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   }
   if (blokStart !== -1) bloky.push([prvniData + blokStart, prvniData + radky.length - 1]);
 
-  // ── podmíněné formátování: barvy statusů + dynamický "dnešní" sloupec ──
+  // ── podmíněné formátování: barvy statusů (dnešní sloupec řeší _dsOznacDnes) ──
   var pravidla = [];
   statusyUnik.forEach(function (s) {
     var zk = String(s.abbreviation).trim();
@@ -590,16 +638,6 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
       .setFontColor(_dsHex(s.text_color, '#ffffff')).setBold(true)
       .setRanges([mrizka]).build());
   });
-  var dnesVzorec = '=AND(YEAR(TODAY())=' + ROK + ',MONTH(TODAY())=' + mesic +
-    ',OR(COLUMN()=' + den1 + '+2*(DAY(TODAY())-1),COLUMN()=' + den1 + '+2*(DAY(TODAY())-1)+1))';
-  // hlavička dnů — silné zvýraznění (je zmrazená, takže vždy vidět)
-  pravidla.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(dnesVzorec).setBackground('#facc15').setBold(true)
-    .setRanges([sheet.getRange(2, den1, 2, 2 * pocetDnu)]).build());
-  // mřížka — jemné zvýraznění (na obsazených buňkách vítězí barva statusu)
-  pravidla.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(dnesVzorec).setBackground('#fef9c3')
-    .setRanges([mrizka]).build());
   sheet.setConditionalFormatRules(pravidla);
 
   // ── rámy, zmrazení, rozměry ──
@@ -848,29 +886,54 @@ function dm_uloz(payload) {
   try {
     var sheet = _dmListMesice(payload.mesic);
     var mr = _dmMojeRadka(sheet, payload.userId);
-    var dopCol = DS_DEN1_COL + 2 * (payload.den - 1);
-    var pair = sheet.getRange(mr.row, dopCol, 1, 2);
-
-    if (pair.isPartOfMerge()) pair.breakApart();
-
-    if (payload.rezim === 'CLEAR') {
-      pair.clearContent();
-      pair.merge();
-    } else if (payload.rezim === 'HALF') {
-      sheet.getRange(mr.row, dopCol).setValue(payload.dop || '');
-      sheet.getRange(mr.row, dopCol + 1).setValue(payload.odp || '');
-    } else { // FULL
-      pair.merge();
-      sheet.getRange(mr.row, dopCol).setValue(payload.dop || '');
-    }
-
+    _dmZapisDen(sheet, mr.row, payload.den, payload.rezim, payload.dop, payload.odp);
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
     var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
-    // udržet pohled listu u řádku uživatele (jinak po zápisu skáče nahoru)
-    try { sheet.getRange(mr.row, dopCol).activate(); } catch (e) {}
+    try { sheet.getRange(mr.row, DS_DEN1_COL + 2 * (payload.den - 1)).activate(); } catch (e) {}
     return { den: den, souhrn: souhrn };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/** Hromadné zadání: den od–do, volitelně jen všední dny. */
+function dm_hromadne(payload) {
+  var lock = LockService.getDocumentLock();
+  lock.waitLock(25000);
+  try {
+    var sheet = _dmListMesice(payload.mesic);
+    var mr = _dmMojeRadka(sheet, payload.userId);
+    var N = _dmDniVMesici(payload.mesic);
+    var od = Math.max(1, Math.min(N, Number(payload.odDen) || 1));
+    var doo = Math.max(od, Math.min(N, Number(payload.doDen) || N));
+    for (var d = od; d <= doo; d++) {
+      if (payload.jenVsedni) {
+        var dow = new Date(ROK, payload.mesic - 1, d).getDay();
+        if (dow === 0 || dow === 6) continue;
+      }
+      _dmZapisDen(sheet, mr.row, d, payload.rezim, payload.dop, payload.odp);
+    }
+    var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
+    try { sheet.getRange(mr.row, 1).activate(); } catch (e) {}
+    return { dny: _dmDenData(sheet, mr.row, payload.mesic), souhrn: souhrn };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _dmZapisDen(sheet, row, den, rezim, dop, odp) {
+  var dopCol = DS_DEN1_COL + 2 * (den - 1);
+  var pair = sheet.getRange(row, dopCol, 1, 2);
+  if (pair.isPartOfMerge()) pair.breakApart();
+  if (rezim === 'CLEAR') {
+    pair.clearContent();
+    pair.merge();
+  } else if (rezim === 'HALF') {
+    sheet.getRange(row, dopCol).setValue(dop || '');
+    sheet.getRange(row, dopCol + 1).setValue(odp || '');
+  } else { // FULL
+    pair.merge();
+    sheet.getRange(row, dopCol).setValue(dop || '');
   }
 }
 
