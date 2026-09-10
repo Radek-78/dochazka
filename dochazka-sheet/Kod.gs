@@ -66,7 +66,7 @@ function setup() {
   var z = _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  for (var m = 1; m <= 12; m++) _dsListMesic(ss, m, z.radky, z.statusyUnik);
+  for (var m = 1; m <= 12; m++) _dsListMesic(ss, m, z.radky, z.statusyUnik, z.vacAbbr);
 
   var vychozi = ss.getSheetByName('Sheet1') || ss.getSheetByName('List1');
   if (vychozi && ss.getSheets().length > 1) ss.deleteSheet(vychozi);
@@ -81,7 +81,7 @@ function setupMesic() {
   var z = _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var m = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
-  _dsListMesic(ss, m, z.radky, z.statusyUnik);
+  _dsListMesic(ss, m, z.radky, z.statusyUnik, z.vacAbbr);
   ss.setActiveSheet(ss.getSheetByName(_dsNazevMesice(m)));
   SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
 }
@@ -127,6 +127,7 @@ function _dsNactiZdroj() {
 
   var videno = {};
   var statusyUnik = [];
+  var vacAbbr = [];
   _dsCti(core, 'ATTENDANCE_STATUSES')
     .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
     .forEach(function (s) {
@@ -134,6 +135,7 @@ function _dsNactiZdroj() {
       if (!z || videno[z]) return;
       videno[z] = true;
       statusyUnik.push(s);
+      if (String(s.is_vacation) === 'true') vacAbbr.push(z);
     });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -143,7 +145,7 @@ function _dsNactiZdroj() {
   _dsListPoradi(ss, lide);                 // vytvoří jen pokud chybí
   var poradi = _dsCtiPoradi(ss);
 
-  return { radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik };
+  return { radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik, vacAbbr: vacAbbr };
 }
 
 
@@ -396,11 +398,12 @@ function _dsRadkyProMesic(radky, mesic) {
 
 // ── měsíční list ─────────────────────────────────────────────────────────
 
-function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
+function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   var radky = _dsRadkyProMesic(radkyFull, mesic);
 
   var nazev = _dsNazevMesice(mesic);
   var stary = ss.getSheetByName(nazev);
+  var zachovano = stary ? _dsPrectiDochazku(stary, mesic) : {};   // zachovat existující docházku
   if (stary) ss.deleteSheet(stary);
   var sheet = ss.insertSheet(nazev);
 
@@ -420,29 +423,31 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
   if (maxR < poslData) sheet.insertRowsAfter(maxR, poslData - maxR);
   else if (maxR > poslData) sheet.deleteRows(poslData + 1, maxR - poslData);
 
-  sheet.getRange(1, 1, 1, souhrnCol)
-    .setBackground('#004fac').setFontColor('#ffffff').setFontWeight('bold').setFontSize(13);
-  sheet.getRange(1, 1).setValue(USEK_NAZEV + ' — ' + DS_MESICE[mesic - 1].toUpperCase() + ' ' + ROK);
+  // ── ř. 1: sloučený titulek na střed + účet vpravo ──
+  sheet.getRange(1, 1, 1, souhrnCol).setBackground('#004fac').setFontColor('#ffffff').setFontWeight('bold');
+  var titEnd = Math.max(2, souhrnCol - 6);
+  sheet.getRange(1, 2, 1, titEnd - 1).merge()
+    .setValue(USEK_NAZEV + ' — ' + DS_MESICE[mesic - 1].toUpperCase() + ' ' + ROK)
+    .setFontSize(13).setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sheet.getRange(1, titEnd + 1, 1, souhrnCol - titEnd).merge()
+    .setValue(String(Session.getActiveUser().getEmail() || ''))
+    .setFontSize(9).setFontColor('#cfe3ff').setFontWeight('normal')
+    .setHorizontalAlignment('right').setVerticalAlignment('middle');
 
+  // ── ř. 2-3: čísla dnů / dny v týdnu; klasifikace svátek/víkend ──
   var svatky = _dsSvatkyCR(ROK);
-  var dnesDt = new Date();
-  var dnesDop = (ROK === dnesDt.getFullYear() && mesic === dnesDt.getMonth() + 1)
-    ? den1 + 2 * (dnesDt.getDate() - 1) : 0;
-
   var r2 = [], r3 = [];
   for (var i = 0; i < souhrnCol; i++) { r2.push(''); r3.push(''); }
   r2[0] = 'Jméno';
-  var klas = {};          // dopCol -> 'dnes' | 'svatek' | 'vikend'
-  var svatekNazev = {};   // dopCol -> název svátku
+  var klas = {};          // dopCol -> 'svatek' | 'vikend'
+  var svatekNazev = {};
   for (var d = 1; d <= pocetDnu; d++) {
     var dop = den1 + 2 * (d - 1);
     var dow = new Date(ROK, mesic - 1, d).getDay();
     r2[dop - 1] = d;
     r3[dop - 1] = DS_DNY[dow];
     var mmdd = ('0' + mesic).slice(-2) + '-' + ('0' + d).slice(-2);
-    if (svatky[mmdd]) svatekNazev[dop] = svatky[mmdd];
-    if (dop === dnesDop) klas[dop] = 'dnes';
-    else if (svatky[mmdd]) klas[dop] = 'svatek';
+    if (svatky[mmdd]) { klas[dop] = 'svatek'; svatekNazev[dop] = svatky[mmdd]; }
     else if (dow === 0 || dow === 6) klas[dop] = 'vikend';
   }
   r2[souhrnCol - 1] = 'Dovolená';
@@ -456,8 +461,8 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
     sheet.getRange(2, den1 + 2 * (d2 - 1), 2, 2).mergeAcross();
   }
 
-  var BG_HLAV = { dnes: '#fde047', svatek: '#fde8c8', vikend: '#e9edf2' };
-  var BG_MRIZ = { dnes: '#fef9c3', svatek: '#fde8c8', vikend: '#e9edf2' };
+  var BG_HLAV = { svatek: '#fca5a5', vikend: '#e9edf2' };   // svátky ČERVENĚ
+  var BG_MRIZ = { svatek: '#fee2e2', vikend: '#e9edf2' };
   Object.keys(klas).forEach(function (dc) {
     sheet.getRange(2, Number(dc), 2, 2).setBackground(BG_HLAV[klas[dc]]);
     if (svatekNazev[dc]) sheet.getRange(3, Number(dc)).setNote(svatekNazev[dc]);
@@ -476,7 +481,11 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
   mrizka.setBackgrounds(bg);
   mrizka.setNumberFormat('@').setHorizontalAlignment('center').setFontWeight('bold').setFontSize(10);
 
-  var colA = radky.map(function (it) { return [it.typ === 'emp' ? it.u.jmeno : (it.label || '')]; });
+  // ── levý sloupec + skrytý user_id ──
+  var colA = radky.map(function (it) {
+    if (it.typ !== 'emp') return [it.label || ''];
+    return [(it.u.vedouci ? '👑 ' : '') + it.u.jmeno];
+  });
   var colU = radky.map(function (it) { return [it.typ === 'emp' ? (it.u.user_id || '') : '']; });
   if (radky.length) {
     sheet.getRange(prvniData, 1, radky.length, 1).setValues(colA);
@@ -488,34 +497,54 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
     sheet.getRange(prvniData, den1 + 2 * (dd - 1), pocetRadku, 2).mergeAcross();
   }
 
+  // ── styl skupinových hlaviček, vedoucích, gapů ──
+  var bloky = [];   // [ [r1, r2], ... ] rozsahy oddělení pro rámování
+  var blokStart = -1;
   for (var j = 0; j < radky.length; j++) {
     var it = radky[j];
     var row = prvniData + j;
     if (it.typ === 'dept') {
+      if (blokStart !== -1) bloky.push([prvniData + blokStart, row - 1]);
+      blokStart = j;
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#dbeafe').setFontColor('#1e3a8a').setFontWeight('bold');
     } else if (it.typ === 'team') {
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#eef2ff').setFontColor('#4338ca').setFontWeight('bold').setFontStyle('italic');
     } else if (it.typ === 'gap') {
+      if (blokStart !== -1) bloky.push([prvniData + blokStart, row - 1]);
+      blokStart = -1;
       sheet.setRowHeight(row, 8);
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#ffffff');
     } else {
-      sheet.getRange(row, 1).setFontWeight('bold');
+      if (it.u.vedouci) {
+        sheet.getRange(row, 1).setBackground('#ffedd5').setFontWeight('bold').setFontColor('#9a3412');
+      } else {
+        sheet.getRange(row, 1).setFontWeight('bold');
+      }
     }
   }
+  if (blokStart !== -1) bloky.push([prvniData + blokStart, prvniData + radky.length - 1]);
 
+  // ── podmíněné formátování: barvy statusů + dynamický "dnešní" sloupec ──
   var pravidla = [];
   statusyUnik.forEach(function (s) {
-    var z = String(s.abbreviation).trim();
-    if (!z) return;
+    var zk = String(s.abbreviation).trim();
+    if (!zk) return;
     pravidla.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo(z).setBackground(_dsHex(s.color, '#94a3b8'))
+      .whenTextEqualTo(zk).setBackground(_dsHex(s.color, '#94a3b8'))
       .setFontColor(_dsHex(s.text_color, '#ffffff')).setBold(true)
       .setRanges([mrizka]).build());
   });
+  var dnesVzorec = '=AND(YEAR(TODAY())=' + ROK + ',MONTH(TODAY())=' + mesic +
+    ',OR(COLUMN()=' + den1 + '+2*(DAY(TODAY())-1),COLUMN()=' + den1 + '+2*(DAY(TODAY())-1)+1))';
+  pravidla.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(dnesVzorec).setBackground('#fde047')
+    .setRanges([mrizka, sheet.getRange(2, den1, 2, 2 * pocetDnu)]).build());
   sheet.setConditionalFormatRules(pravidla);
 
+  // ── rámy, zmrazení, rozměry ──
   sheet.getRange(prvniData, 1, pocetRadku, souhrnCol)
     .setBorder(true, true, true, true, false, true, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
+  bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
   sheet.setColumnWidth(1, 170);
@@ -527,7 +556,77 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik) {
     .setDescription('Docházková mřížka — edituj přes menu 📋 Docházka')
     .setWarningOnly(true);
 
+  // ── vrátit zachovanou docházku ──
+  _dsVratDochazku(sheet, mesic, radky, zachovano, vacAbbr || []);
+
   _dsFont(sheet);
+}
+
+function _dsRamOddeleni(sheet, r1, r2, lastCol) {
+  if (r2 < r1) return;
+  sheet.getRange(r1, 1, r2 - r1 + 1, lastCol)
+    .setBorder(true, true, true, true, false, false, '#64748b', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+}
+
+/** Přečte docházku z (starého) měsíčního listu: { user_id: { den: {full,dop,odp} } }. */
+function _dsPrectiDochazku(sheet, mesic) {
+  var N = _dmDniVMesici(mesic);
+  var den1 = DS_DEN1_COL;
+  var uidCol = den1 + 2 * N + 1;
+  var last = sheet.getLastRow();
+  if (last < DS_PRVNI_DATA_RADEK) return {};
+  var nRows = last - DS_PRVNI_DATA_RADEK + 1;
+  var uids = sheet.getRange(DS_PRVNI_DATA_RADEK, uidCol, nRows, 1).getValues();
+  var rng = sheet.getRange(DS_PRVNI_DATA_RADEK, den1, nRows, 2 * N);
+  var grid = rng.getValues();
+  var merged = {};
+  rng.getMergedRanges().forEach(function (mr) { merged[mr.getRow() + '_' + mr.getColumn()] = true; });
+
+  var out = {};
+  for (var i = 0; i < nRows; i++) {
+    var uid = String(uids[i][0] || '').trim();
+    if (!uid) continue;
+    var absRow = DS_PRVNI_DATA_RADEK + i;
+    var dny = {};
+    for (var d = 1; d <= N; d++) {
+      var dopCol = den1 + 2 * (d - 1);
+      var idx = dopCol - den1;
+      var full = !!merged[absRow + '_' + dopCol];
+      var vDop = String(grid[i][idx] || '').trim();
+      var vOdp = full ? '' : String(grid[i][idx + 1] || '').trim();
+      if (vDop || vOdp) dny[d] = { full: full, dop: vDop, odp: vOdp };
+    }
+    if (Object.keys(dny).length) out[uid] = dny;
+  }
+  return out;
+}
+
+/** Zapíše zachovanou docházku do čerstvě postaveného listu (dvojice jsou sloučené). */
+function _dsVratDochazku(sheet, mesic, radky, zachovano, vacAbbr) {
+  var den1 = DS_DEN1_COL;
+  var dotcene = {};
+  for (var j = 0; j < radky.length; j++) {
+    var it = radky[j];
+    if (it.typ !== 'emp') continue;
+    var dny = zachovano[String(it.u.user_id || '').trim()];
+    if (!dny) continue;
+    var absRow = DS_PRVNI_DATA_RADEK + j;
+    Object.keys(dny).forEach(function (dStr) {
+      var e = dny[dStr];
+      var dopCol = den1 + 2 * (Number(dStr) - 1);
+      if (e.full) {
+        sheet.getRange(absRow, dopCol).setValue(e.dop);
+      } else {
+        sheet.getRange(absRow, dopCol, 1, 2).breakApart();
+        sheet.getRange(absRow, dopCol).setValue(e.dop);
+        sheet.getRange(absRow, dopCol + 1).setValue(e.odp);
+      }
+      dotcene[absRow] = 1;
+    });
+  }
+  Object.keys(dotcene).forEach(function (rw) {
+    _dmPrepocitejSouhrn(sheet, Number(rw), mesic, vacAbbr);
+  });
 }
 
 
