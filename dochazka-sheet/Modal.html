@@ -37,6 +37,7 @@
     .pick { position: fixed; inset: 0; background: rgba(15, 23, 42, .4); display: none; align-items: center; justify-content: center; }
     .pick.on { display: flex; }
     .pcard { background: #fff; border-radius: 12px; padding: 16px; width: min(600px, 94vw); max-height: 90vh; overflow: auto; }
+    #desk .pcard { width: min(860px, 96vw); }
     .ptitle { font-weight: 900; font-size: 15px; margin-bottom: 10px; }
     .mode { display: flex; margin-bottom: 12px; }
     .mode button { flex: 1; border: 1.5px solid #cbd5e1; background: #f8fafc; padding: 8px; font-weight: 800; cursor: pointer; }
@@ -49,6 +50,20 @@
     .tile .ab { display: inline-block; min-width: 28px; padding: 4px 6px; border-radius: 6px; font-weight: 900; }
     .tile .nm { font-size: 9px; color: #475569; margin-top: 4px; display: block; line-height: 1.15; }
     .tile.none .ab { background: #e2e8f0; color: #475569; }
+    .dmap { display: grid; gap: 4px; margin-bottom: 8px; }
+    .dk { border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 2px; text-align: center; line-height: 1.1; min-height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .dk .lb { font-weight: 900; font-size: 11px; }
+    .dk .wh { font-size: 8px; color: #475569; margin-top: 1px; }
+    .dk.free { background: #dcfce7; border-color: #86efac; cursor: pointer; }
+    .dk.free:hover { outline: 2px solid #16a34a; }
+    .dk.mine { background: #bfdbfe; border-color: #3b82f6; cursor: pointer; }
+    .dk.mine:hover { outline: 2px solid #1d4ed8; }
+    .dk.mineperm { background: #bfdbfe; border-color: #3b82f6; }
+    .dk.taken { background: #fee2e2; border-color: #fca5a5; }
+    .dk.perm { background: #ffedd5; border-color: #fdba74; }
+    .dklegend { font-size: 10px; color: #64748b; margin-bottom: 8px; }
+    .dklegend b { font-weight: 900; }
+
     .hsec { margin-bottom: 10px; }
     .hsec .lbl { font-weight: 800; font-size: 11px; text-transform: uppercase; color: #64748b; margin-bottom: 5px; }
     .pact { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 8px; }
@@ -222,27 +237,49 @@
     }
 
     // ── výběr stolu ──
+    function deskState(d, den) {
+      var b = S.rezMesic.filter(function (r) { return r.den === den && r.stul === d.label; })[0];
+      if (b) return b.uid === S.init.userId ? { s: 'mine', kdo: '' } : { s: 'taken', kdo: b.jmeno };
+      if (d.trvale && d.trvale === S.init.jmeno) return { s: 'mineperm', kdo: 'tvůj natrvalo' };
+      if (d.trvale) return { s: 'perm', kdo: d.trvale };
+      return { s: 'free', kdo: '' };
+    }
+    function deskMapHtml(den) {
+      var m = S.init.mapa;
+      var h = '<div class="dmap" style="grid-template-columns:repeat(' + m.cols + ',minmax(46px,1fr))">';
+      m.desks.forEach(function (d) {
+        var st = deskState(d, den);
+        var klik = st.s === 'mine' ? ' onclick="deskSend(\'\')"'
+          : (st.s === 'free' ? ' onclick="deskSend(\'' + esc(d.label) + '\')"' : '');
+        h += '<div class="dk ' + st.s + '" style="grid-column:' + (d.col + 1) + ';grid-row:' + (d.row + 1) + '"' + klik + '>'
+          + '<span class="lb">' + esc(d.label) + '</span>'
+          + (st.kdo ? '<span class="wh">' + esc(st.kdo) + '</span>' : '')
+          + '</div>';
+      });
+      h += '</div><div class="dklegend"><b style="color:#16a34a">▮</b> volný &nbsp; '
+        + '<b style="color:#2563eb">▮</b> tvůj (klik = uvolnit) &nbsp; '
+        + '<b style="color:#dc2626">▮</b> obsazený &nbsp; <b style="color:#ea580c">▮</b> trvalý</div>';
+      return h;
+    }
+    function deskListHtml(den) {
+      return (S.init.stoly || []).map(function (d) {
+        var st = deskState(d, den);
+        var stav = { free: 'volný', mine: 'tvůj', mineperm: 'tvůj natrvalo', taken: 'obsazený', perm: 'trvalý' }[st.s];
+        var klik = st.s === 'mine' ? "deskSend('')" : (st.s === 'free' ? "deskSend('" + d.label + "')" : '');
+        return '<div class="tile' + (st.s === 'mine' ? ' sel' : '') + (klik ? '' : ' none') + '" '
+          + (klik ? 'onclick="' + klik + '"' : 'style="opacity:.55;cursor:default"') + '>'
+          + '<span class="ab" style="background:#e2e8f0;color:#334155">' + esc(d.label) + '</span>'
+          + '<span class="nm">' + stav + (st.kdo ? '<br>' + esc(st.kdo) : '') + '</span></div>';
+      }).join('');
+    }
     function openDesk(den) {
       S.deskDen = den;
       document.getElementById('dtitle').textContent = 'Stůl — ' + den + '. ' + MES[S.mesic - 1] + ' ' + S.rok;
       document.getElementById('derr').textContent = '';
-      var html = (S.init.stoly || []).map(function (d) {
-        var b = S.rezMesic.filter(function (r) { return r.den === den && r.stul === d.label; })[0];
-        var stav, kdo = '', klik = '', cls = '';
-        if (b) {
-          if (b.uid === S.init.userId) { stav = 'tvůj'; klik = "deskSend('" + d.label + "')"; cls = ' sel'; }
-          else { stav = 'obsazený'; kdo = b.jmeno; }
-        } else if (d.trvale && d.trvale !== S.init.jmeno) {
-          stav = 'trvalý'; kdo = d.trvale;
-        } else {
-          stav = 'volný'; klik = "deskSend('" + d.label + "')";
-        }
-        return '<div class="tile' + cls + (klik ? '' : ' none') + '" '
-          + (klik ? 'onclick="' + klik + '"' : 'style="opacity:.55;cursor:default"') + '>'
-          + '<span class="ab" style="background:#e2e8f0;color:#334155">' + esc(d.label) + '</span>'
-          + '<span class="nm">' + stav + (kdo ? '<br>' + esc(kdo) : '') + '</span></div>';
-      }).join('');
-      document.getElementById('deskTiles').innerHTML = html || '<div class="msg">Žádné stoly.</div>';
+      var m = S.init.mapa;
+      document.getElementById('deskTiles').innerHTML =
+        (m && m.desks && m.desks.length) ? deskMapHtml(den)
+          : (deskListHtml(den) || '<div class="msg">Žádné stoly.</div>');
       closePick();
       document.getElementById('desk').classList.add('on');
     }
