@@ -16,8 +16,9 @@
  *    "Postavit / obnovit jen tento měsíc" → přegeneruje jen list otevřeného měsíce
  *    "Načíst docházku z aplikace"         → import jen ATTENDANCE (bez rezervací)
  *    "Načíst rezervace stolů z aplikace"  → import jen MAP_RESERVATIONS
- *    "Pomocné listy"                      → vytvořit chybějící / aktualizovat Stoly + Mapa
- *                                           (bez přegenerování měsíců)
+ *    "Pomocné listy"                      → vytvořit chybějící / aktualizovat Stoly + Mapa;
+ *                                           💾 Cachovat zdroje (vývoj) = snapshot CORE do
+ *                                           skrytých listů Z_*, pak se čte z nich (rychlé)
  *
  *  LIST "Stoly"     = stoly z OFFICE_MAPS (Stůl | Trvale | Aktivní | cell_id).
  *  LIST "Mapa"      = jen náhled rozložení stolů + trvalí majitelé (odvozený).
@@ -79,7 +80,10 @@ function onOpen() {
     .addSeparator()
     .addSubMenu(ui.createMenu('🧩 Pomocné listy')
       .addItem('Vytvořit chybějící (Uživatelé, Pořadí, Stoly, Rezervace)', 'vytvorPomocneListy')
-      .addItem('Aktualizovat list Stoly z aplikace', 'aktualizujStoly'))
+      .addItem('Aktualizovat list Stoly z aplikace', 'aktualizujStoly')
+      .addSeparator()
+      .addItem('💾 Cachovat zdroje z aplikace (vývoj)', 'cachujZdroje')
+      .addItem('🗑 Smazat cache zdrojů (zpět na živá data)', 'smazCacheZdroju'))
     .addToUi();
   _dsOznacDnes();
 }
@@ -164,6 +168,37 @@ function setupMesic() {
   SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
 }
 
+/** Vývoj: stáhne konfigurační tabulky z CORE do skrytých listů „Z_*". Pak setup / modal čtou z nich (rychlé). */
+function cachujZdroje() {
+  var ui = SpreadsheetApp.getUi();
+  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hlaska = [];
+  DS_ZDROJ_TABULKY.forEach(function (t) {
+    var src = core.getSheetByName(t);
+    if (!src) { hlaska.push('– ' + t + ' (v CORE není)'); return; }
+    var data = src.getDataRange().getValues();
+    var cil = ss.getSheetByName('Z_' + t) || ss.insertSheet('Z_' + t);
+    cil.clear();
+    if (data.length && data[0].length) cil.getRange(1, 1, data.length, data[0].length).setValues(data);
+    cil.hideSheet();
+    hlaska.push('✓ ' + t + '  (' + Math.max(0, data.length - 1) + ' řádků)');
+  });
+  ui.alert('Zdroje nacachovány do skrytých listů Z_*:\n\n' + hlaska.join('\n') +
+    '\n\nSetup i modal teď čtou z cache. Pro čerstvá data spusť znovu, nebo „Smazat cache".');
+}
+
+/** Smaže skryté listy Z_* → čtení jde zase živě z CORE. */
+function smazCacheZdroju() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var n = 0;
+  DS_ZDROJ_TABULKY.forEach(function (t) {
+    var sh = ss.getSheetByName('Z_' + t);
+    if (sh) { ss.deleteSheet(sh); n++; }
+  });
+  SpreadsheetApp.getUi().alert('Smazáno ' + n + ' cache listů. Zdroje se teď čtou živě z CORE.');
+}
+
 /** Jen zajistí pomocné listy (Uživatelé, Pořadí, Stoly, Rezervace) — bez měsíců. */
 function vytvorPomocneListy() {
   _dsNactiZdroj();
@@ -184,18 +219,18 @@ function aktualizujStoly() {
   if (ui.alert('Přegenerovat list Stoly z aplikace?\n\nStoly se natáhnou znovu z OFFICE_MAPS. Ruční úpravy sloupců Aktivní a Trvale se zachovají podle cell_id, nové stoly se doplní.',
     ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
 
-  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
-  var usek = _dsCti(core, 'SECTIONS').filter(function (s) {
+  var usek = _dsZdroj('SECTIONS').filter(function (s) {
     return s.name === USEK_NAZEV && String(s.active) !== 'false';
   })[0];
   if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
   var usersById = {};
-  _dsCti(core, 'USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
+  _dsZdroj('USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var pocet = _dsSeedStoly(ss, core, usek, usersById, true);
-  _dsListMapa(ss, core, usek, usersById);
-  ui.alert('List Stoly přegenerován — ' + (pocet || 0) + ' stolů. List Mapa aktualizován.');
+  var pocet = _dsSeedStoly(ss, usek, usersById, true);
+  _dsListMapa(ss, usek, usersById);
+  ui.alert('List Stoly přegenerován — ' + (pocet || 0) + ' stolů. List Mapa aktualizován.' +
+    (ss.getSheetByName('Z_OFFICE_MAPS') ? '\n\n(Čteno z cache Z_*. Pro živá data „Smazat cache zdrojů".)' : ''));
 }
 
 
@@ -204,26 +239,23 @@ function aktualizujStoly() {
  * uspořádané řádky. Zdrojem pravdy o lidech je list Uživatelé.
  */
 function _dsNactiZdroj() {
-  if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
   if (USEK_NAZEV.indexOf('VLOZ') !== -1) throw new Error('Nastav USEK_NAZEV nahoře ve skriptu.');
 
-  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
-
-  var usek = _dsCti(core, 'SECTIONS').filter(function (s) {
+  var usek = _dsZdroj('SECTIONS').filter(function (s) {
     return s.name === USEK_NAZEV && String(s.active) !== 'false';
   })[0];
   if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
 
   var oddMap = {};
-  _dsCti(core, 'DEPARTMENTS').forEach(function (d) { oddMap[d.department_id] = d.name || ''; });
+  _dsZdroj('DEPARTMENTS').forEach(function (d) { oddMap[d.department_id] = d.name || ''; });
   var tymMap = {};
-  _dsCti(core, 'GROUPS').forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
+  _dsZdroj('GROUPS').forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
   var pozMap = {};
-  _dsCti(core, 'POSITIONS').forEach(function (p) { pozMap[p.position_id] = p.name || ''; });
+  _dsZdroj('POSITIONS').forEach(function (p) { pozMap[p.position_id] = p.name || ''; });
 
   var dnes = new Date();
   dnes.setHours(0, 0, 0, 0);
-  var liveLide = _dsCti(core, 'USERS')
+  var liveLide = _dsZdroj('USERS')
     .filter(function (u) {
       if (u.section_id !== usek.section_id) return false;
       if (String(u.active) !== 'true') return false;
@@ -244,7 +276,7 @@ function _dsNactiZdroj() {
   var statusyUnik = [];
   var vacAbbr = [];
   var deskAbbr = [];
-  _dsCti(core, 'ATTENDANCE_STATUSES')
+  _dsZdroj('ATTENDANCE_STATUSES')
     .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
     .forEach(function (s) {
       var z = String(s.abbreviation).trim();
@@ -256,7 +288,7 @@ function _dsNactiZdroj() {
     });
 
   var usersById = {};
-  _dsCti(core, 'USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
+  _dsZdroj('USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   _dsListUzivatele(ss, liveLide);          // vytvoří nebo doplní nováčky
@@ -264,9 +296,9 @@ function _dsNactiZdroj() {
   if (lide.length === 0) throw new Error('List Uživatelé je prázdný.');
   _dsListPoradi(ss, lide);                 // vytvoří jen pokud chybí
   var poradi = _dsCtiPoradi(ss);
-  _dsSeedStoly(ss, core, usek, usersById); // vytvoří list Stoly jen pokud chybí
+  _dsSeedStoly(ss, usek, usersById);       // vytvoří list Stoly jen pokud chybí
   _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
-  _dsListMapa(ss, core, usek, usersById);  // náhledová mapa stolů (vždy přegeneruje)
+  _dsListMapa(ss, usek, usersById);        // náhledová mapa stolů (vždy přegeneruje)
 
   return {
     radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik,
@@ -440,8 +472,8 @@ function _dsCtiPoradi(ss) {
 // ── listy Stoly a Rezervace ─────────────────────────────────────────────
 
 /** Aktivní kancelářská mapa úseku z OFFICE_MAPS → { name, rows, cols, desks:[{id,label,row,col,permUid}] } nebo null. */
-function _dsNactiMapu(core, usek) {
-  var m = _dsCti(core, 'OFFICE_MAPS').filter(function (x) {
+function _dsNactiMapu(usek) {
+  var m = _dsZdroj('OFFICE_MAPS').filter(function (x) {
     return x.section_id === usek.section_id && String(x.active) !== 'false';
   })[0];
   if (!m) return null;
@@ -467,11 +499,11 @@ function _dsNactiMapu(core, usek) {
  * List Stoly z živé OFFICE_MAPS. Bez `force` jen pokud list chybí.
  * S `force` přegeneruje a zachová ruční Aktivní/Trvale podle cell_id. Vrací počet stolů.
  */
-function _dsSeedStoly(ss, core, usek, usersById, force) {
+function _dsSeedStoly(ss, usek, usersById, force) {
   var existuje = ss.getSheetByName('Stoly');
   if (existuje && !force) return;
 
-  var mapa = _dsNactiMapu(core, usek);
+  var mapa = _dsNactiMapu(usek);
 
   var stare = {};
   if (existuje) _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) stare[s.cell_id] = s; });
@@ -509,11 +541,11 @@ function _dsSeedStoly(ss, core, usek, usersById, force) {
  * List Mapa — vizuální rozložení stolů (jen rozvržení + trvalí majitelé, bez rezervací).
  * Přegeneruje se pokaždé, je to čistě odvozený list.
  */
-function _dsListMapa(ss, core, usek, usersById) {
+function _dsListMapa(ss, usek, usersById) {
   var sh = ss.getSheetByName('Mapa') || ss.insertSheet('Mapa', 3);
   sh.clear();
 
-  var mapa = _dsNactiMapu(core, usek);
+  var mapa = _dsNactiMapu(usek);
   if (!mapa || !mapa.desks.length) {
     sh.getRange(1, 1).setValue('Pro úsek "' + USEK_NAZEV + '" není v OFFICE_MAPS žádná aktivní mapa se stoly.');
     _dsFont(sh);
@@ -1101,9 +1133,9 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
 }
 
 /** Zkratky statusů, které vyžadují rezervaci stolu (allows_desk_reservation). */
-function _dsDeskAbbr(core) {
+function _dsDeskAbbr() {
   var out = [];
-  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
+  _dsZdroj('ATTENDANCE_STATUSES').forEach(function (s) {
     var a = String(s.abbreviation || '').trim();
     if (a && String(s.allows_desk_reservation) === 'true' && out.indexOf(a) === -1) out.push(a);
   });
@@ -1219,18 +1251,17 @@ function nactiDochazku() {
   if (ui.alert('Načíst docházku z živé aplikace do všech měsíčních listů roku ' + ROK +
     '?\nHodnoty v listech se přepíšou hodnotami z aplikace.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
 
-  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
   var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
 
   var abbr = {};
   var vacAbbr = [];
-  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
+  _dsZdroj('ATTENDANCE_STATUSES').forEach(function (s) {
     var a = String(s.abbreviation || '').trim();
     if (!a) return;
     abbr[String(s.status_id).trim()] = a;
     if (String(s.is_vacation) === 'true' && vacAbbr.indexOf(a) === -1) vacAbbr.push(a);
   });
-  var deskAbbr = _dsDeskAbbr(core);
+  var deskAbbr = _dsDeskAbbr();
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var radkaVMesici = {};   // user_id -> { mesic -> row }
@@ -1299,7 +1330,7 @@ function nactiRezervace() {
   var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var deskAbbr = _dsDeskAbbr(core);
+  var deskAbbr = _dsDeskAbbr();
 
   var d = _dmImportRezervace(ss, core, trans);
 
@@ -1361,7 +1392,7 @@ function _dmImportRezervace(ss, core, trans) {
   stoly.forEach(function (s) { if (s.cell_id) labelByCell[s.cell_id] = s.stul; });
 
   var jmenoByUid = {};
-  _dsCti(core, 'USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
+  _dsZdroj('USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
 
   // rezervace stolů bývají v CORE (v TRANSACTION je list často prázdný) → CORE první
   var nalez = _dsCtiKdekoliv(
@@ -1434,16 +1465,15 @@ function dm_init() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mesic = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
 
-  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
   var email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
-  var me = _dsCti(core, 'USERS').filter(function (u) {
+  var me = _dsZdroj('USERS').filter(function (u) {
     return String(u.email).toLowerCase() === email;
   })[0];
   if (!me) throw new Error('Tvůj účet (' + (email || '?') + ') není v USERS živé appky.');
 
   var seen = {};
   var statusy = [];
-  _dsCti(core, 'ATTENDANCE_STATUSES')
+  _dsZdroj('ATTENDANCE_STATUSES')
     .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
     .forEach(function (s) {
       var ab = String(s.abbreviation).trim();
@@ -1464,10 +1494,10 @@ function dm_init() {
   var aktivniLabel = {};
   stolyRows.forEach(function (s) { aktivniLabel[s.stul] = 1; });
 
-  var usek = _dsCti(core, 'SECTIONS').filter(function (s) {
+  var usek = _dsZdroj('SECTIONS').filter(function (s) {
     return s.name === USEK_NAZEV && String(s.active) !== 'false';
   })[0];
-  var mapaRaw = usek ? _dsNactiMapu(core, usek) : null;
+  var mapaRaw = usek ? _dsNactiMapu(usek) : null;
   var mapa = null;
   if (mapaRaw) {
     mapa = {
@@ -1728,8 +1758,28 @@ function _dmPrepocitejSouhrn(sheet, row, mesic, vacAbbr) {
 
 // ── společné pomocné funkce ──────────────────────────────────────────────
 
+// ── cache zdrojů z CORE (jen pro vývoj: „Cachovat zdroje z aplikace") ──
+var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
+var _DS_CORE = null;
+function _dsCore() {
+  if (!_DS_CORE) {
+    if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
+    _DS_CORE = SpreadsheetApp.openById(ZDROJ_CORE_ID);
+  }
+  return _DS_CORE;
+}
+/** Čte tabulku z CORE — přednostně z lokální cache „Z_<název>", jinak živě z CORE. */
+function _dsZdroj(name) {
+  var lok = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Z_' + name);
+  if (lok && lok.getLastRow() >= 2) return _dsCtiSheet(lok);
+  return _dsCtiSheet(_dsCore().getSheetByName(name));
+}
+
 function _dsCti(ss, listName) {
-  var sh = ss.getSheetByName(listName);
+  return _dsCtiSheet(ss.getSheetByName(listName));
+}
+
+function _dsCtiSheet(sh) {
   if (!sh) return [];
   var data = sh.getDataRange().getValues();
   if (data.length < 2) return [];
