@@ -49,6 +49,7 @@ function onOpen() {
     .addSeparator()
     .addItem('🔄 Postavit / obnovit listy', 'setup')
     .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
+    .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
     .addToUi();
   _dsOznacDnes();
 }
@@ -988,6 +989,35 @@ function nactiDochazku() {
   }
 
   ui.alert('Načteno ' + pocet + ' dní docházky a ' + rez + ' rezervací stolů.');
+}
+
+/** Načte jen rezervace stolů z živé aplikace (bez docházky). */
+function nactiRezervace() {
+  if (ZDROJ_TRANSACTION_ID.indexOf('VLOZ') !== -1) {
+    throw new Error('Nastav ZDROJ_TRANSACTION_ID nahoře ve skriptu (Vlastnosti skriptu živé appky → SPREADSHEET_TRANSACTION_ID).');
+  }
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('Načíst rezervace stolů z živé aplikace pro rok ' + ROK +
+    '?\nList Rezervace se přepíše hodnotami z aplikace.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
+  var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var deskAbbr = [];
+  _dsCti(core, 'ATTENDANCE_STATUSES').forEach(function (s) {
+    var a = String(s.abbreviation || '').trim();
+    if (a && String(s.allows_desk_reservation) === 'true' && deskAbbr.indexOf(a) === -1) deskAbbr.push(a);
+  });
+
+  var rez = _dmImportRezervace(ss, core, trans);
+
+  for (var mb = 1; mb <= 12; mb++) {
+    var shb = ss.getSheetByName(_dsNazevMesice(mb));
+    if (shb) _dmObnovStulyList(shb, mb, deskAbbr, null);
+  }
+
+  ui.alert('Načteno ' + rez + ' rezervací stolů.');
 }
 
 /** Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK). */
