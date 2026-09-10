@@ -407,10 +407,14 @@ function _dsSeedStoly(ss, core, usek, usersById) {
 /** Vytvoří list Rezervace — jen pokud chybí. Vrátí ho. */
 function _dsListRezervace(ss) {
   var sh = ss.getSheetByName('Rezervace');
-  if (sh) return sh;
+  if (sh) {
+    sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');   // datum drž jako text
+    return sh;
+  }
   sh = ss.insertSheet('Rezervace');
   sh.getRange(1, 1, 1, 4).setValues([['Datum', 'Stůl', 'Jméno', 'user_id']])
     .setFontWeight('bold').setBackground('#f1f5f9');
+  sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
   sh.setColumnWidth(1, 110);
   sh.setColumnWidth(2, 110);
   sh.setColumnWidth(3, 180);
@@ -454,7 +458,7 @@ function _dmRezMesic(ss, mesic) {
   var pref = ROK + '-' + ('0' + mesic).slice(-2) + '-';
   var out = [];
   for (var i = 1; i < data.length; i++) {
-    var d = String(data[i][H['Datum']] || '').substring(0, 10);
+    var d = _dsFmtDatum(data[i][H['Datum']]);
     if (d.indexOf(pref) !== 0) continue;
     out.push({
       den: Number(d.substring(8, 10)),
@@ -750,10 +754,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
 
   // ── rámy, zmrazení, rozměry ──
   sheet.getRange(prvniData, 1, pocetRadku, souhrnCol)
-    .setBorder(true, true, true, true, false, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
-  // tenké černé svislé čáry mezi dny v celé mřížce
-  sheet.getRange(prvniData, den1, pocetRadku, 2 * pocetDnu)
-    .setBorder(null, null, null, null, true, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    .setBorder(true, true, true, true, false, true, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
   bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
   sheet.setFrozenColumns(1);
@@ -824,7 +825,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr) {
       if (!potreba) continue;
       if (rezSet[uid + '_' + d]) {
         sheet.getRange(absRow, dopCol, 1, 2)
-          .setBorder(true, true, true, true, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+          .setBorder(true, true, true, true, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
       } else {
         sheet.getRange(absRow, dopCol, 1, 2)
           .setBorder(true, true, true, true, null, null, '#dc2626', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
@@ -844,14 +845,14 @@ function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
   if (potreba && !maRezervaci) {
     pair.setBorder(true, true, true, true, null, null, '#dc2626', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   } else {
-    pair.setBorder(true, true, true, true, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    pair.setBorder(true, true, true, true, null, null, '#e2e8f0', SpreadsheetApp.BorderStyle.SOLID);
   }
 }
 
 function _dsRamOddeleni(sheet, r1, r2, lastCol) {
   if (r2 < r1) return;
   sheet.getRange(r1, 1, r2 - r1 + 1, lastCol)
-    .setBorder(true, true, true, true, false, false, '#000000', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    .setBorder(true, true, true, true, false, false, '#64748b', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 }
 
 /** Přečte docházku z (starého) měsíčního listu: { user_id: { den: {full,dop,odp} } }. */
@@ -1123,14 +1124,17 @@ function dm_stul(payload) {
     data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
 
     var mojeRadka = -1;
+    var volnyRadek = -1;
     for (var i = 1; i < data.length; i++) {
-      if (String(data[i][H['user_id']]).trim() === String(payload.userId) &&
-        String(data[i][H['Datum']]).substring(0, 10) === dateStr) { mojeRadka = i + 1; break; }
+      var dRow = _dsFmtDatum(data[i][H['Datum']]);
+      var uRow = String(data[i][H['user_id']]).trim();
+      if (!dRow && !uRow) { if (volnyRadek === -1) volnyRadek = i + 1; continue; }
+      if (uRow === String(payload.userId) && dRow === dateStr) { mojeRadka = i + 1; break; }
     }
 
     var maStul = false;
     if (!payload.stul) {
-      if (mojeRadka !== -1) sh.deleteRow(mojeRadka);
+      if (mojeRadka !== -1) sh.getRange(mojeRadka, 1, 1, 4).clearContent();
     } else {
       maStul = true;
       var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === payload.stul && s.aktivni; })[0];
@@ -1139,22 +1143,19 @@ function dm_stul(payload) {
         throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + desk.trvale + '.');
       }
       for (var j = 1; j < data.length; j++) {
-        if (String(data[j][H['Datum']]).substring(0, 10) === dateStr &&
+        if (_dsFmtDatum(data[j][H['Datum']]) === dateStr &&
           String(data[j][H['Stůl']]).trim() === payload.stul &&
           String(data[j][H['user_id']]).trim() !== String(payload.userId)) {
           throw new Error('Stůl ' + payload.stul + ' je ' + dateStr + ' obsazený: ' + data[j][H['Jméno']] + '.');
         }
       }
-      if (mojeRadka !== -1) {
-        sh.getRange(mojeRadka, H['Stůl'] + 1).setValue(payload.stul);
-      } else {
-        var nr = ['', '', '', ''];
-        nr[H['Datum']] = dateStr;
-        nr[H['Stůl']] = payload.stul;
-        nr[H['Jméno']] = payload.jmeno;
-        nr[H['user_id']] = payload.userId;
-        sh.appendRow(nr);
-      }
+      var cil = mojeRadka !== -1 ? mojeRadka : (volnyRadek !== -1 ? volnyRadek : data.length + 1);
+      var nr = ['', '', '', ''];
+      nr[H['Datum']] = dateStr;
+      nr[H['Stůl']] = payload.stul;
+      nr[H['Jméno']] = payload.jmeno;
+      nr[H['user_id']] = payload.userId;
+      sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']]).setValues([nr]);
     }
     try {
       var msh = _dmListMesice(payload.mesic);
