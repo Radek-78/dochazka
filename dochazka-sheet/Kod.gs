@@ -40,7 +40,7 @@ var DS_DNY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 var DS_DEN1_COL = 2;             // den 1 dopoledne = sloupec 2 (B)
 var DS_HLAVICKA_RADKU = 3;      // ř. 1 titulek, ř. 2 čísla dnů, ř. 3 dny v týdnu
 var DS_PRVNI_DATA_RADEK = 4;
-var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
+var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
 
 
 function onOpen() {
@@ -106,6 +106,8 @@ function _dsNactiZdroj() {
   _dsCti(core, 'DEPARTMENTS').forEach(function (d) { oddMap[d.department_id] = d.name || ''; });
   var tymMap = {};
   _dsCti(core, 'GROUPS').forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
+  var pozMap = {};
+  _dsCti(core, 'POSITIONS').forEach(function (p) { pozMap[p.position_id] = p.name || ''; });
 
   var dnes = new Date();
   dnes.setHours(0, 0, 0, 0);
@@ -122,6 +124,7 @@ function _dsNactiZdroj() {
     .map(function (u) {
       u._oddNazev = oddMap[u.department_id] || '';
       u._tymNazev = tymMap[u.group_id] || '';
+      u._pozice = pozMap[u.position_id] || '';
       return u;
     });
 
@@ -157,7 +160,7 @@ function _dsListUzivatele(ss, liveLide) {
 
   function radekZLive(u) {
     return [
-      _dsJmeno(u), u._oddNazev || '', u._tymNazev || '', u.email || '',
+      _dsJmeno(u), u._oddNazev || '', u._tymNazev || '', u._pozice || '', u.email || '',
       _dsJeVedouci(u) ? 'ano' : '', _dsFmtDatum(u.date_start), _dsFmtDatum(u.date_end), u.user_id || ''
     ];
   }
@@ -170,10 +173,13 @@ function _dsListUzivatele(ss, liveLide) {
     var rows = liveLide.slice().sort(cs).map(radekZLive);
     if (rows.length) sh.getRange(2, 1, rows.length, DS_UZIV_HLAVICKA.length).setValues(rows);
   } else {
+    _dsUpgradeUzivHlavicku(sh, liveLide);
     var data = sh.getDataRange().getValues();
+    var H = {};
+    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
     var jsou = {};
     for (var i = 1; i < data.length; i++) {
-      var uid = String(data[i][7] || '').trim();
+      var uid = String(data[i][H['user_id']] || '').trim();
       if (uid) jsou[uid] = 1;
     }
     var noveRadky = liveLide
@@ -184,38 +190,64 @@ function _dsListUzivatele(ss, liveLide) {
     }
   }
 
+  var uidIdx = DS_UZIV_HLAVICKA.indexOf('user_id') + 1;
   sh.setColumnWidth(1, 180);
-  sh.setColumnWidth(2, 160);
-  sh.setColumnWidth(3, 150);
-  sh.setColumnWidth(4, 220);
-  sh.setColumnWidth(5, 70);
-  sh.setColumnWidth(6, 95);
+  sh.setColumnWidth(2, 150);
+  sh.setColumnWidth(3, 140);
+  sh.setColumnWidth(4, 170);
+  sh.setColumnWidth(5, 210);
+  sh.setColumnWidth(6, 70);
   sh.setColumnWidth(7, 95);
-  sh.hideColumns(8);
+  sh.setColumnWidth(8, 95);
+  sh.hideColumns(uidIdx);
   sh.setFrozenRows(1);
   _dsFont(sh);
 }
 
-/** Přečte list Uživatelé jako zdroj pravdy. */
+/** Doplní do staršího listu Uživatelé chybějící sloupec Pozice (zachová data). */
+function _dsUpgradeUzivHlavicku(sh, liveLide) {
+  var hlav = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(function (x) { return String(x).trim(); });
+  if (hlav.indexOf('Pozice') !== -1) return;
+  var tymIdx = hlav.indexOf('Tým');
+  if (tymIdx === -1) return;   // neznámý formát, nech být
+  sh.insertColumnAfter(tymIdx + 1);
+  sh.getRange(1, tymIdx + 2).setValue('Pozice').setFontWeight('bold').setBackground('#f1f5f9');
+  var pozByUid = {};
+  liveLide.forEach(function (u) { pozByUid[String(u.user_id)] = u._pozice || ''; });
+  var data = sh.getDataRange().getValues();
+  var uidIdx = data[0].map(function (x) { return String(x).trim(); }).indexOf('user_id');
+  var vals = [];
+  for (var i = 1; i < data.length; i++) {
+    vals.push([pozByUid[String(data[i][uidIdx] || '').trim()] || '']);
+  }
+  if (vals.length) sh.getRange(2, tymIdx + 2, vals.length, 1).setValues(vals);
+}
+
+/** Přečte list Uživatelé jako zdroj pravdy (podle názvů sloupců). */
 function _dsCtiUzivatele(ss) {
   var sh = ss.getSheetByName('Uživatelé');
   if (!sh) return [];
   var data = sh.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  function v(r, name) { return H[name] === undefined ? '' : r[H[name]]; }
   var out = [];
   for (var i = 1; i < data.length; i++) {
     var r = data[i];
-    var jmeno = String(r[0] || '').trim();
-    var uid = String(r[7] || '').trim();
+    var jmeno = String(v(r, 'Jméno') || '').trim();
+    var uid = String(v(r, 'user_id') || '').trim();
     if (!jmeno && !uid) continue;
     out.push({
       user_id: uid,
       jmeno: jmeno,
-      oddNazev: String(r[1] || '').trim(),
-      tymNazev: String(r[2] || '').trim(),
-      email: String(r[3] || '').trim(),
-      vedouci: /^ano$/i.test(String(r[4] || '').trim()),
-      od: _dsParseDatum(r[5]),
-      do: _dsParseDatum(r[6])
+      oddNazev: String(v(r, 'Oddělení') || '').trim(),
+      tymNazev: String(v(r, 'Tým') || '').trim(),
+      pozice: String(v(r, 'Pozice') || '').trim(),
+      email: String(v(r, 'E-mail') || '').trim(),
+      vedouci: /^ano$/i.test(String(v(r, 'Vedoucí') || '').trim()),
+      od: _dsParseDatum(v(r, 'Od')),
+      do: _dsParseDatum(v(r, 'Do'))
     });
   }
   return out;
@@ -481,24 +513,32 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
   mrizka.setBackgrounds(bg);
   mrizka.setNumberFormat('@').setHorizontalAlignment('center').setFontWeight('bold').setFontSize(10);
 
-  // ── levý sloupec + skrytý user_id ──
-  var colA = radky.map(function (it) {
-    if (it.typ !== 'emp') return [it.label || ''];
-    return [(it.u.vedouci ? '👑 ' : '') + it.u.jmeno];
-  });
+  // ── levý sloupec (jen nadpisy) + skrytý user_id ──
+  var colA = radky.map(function (it) { return [it.typ === 'emp' ? '' : (it.label || '')]; });
   var colU = radky.map(function (it) { return [it.typ === 'emp' ? (it.u.user_id || '') : '']; });
   if (radky.length) {
     sheet.getRange(prvniData, 1, radky.length, 1).setValues(colA);
     sheet.getRange(prvniData, uidCol, radky.length, 1).setValues(colU);
   }
   sheet.hideColumns(uidCol);
+  sheet.getRange(prvniData, 1, pocetRadku, 1)
+    .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setVerticalAlignment('middle');
+  sheet.setRowHeights(prvniData, pocetRadku, 30);
 
   for (var dd = 1; dd <= pocetDnu; dd++) {
     sheet.getRange(prvniData, den1 + 2 * (dd - 1), pocetRadku, 2).mergeAcross();
   }
 
-  // ── styl skupinových hlaviček, vedoucích, gapů ──
-  var bloky = [];   // [ [r1, r2], ... ] rozsahy oddělení pro rámování
+  // ── styl nadpisů, zaměstnanců (jméno + pozice + příp. konec), gapů ──
+  var tz = Session.getScriptTimeZone();
+  var ST_JMENO = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(10).setForegroundColor('#1e293b').build();
+  var ST_POZICE = SpreadsheetApp.newTextStyle().setBold(false).setFontSize(8).setForegroundColor('#64748b').build();
+  var ST_KONEC = SpreadsheetApp.newTextStyle().setBold(true).setFontSize(9).setForegroundColor('#dc2626').build();
+  function jePosledni(u) {
+    return u.do && u.do.getFullYear() === ROK && (u.do.getMonth() + 1) === mesic;
+  }
+
+  var bloky = [];
   var blokStart = -1;
   for (var j = 0; j < radky.length; j++) {
     var it = radky[j];
@@ -515,11 +555,26 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr) {
       sheet.setRowHeight(row, 8);
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#ffffff');
     } else {
-      if (it.u.vedouci) {
-        sheet.getRange(row, 1).setBackground('#ffedd5').setFontWeight('bold').setFontColor('#9a3412');
-      } else {
-        sheet.getRange(row, 1).setFontWeight('bold');
+      var nm = (it.u.vedouci ? '👑 ' : '') + it.u.jmeno;
+      var text = nm;
+      var styly = [[0, nm.length, ST_JMENO]];
+      if (it.u.pozice) {
+        var p0 = text.length + 1;
+        text += '\n' + it.u.pozice;
+        styly.push([p0, text.length, ST_POZICE]);
       }
+      var vyska = 30;
+      if (jePosledni(it.u)) {
+        var k0 = text.length + 1;
+        text += '\ndo ' + Utilities.formatDate(it.u.do, tz, 'd.M.yyyy');
+        styly.push([k0, text.length, ST_KONEC]);
+        vyska = 46;
+      }
+      var rtb = SpreadsheetApp.newRichTextValue().setText(text);
+      styly.forEach(function (s) { rtb.setTextStyle(s[0], s[1], s[2]); });
+      sheet.getRange(row, 1).setRichTextValue(rtb.build());
+      if (it.u.vedouci) sheet.getRange(row, 1).setBackground('#ffedd5');
+      if (vyska !== 30) sheet.setRowHeight(row, vyska);
     }
   }
   if (blokStart !== -1) bloky.push([prvniData + blokStart, prvniData + radky.length - 1]);
