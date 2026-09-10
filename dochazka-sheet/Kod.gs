@@ -16,6 +16,12 @@
  *    "Postavit / obnovit listy"     → (pře)postaví Uživatelé + 12 měsíčních listů
  *    "Postavit jen aktuální měsíc"  → přestaví jen list otevřeného měsíce
  *
+ *  POŘADÍ ZAMĚSTNANCŮ: list "Pořadí" se při prvním běhu vygeneruje (abecedně)
+ *  a dál se jen ČTE (tvoje ruční přeuspořádání se nepřepisuje). 3 sloupce =
+ *  seřazené seznamy: NAHOŘE (jména připnutá nahoru), POŘADÍ ODDĚLENÍ,
+ *  POŘADÍ TÝMŮ (formát "Oddělení > Tým"). Vedoucí oddělení jde automaticky
+ *  první, mezi odděleními je tenký prázdný řádek, nezařazení skončí na konci.
+ *
  *  Model dne: dvojice sloupců (dopoledne | odpoledne).
  *    - Sloučená dvojice  = celý den (jedna hodnota).
  *    - Rozdělená dvojice = půlden (dopo hodnota + odpo hodnota, každá vlastní).
@@ -129,54 +135,161 @@ function _dsNactiZdroj() {
     statusyUnik.push(s);
   });
 
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  _dsListPoradi(ss, lide, oddeleni, tymy);      // vytvoří jen pokud chybí
+  var poradi = _dsCtiPoradi(ss);
+
   return {
-    radky: _dsSerazeni(lide, oddeleni, tymy),
+    radky: _dsSerazeni(lide, oddeleni, tymy, poradi),
     statusyUnik: statusyUnik,
     lide: lide, oddMap: oddMap, tymMap: tymMap
   };
 }
 
 
-function _dsSerazeni(lide, oddeleni, tymy) {
-  var tymByDept = {};
-  tymy.forEach(function (g) {
-    (tymByDept[g.department_id] = tymByDept[g.department_id] || []).push(g);
-  });
-  Object.keys(tymByDept).forEach(function (k) {
-    tymByDept[k].sort(function (a, b) { return (a.name || '').localeCompare(b.name || '', 'cs'); });
-  });
-  var odd = oddeleni.slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || '', 'cs'); });
-
+function _dsSerazeni(lide, oddeleni, tymy, poradi) {
+  poradi = poradi || { nahore: [], oddPoradi: [], tymPoradi: [] };
   function cs(a, b) { return _dsJmeno(a).localeCompare(_dsJmeno(b), 'cs'); }
+
   var radky = [];
   var pouzito = {};
 
-  odd.forEach(function (d) {
-    var vDept = lide.filter(function (u) { return u.department_id === d.department_id; });
+  // 1. NAHOŘE — připnutá jména v zadaném pořadí
+  poradi.nahore.forEach(function (jmeno) {
+    var u = lide.filter(function (x) { return !pouzito[x.user_id] && _dsJmeno(x) === jmeno; })[0];
+    if (u) { radky.push({ typ: 'emp', u: u }); pouzito[u.user_id] = 1; }
+  });
+
+  // 2. oddělení v zadaném pořadí, zbytek abecedně
+  var oddSerazeno = _dsPodlePoradi(oddeleni, poradi.oddPoradi,
+    function (d) { return d.name || ''; }, function (d) { return d.name || ''; });
+
+  oddSerazeno.forEach(function (d) {
+    var vDept = lide.filter(function (u) { return u.department_id === d.department_id && !pouzito[u.user_id]; });
     if (vDept.length === 0) return;
+
+    if (radky.length) radky.push({ typ: 'gap' });
     radky.push({ typ: 'dept', label: d.name });
 
-    var teamList = tymByDept[d.department_id] || [];
-    teamList.forEach(function (g) {
-      var vTeam = vDept.filter(function (u) { return u.group_id === g.group_id; }).sort(cs);
+    // 2a. vedoucí oddělení první
+    vDept.filter(function (u) { return _dsJeVedouci(u); }).sort(cs).forEach(function (u) {
+      radky.push({ typ: 'emp', u: u }); pouzito[u.user_id] = 1;
+    });
+
+    // 2b. týmy v zadaném pořadí, zbytek abecedně
+    var deptTymy = tymy.filter(function (g) { return g.department_id === d.department_id; });
+    var tymKlice = poradi.tymPoradi
+      .filter(function (t) { return t.odd === d.name; })
+      .map(function (t) { return t.tym; });
+    var tymySerazeno = _dsPodlePoradi(deptTymy, tymKlice,
+      function (g) { return g.name || ''; }, function (g) { return g.name || ''; });
+
+    tymySerazeno.forEach(function (g) {
+      var vTeam = lide.filter(function (u) {
+        return u.department_id === d.department_id && u.group_id === g.group_id && !pouzito[u.user_id];
+      }).sort(cs);
       if (vTeam.length === 0) return;
       radky.push({ typ: 'team', label: g.name });
       vTeam.forEach(function (u) { radky.push({ typ: 'emp', u: u }); pouzito[u.user_id] = 1; });
     });
 
-    var bezTymu = vDept.filter(function (u) { return !pouzito[u.user_id]; }).sort(cs);
+    // 2c. bez týmu
+    var bezTymu = lide.filter(function (u) {
+      return u.department_id === d.department_id && !pouzito[u.user_id];
+    }).sort(cs);
     if (bezTymu.length) {
-      if (teamList.length) radky.push({ typ: 'team', label: 'Bez týmu' });
+      if (deptTymy.length) radky.push({ typ: 'team', label: 'Bez týmu' });
       bezTymu.forEach(function (u) { radky.push({ typ: 'emp', u: u }); pouzito[u.user_id] = 1; });
     }
   });
 
-  var bezOdd = lide.filter(function (u) { return !pouzito[u.user_id]; }).sort(cs);
-  if (bezOdd.length) {
-    radky.push({ typ: 'dept', label: 'Bez oddělení' });
-    bezOdd.forEach(function (u) { radky.push({ typ: 'emp', u: u }); });
+  // 3. Nezařazení — kdo zbyl (nový člověk, oddělení/tým mimo seznam)
+  var zbytek = lide.filter(function (u) { return !pouzito[u.user_id]; }).sort(cs);
+  if (zbytek.length) {
+    if (radky.length) radky.push({ typ: 'gap' });
+    radky.push({ typ: 'dept', label: 'Nezařazení' });
+    zbytek.forEach(function (u) { radky.push({ typ: 'emp', u: u }); });
   }
+
+  while (radky.length && radky[radky.length - 1].typ === 'gap') radky.pop();
   return radky;
+}
+
+
+/** Vrátí položky seřazené: nejdřív ty z poradiKlicu (v tom pořadí), zbytek abecedně. */
+function _dsPodlePoradi(polozky, poradiKlicu, klicFn, jmenoFn) {
+  var idx = {};
+  (poradiKlicu || []).forEach(function (k, i) { if (idx[k] === undefined) idx[k] = i; });
+  return polozky.slice().sort(function (a, b) {
+    var ia = idx[klicFn(a)];
+    var ib = idx[klicFn(b)];
+    if (ia !== undefined && ib !== undefined) return ia - ib;
+    if (ia !== undefined) return -1;
+    if (ib !== undefined) return 1;
+    return jmenoFn(a).localeCompare(jmenoFn(b), 'cs');
+  });
+}
+
+
+/** Přečte list "Pořadí" (nebo null, pokud neexistuje). */
+function _dsCtiPoradi(ss) {
+  var sh = ss.getSheetByName('Pořadí');
+  if (!sh) return null;
+  var data = sh.getDataRange().getValues();
+  var nahore = [], oddPoradi = [], tymPoradi = [];
+  for (var i = 1; i < data.length; i++) {
+    var a = String(data[i][0] || '').trim();
+    var b = String(data[i][1] || '').trim();
+    var c = String(data[i][2] || '').trim();
+    if (a) nahore.push(a);
+    if (b) oddPoradi.push(b);
+    if (c && c.indexOf('>') !== -1) {
+      var p = c.split('>');
+      tymPoradi.push({ odd: p[0].trim(), tym: p.slice(1).join('>').trim() });
+    }
+  }
+  return { nahore: nahore, oddPoradi: oddPoradi, tymPoradi: tymPoradi };
+}
+
+
+/** Vytvoří list "Pořadí" s výchozím (abecedním) rozvržením — jen pokud chybí. */
+function _dsListPoradi(ss, lide, oddeleni, tymy) {
+  if (ss.getSheetByName('Pořadí')) return;   // ruční pořadí nepřepisujeme
+
+  function cs(a, b) { return String(a).localeCompare(String(b), 'cs'); }
+
+  var nahore = lide
+    .filter(function (u) { return !u.department_id && !u.group_id; })
+    .map(_dsJmeno).sort(cs);
+
+  var oddSort = oddeleni.slice().sort(function (a, b) { return cs(a.name || '', b.name || ''); });
+  var oddPoradi = oddSort.map(function (d) { return d.name || ''; });
+
+  var tymPoradi = [];
+  oddSort.forEach(function (d) {
+    tymy.filter(function (g) { return g.department_id === d.department_id; })
+      .sort(function (a, b) { return cs(a.name || '', b.name || ''); })
+      .forEach(function (g) {
+        if (lide.some(function (u) { return u.group_id === g.group_id; })) {
+          tymPoradi.push((d.name || '') + ' > ' + (g.name || ''));
+        }
+      });
+  });
+
+  var sh = ss.insertSheet('Pořadí', 0);
+  sh.getRange(1, 1, 1, 3)
+    .setValues([['NAHOŘE (jména)', 'POŘADÍ ODDĚLENÍ', 'POŘADÍ TÝMŮ (Oddělení > Tým)']])
+    .setFontWeight('bold').setBackground('#f1f5f9');
+
+  var n = Math.max(nahore.length, oddPoradi.length, tymPoradi.length, 1);
+  var out = [];
+  for (var i = 0; i < n; i++) out.push([nahore[i] || '', oddPoradi[i] || '', tymPoradi[i] || '']);
+  sh.getRange(2, 1, out.length, 3).setValues(out);
+
+  sh.setColumnWidth(1, 200);
+  sh.setColumnWidth(2, 200);
+  sh.setColumnWidth(3, 300);
+  sh.setFrozenRows(1);
 }
 
 
@@ -276,7 +389,7 @@ function _dsListMesic(ss, mesic, radky, statusyUnik) {
   mrizka.setNumberFormat('@').setHorizontalAlignment('center').setFontWeight('bold').setFontSize(10);
 
   // levý sloupec + skrytý user_id
-  var colA = radky.map(function (it) { return [it.typ === 'emp' ? _dsJmeno(it.u) : it.label]; });
+  var colA = radky.map(function (it) { return [it.typ === 'emp' ? _dsJmeno(it.u) : (it.label || '')]; });
   var colU = radky.map(function (it) { return [it.typ === 'emp' ? (it.u.user_id || '') : '']; });
   sheet.getRange(prvniData, 1, pocetRadku, 1).setValues(colA);
   sheet.getRange(prvniData, uidCol, pocetRadku, 1).setValues(colU);
@@ -295,6 +408,9 @@ function _dsListMesic(ss, mesic, radky, statusyUnik) {
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#dbeafe').setFontColor('#1e3a8a').setFontWeight('bold');
     } else if (it.typ === 'team') {
       sheet.getRange(row, 1, 1, souhrnCol).setBackground('#eef2ff').setFontColor('#4338ca').setFontWeight('bold').setFontStyle('italic');
+    } else if (it.typ === 'gap') {
+      sheet.setRowHeight(row, 8);
+      sheet.getRange(row, 1, 1, souhrnCol).setBackground('#ffffff');
     } else {
       sheet.getRange(row, 1).setFontWeight('bold');
     }
