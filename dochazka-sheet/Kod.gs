@@ -1083,20 +1083,39 @@ function nactiRezervace() {
   }
   ui.alert('Načteno ' + d.count + ' rezervací stolů.\n\n' +
     'Stolů v listu: ' + d.stoly + '\n' +
-    'Řádků MAP_RESERVATIONS: ' + d.celkem + '\n' +
+    'Zdroj rezervací: ' + (d.zdroj || 'NENALEZEN') + '\n' +
+    'Řádků celkem: ' + d.celkem + '\n' +
     'Z toho pro rok ' + ROK + ': ' + d.letos + '\n' +
     (d.bezStolu ? 'Nespárováno se stolem (cell_id): ' + d.bezStolu + '\n' : '') +
-    (d.celkem === 0 ? '\n⚠ Tabulka MAP_RESERVATIONS je prázdná / nedostupná — zkontroluj ZDROJ_TRANSACTION_ID.' : '') +
-    (d.celkem > 0 && d.letos === 0 ? '\n⚠ Žádná rezervace pro rok ' + ROK + '.' : '') +
-    (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — přegeneruj listy.' : ''));
+    (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.\n\nListy v TRANSACTION:\n' + d.listyTrans +
+      '\n\nListy v CORE:\n' + d.listyCore +
+      '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
+    (d.zdroj && d.celkem > 0 && d.letos === 0 ? '\n⚠ Žádná rezervace pro rok ' + ROK + '.' : '') +
+    (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — spusť Pomocné listy → Aktualizovat list Stoly.' : ''));
+}
+
+/** Najde tabulku podle víc možných názvů napříč víc sešity. Vrací {rows, zdroj}. */
+function _dsCtiKdekoliv(sesity, nazvy) {
+  for (var i = 0; i < sesity.length; i++) {
+    for (var j = 0; j < nazvy.length; j++) {
+      var sh = sesity[i].ss.getSheetByName(nazvy[j]);
+      if (sh && sh.getLastRow() >= 2) {
+        return { rows: _dsCti(sesity[i].ss, nazvy[j]), zdroj: sesity[i].jmeno + ' → ' + nazvy[j] };
+      }
+    }
+  }
+  return { rows: [], zdroj: '' };
 }
 
 /**
  * Natáhne MAP_RESERVATIONS z živé DB do listu Rezervace (roku ROK).
- * Vrací { count, stoly, celkem, letos, bezStolu } pro diagnostiku.
+ * Vrací { count, stoly, celkem, letos, bezStolu, zdroj, listyTrans, listyCore }.
  */
 function _dmImportRezervace(ss, core, trans) {
-  var d = { count: 0, stoly: 0, celkem: 0, letos: 0, bezStolu: 0 };
+  var d = { count: 0, stoly: 0, celkem: 0, letos: 0, bezStolu: 0, zdroj: '', listyTrans: '', listyCore: '' };
+  d.listyTrans = trans.getSheets().map(function (s) { return s.getName(); }).join(', ');
+  d.listyCore = core.getSheets().map(function (s) { return s.getName(); }).join(', ');
+
   var stoly = _dsCtiStoly(ss);
   d.stoly = stoly.length;
   if (stoly.length === 0) return d;
@@ -1106,11 +1125,17 @@ function _dmImportRezervace(ss, core, trans) {
   var jmenoByUid = {};
   _dsCti(core, 'USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
 
+  var nalez = _dsCtiKdekoliv(
+    [{ ss: trans, jmeno: 'TRANSACTION' }, { ss: core, jmeno: 'CORE' }],
+    ['MAP_RESERVATIONS', 'map_reservations', 'MAP_RESERVATION', 'RESERVATIONS', 'DESK_RESERVATIONS']
+  );
+  d.zdroj = nalez.zdroj;
+
   var sh = _dsListRezervace(ss);
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
 
   var out = [];
-  _dsCti(trans, 'MAP_RESERVATIONS').forEach(function (r) {
+  nalez.rows.forEach(function (r) {
     d.celkem++;
     if (String(r.active) === 'false') return;
     var datum = _dsFmtDatum(r.date);
