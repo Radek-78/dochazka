@@ -346,19 +346,17 @@ function _dsListUzivatele(ss, liveLide) {
     if (rows.length) sh.getRange(2, 1, rows.length, DS_UZIV_HLAVICKA.length).setValues(rows);
   } else {
     _dsUpgradeUzivHlavicku(sh, liveLide);
-    var data = sh.getDataRange().getValues();
-    var H = {};
-    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+    var t = _dsTabulka(sh);
     var jsou = {};
-    for (var i = 1; i < data.length; i++) {
-      var uid = String(data[i][H['user_id']] || '').trim();
+    t.radky.forEach(function (x) {
+      var uid = String(t.v(x.r, 'user_id') || '').trim();
       if (uid) jsou[uid] = 1;
-    }
+    });
     var noveRadky = liveLide
       .filter(function (u) { return !jsou[String(u.user_id)]; })
       .sort(cs).map(radekZLive);
     if (noveRadky.length) {
-      sh.getRange(data.length + 1, 1, noveRadky.length, DS_UZIV_HLAVICKA.length).setValues(noveRadky);
+      sh.getRange(t.data.length + 1, 1, noveRadky.length, DS_UZIV_HLAVICKA.length).setValues(noveRadky);
     }
   }
 
@@ -387,43 +385,34 @@ function _dsUpgradeUzivHlavicku(sh, liveLide) {
   sh.getRange(1, tymIdx + 2).setValue('Pozice').setFontWeight('bold').setBackground('#f1f5f9');
   var pozByUid = {};
   liveLide.forEach(function (u) { pozByUid[String(u.user_id)] = u._pozice || ''; });
-  var data = sh.getDataRange().getValues();
-  var uidIdx = data[0].map(function (x) { return String(x).trim(); }).indexOf('user_id');
-  var vals = [];
-  for (var i = 1; i < data.length; i++) {
-    vals.push([pozByUid[String(data[i][uidIdx] || '').trim()] || '']);
-  }
+  var t = _dsTabulka(sh);
+  var vals = t.radky.map(function (x) {
+    return [pozByUid[String(t.v(x.r, 'user_id') || '').trim()] || ''];
+  });
   if (vals.length) sh.getRange(2, tymIdx + 2, vals.length, 1).setValues(vals);
 }
 
 /** Přečte list Uživatelé jako zdroj pravdy (cache na jeden běh, podle názvů sloupců). */
 function _dsCtiUzivatele(ss) {
   return _dsCache('UZIVATELE', function () {
-    var sh = ss.getSheetByName('Uživatelé');
-    if (!sh) return [];
-    var data = sh.getDataRange().getValues();
-    if (data.length < 2) return [];
-    var H = {};
-    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-    function v(r, name) { return H[name] === undefined ? '' : r[H[name]]; }
+    var t = _dsTabulka(ss.getSheetByName('Uživatelé'));
     var out = [];
-    for (var i = 1; i < data.length; i++) {
-      var r = data[i];
-      var jmeno = String(v(r, 'Jméno') || '').trim();
-      var uid = String(v(r, 'user_id') || '').trim();
-      if (!jmeno && !uid) continue;
+    t.radky.forEach(function (x) {
+      var jmeno = String(t.v(x.r, 'Jméno') || '').trim();
+      var uid = String(t.v(x.r, 'user_id') || '').trim();
+      if (!jmeno && !uid) return;
       out.push({
         user_id: uid,
         jmeno: jmeno,
-        oddNazev: String(v(r, 'Oddělení') || '').trim(),
-        tymNazev: String(v(r, 'Tým') || '').trim(),
-        pozice: String(v(r, 'Pozice') || '').trim(),
-        email: String(v(r, 'E-mail') || '').trim(),
-        vedouci: /^ano$/i.test(String(v(r, 'Vedoucí') || '').trim()),
-        od: _dsParseDatum(v(r, 'Od')),
-        do: _dsParseDatum(v(r, 'Do'))
+        oddNazev: String(t.v(x.r, 'Oddělení') || '').trim(),
+        tymNazev: String(t.v(x.r, 'Tým') || '').trim(),
+        pozice: String(t.v(x.r, 'Pozice') || '').trim(),
+        email: String(t.v(x.r, 'E-mail') || '').trim(),
+        vedouci: /^ano$/i.test(String(t.v(x.r, 'Vedoucí') || '').trim()),
+        od: _dsParseDatum(t.v(x.r, 'Od')),
+        do: _dsParseDatum(t.v(x.r, 'Do'))
       });
-    }
+    });
     return out;
   });
 }
@@ -633,24 +622,18 @@ function _dsListRezervace(ss) {
 /** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
 function _dsCtiStoly(ss) {
   return _dsCache('STOLY', function () {
-    var sh = ss.getSheetByName('Stoly');
-    if (!sh) return [];
-    var data = sh.getDataRange().getValues();
-    if (data.length < 2) return [];
-    var H = {};
-    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-    function v(r, n) { return H[n] === undefined ? '' : r[H[n]]; }
+    var t = _dsTabulka(ss.getSheetByName('Stoly'));
     var out = [];
-    for (var i = 1; i < data.length; i++) {
-      var lbl = String(v(data[i], 'Stůl') || '').trim();
-      if (!lbl) continue;
+    t.radky.forEach(function (x) {
+      var lbl = String(t.v(x.r, 'Stůl') || '').trim();
+      if (!lbl) return;
       out.push({
         stul: lbl,
-        trvale: String(v(data[i], 'Trvale (jméno)') || '').trim(),
-        aktivni: /^ano$/i.test(String(v(data[i], 'Aktivní') || '').trim()),
-        cell_id: String(v(data[i], 'cell_id') || '').trim()
+        trvale: String(t.v(x.r, 'Trvale (jméno)') || '').trim(),
+        aktivni: /^ano$/i.test(String(t.v(x.r, 'Aktivní') || '').trim()),
+        cell_id: String(t.v(x.r, 'cell_id') || '').trim()
       });
-    }
+    });
     return out;
   });
 }
@@ -661,32 +644,27 @@ function _dsCtiStoly(ss) {
  */
 function _dmCtiRezervace(ss) {
   return _dsCache('REZERVACE', function () {
+    var t = _dsTabulka(ss.getSheetByName('Rezervace'));
     var prazdny = { rows: [], volne: [], dalsi: 2 };
-    var sh = ss.getSheetByName('Rezervace');
-    if (!sh) return prazdny;
-    var data = sh.getDataRange().getValues();
-    if (data.length < 2) return prazdny;
-    var H = {};
-    data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-    if (H['Datum'] === undefined || H['user_id'] === undefined) return prazdny;
+    if (!t.radky.length || t.H['Datum'] === undefined || t.H['user_id'] === undefined) return prazdny;
 
     var rows = [], volne = [];
-    for (var i = 1; i < data.length; i++) {
-      var d = _dsFmtDatum(data[i][H['Datum']]);
-      var uid = String(data[i][H['user_id']] || '').trim();
-      if (!d && !uid) { volne.push(i + 1); continue; }
+    t.radky.forEach(function (x) {
+      var d = _dsFmtDatum(t.v(x.r, 'Datum'));
+      var uid = String(t.v(x.r, 'user_id') || '').trim();
+      if (!d && !uid) { volne.push(x.radek); return; }
       rows.push({
-        radek: i + 1,
+        radek: x.radek,
         datum: d,
         rok: Number(d.substring(0, 4)) || 0,
         mesic: Number(d.substring(5, 7)) || 0,
         den: Number(d.substring(8, 10)) || 0,
-        stul: String(data[i][H['Stůl']] || '').trim(),
-        jmeno: String(data[i][H['Jméno']] || '').trim(),
+        stul: String(t.v(x.r, 'Stůl') || '').trim(),
+        jmeno: String(t.v(x.r, 'Jméno') || '').trim(),
         uid: uid
       });
-    }
-    return { rows: rows, volne: volne, dalsi: data.length + 1 };
+    });
+    return { rows: rows, volne: volne, dalsi: t.data.length + 1 };
   });
 }
 
@@ -1322,8 +1300,21 @@ function nactiDochazku() {
     }
   }
 
+  // Z ATTENDANCE čteme jen 5 potřebných sloupců — tabulka je celofiremní
+  // a nese i note / created_at / work_start_time, které nepoužijeme.
+  var zaznamy = _dsCtiSloupce(trans, 'ATTENDANCE',
+    ['user_id', 'date', 'status_id', 'slot', 'approved']);
+  if (!zaznamy.length) {
+    ui.alert('Tabulka ATTENDANCE je prázdná nebo v TRANSACTION sešitu není.');
+    return;
+  }
+  var prvni = zaznamy[0];
+  if (prvni.date === undefined || prvni.user_id === undefined || prvni.status_id === undefined) {
+    throw new Error('ATTENDANCE nemá očekávané sloupce (user_id, date, status_id). Zkontroluj ZDROJ_TRANSACTION_ID.');
+  }
+
   var podleM = {};   // mesic -> [ {row, den, slot, ab} ]
-  _dsCti(trans, 'ATTENDANCE').forEach(function (a) {
+  zaznamy.forEach(function (a) {
     if (String(a.approved).toLowerCase() === 'rejected') return;
     var datum = String(a.date || '').substring(0, 10);
     if (datum.substring(0, 4) !== String(ROK)) return;
@@ -1891,25 +1882,75 @@ function _dsZdroj(name) {
   });
 }
 
-function _dsCti(ss, listName) {
-  return _dsCtiSheet(ss.getSheetByName(listName));
+/**
+ * Základ pro všechna čtení listu s hlavičkou v 1. řádku.
+ *   data  — 2D pole včetně hlavičky
+ *   H     — { názevSloupce: index }
+ *   v(r, nazev) — hodnota sloupce z řádku (prázdný řetězec, když sloupec chybí)
+ *   radky — [{ radek: číslo řádku v listu, r: pole hodnot }] bez hlavičky
+ */
+function _dsTabulka(sh) {
+  var prazdna = { data: [], H: {}, v: function () { return ''; }, radky: [] };
+  if (!sh) return prazdna;
+  var data = sh.getDataRange().getValues();
+  if (!data.length) return prazdna;
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  var radky = [];
+  for (var i = 1; i < data.length; i++) radky.push({ radek: i + 1, r: data[i] });
+  return {
+    data: data, H: H, radky: radky,
+    v: function (r, nazev) { return H[nazev] === undefined ? '' : r[H[nazev]]; }
+  };
+}
+
+/** Hodnota buňky → text (Date na ISO, ořez apostrofu a mezer). */
+function _dsBunka(val, tz) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
+  }
+  return (val === null || val === undefined) ? '' : String(val).replace(/^'/, '').trim();
+}
+
+/**
+ * Jako _dsCtiSheet, ale načte jen souvislý úsek sloupců pokrývající požadovaná
+ * jména. U širokých tabulek (ATTENDANCE má i note / created_at / work_start_time)
+ * tím znatelně klesne objem přenášených dat.
+ */
+function _dsCtiSloupce(ss, listName, sloupce) {
+  var sh = ss.getSheetByName(listName);
+  if (!sh) return [];
+  var lastR = sh.getLastRow(), lastC = sh.getLastColumn();
+  if (lastR < 2 || lastC < 1) return [];
+
+  var head = sh.getRange(1, 1, 1, lastC).getValues()[0].map(function (h) { return String(h).trim(); });
+  var chci = [], min = lastC, max = 1;
+  sloupce.forEach(function (n) {
+    var i = head.indexOf(n);
+    if (i === -1) return;
+    chci.push({ jmeno: n, col: i + 1 });
+    if (i + 1 < min) min = i + 1;
+    if (i + 1 > max) max = i + 1;
+  });
+  if (!chci.length) return [];
+
+  var data = sh.getRange(2, min, lastR - 1, max - min + 1).getValues();
+  var tz = Session.getScriptTimeZone();
+  return data.map(function (r) {
+    var o = {};
+    for (var k = 0; k < chci.length; k++) o[chci[k].jmeno] = _dsBunka(r[chci[k].col - min], tz);
+    return o;
+  });
 }
 
 function _dsCtiSheet(sh) {
-  if (!sh) return [];
-  var data = sh.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var head = data[0];
-  return data.slice(1).map(function (row) {
+  var t = _dsTabulka(sh);
+  if (!t.radky.length) return [];
+  var head = t.data[0];
+  var tz = Session.getScriptTimeZone();          // dřív se volalo pro KAŽDOU datumovou buňku
+  return t.radky.map(function (x) {
     var o = {};
-    head.forEach(function (h, i) {
-      var v = row[i];
-      if (v instanceof Date && !isNaN(v.getTime())) {
-        o[h] = Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
-      } else {
-        o[h] = (v === null || v === undefined) ? '' : String(v).replace(/^'/, '').trim();
-      }
-    });
+    for (var i = 0; i < head.length; i++) o[head[i]] = _dsBunka(x.r[i], tz);
     return o;
   });
 }
