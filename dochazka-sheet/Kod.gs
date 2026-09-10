@@ -11,9 +11,13 @@
  *    ROK           — rok pro měsíční listy.
  *
  *  MENU 📋 Docházka:
- *    "Zadat můj měsíc"              → modal s měsíčním pohledem přihlášeného
- *    "Postavit / obnovit listy"     → přegeneruje 12 měsíčních listů
- *    "Postavit jen aktuální měsíc"  → přegeneruje jen list otevřeného měsíce
+ *    "Zadat můj měsíc"                    → modal s měsíčním pohledem přihlášeného
+ *    "Postavit / obnovit všechny měsíce"  → přegeneruje 12 měsíčních listů
+ *    "Postavit / obnovit jen tento měsíc" → přegeneruje jen list otevřeného měsíce
+ *    "Načíst docházku z aplikace"         → import ATTENDANCE + rezervací
+ *    "Načíst rezervace stolů z aplikace"  → import jen MAP_RESERVATIONS
+ *    "Pomocné listy"                      → vytvořit chybějící / aktualizovat Stoly
+ *                                           (bez přegenerování měsíců)
  *
  *  LIST "Uživatelé" = ZDROJ pravdy o lidech. Při prvním běhu se naplní z živé
  *  DB, pak už se jen ČTE a jen se DOPLŇUJÍ noví lidé (existující řádky se
@@ -44,12 +48,19 @@ var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Ved
 
 
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('📋 Docházka')
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📋 Docházka')
     .addItem('📝 Zadat můj měsíc', 'otevriModal')
     .addSeparator()
-    .addItem('🔄 Postavit / obnovit listy', 'setup')
+    .addItem('🔄 Postavit / obnovit všechny měsíce', 'setup')
+    .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
+    .addSeparator()
     .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
     .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
+    .addSeparator()
+    .addSubMenu(ui.createMenu('🧩 Pomocné listy')
+      .addItem('Vytvořit chybějící (Uživatelé, Pořadí, Stoly, Rezervace)', 'vytvorPomocneListy')
+      .addItem('Aktualizovat list Stoly z aplikace', 'aktualizujStoly'))
     .addToUi();
   _dsOznacDnes();
 }
@@ -133,6 +144,38 @@ function setupMesic() {
   PropertiesService.getDocumentProperties().deleteProperty('DNES_SLOUPEC');
   _dsOznacDnes();
   SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
+}
+
+/** Jen zajistí pomocné listy (Uživatelé, Pořadí, Stoly, Rezervace) — bez měsíců. */
+function vytvorPomocneListy() {
+  _dsNactiZdroj();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var stav = ['Uživatelé', 'Pořadí', 'Stoly', 'Rezervace'].map(function (n) {
+    var sh = ss.getSheetByName(n);
+    var radku = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
+    return (sh ? '✓ ' : '– ') + n + (sh ? '  (' + radku + ' řádků)' : '  chybí');
+  }).join('\n');
+  SpreadsheetApp.getUi().alert('Pomocné listy:\n\n' + stav +
+    '\n\nMěsíční listy zůstaly beze změny.');
+}
+
+/** Přegeneruje list Stoly z OFFICE_MAPS živé aplikace (zachová ruční Aktivní/Trvale podle cell_id). */
+function aktualizujStoly() {
+  if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('Přegenerovat list Stoly z aplikace?\n\nStoly se natáhnou znovu z OFFICE_MAPS. Ruční úpravy sloupců Aktivní a Trvale se zachovají podle cell_id, nové stoly se doplní.',
+    ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
+  var usek = _dsCti(core, 'SECTIONS').filter(function (s) {
+    return s.name === USEK_NAZEV && String(s.active) !== 'false';
+  })[0];
+  if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
+  var usersById = {};
+  _dsCti(core, 'USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
+
+  var pocet = _dsSeedStoly(SpreadsheetApp.getActiveSpreadsheet(), core, usek, usersById, true);
+  ui.alert('List Stoly přegenerován — ' + (pocet || 0) + ' stolů.');
 }
 
 
@@ -375,34 +418,51 @@ function _dsCtiPoradi(ss) {
 
 // ── listy Stoly a Rezervace ─────────────────────────────────────────────
 
-/** Vytvoří list Stoly z živé OFFICE_MAPS — jen pokud chybí. */
-function _dsSeedStoly(ss, core, usek, usersById) {
-  if (ss.getSheetByName('Stoly')) return;
+/**
+ * List Stoly z živé OFFICE_MAPS. Bez `force` jen pokud list chybí.
+ * S `force` přegeneruje a zachová ruční Aktivní/Trvale podle cell_id. Vrací počet stolů.
+ */
+function _dsSeedStoly(ss, core, usek, usersById, force) {
+  var existuje = ss.getSheetByName('Stoly');
+  if (existuje && !force) return;
+
   var mapa = _dsCti(core, 'OFFICE_MAPS').filter(function (m) {
     return m.section_id === usek.section_id && String(m.active) !== 'false';
   })[0];
+  var cells = [];
+  if (mapa) { try { cells = JSON.parse(mapa.cells_json || '[]'); } catch (e) { cells = []; } }
+
+  var stare = {};
+  if (existuje) _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) stare[s.cell_id] = s; });
 
   var radky = [];
-  if (mapa) {
-    var cells = [];
-    try { cells = JSON.parse(mapa.cells_json || '[]'); } catch (e) { cells = []; }
-    cells.forEach(function (c) {
-      if (String(c.type) !== 'desk') return;
-      var owner = c.permanent_user_id ? (usersById[c.permanent_user_id] || '') : '';
-      radky.push([c.label || c.id || '', owner, 'ano', c.id || '']);
-    });
-  }
+  cells.forEach(function (c) {
+    if (String(c.type) !== 'desk') return;
+    var id = c.id || '';
+    var owner = c.permanent_user_id ? (usersById[c.permanent_user_id] || '') : '';
+    var st = stare[id];
+    radky.push([
+      c.label || id || '',
+      st ? st.trvale : owner,
+      st ? (st.aktivni ? 'ano' : '') : 'ano',
+      id
+    ]);
+  });
 
-  var sh = ss.insertSheet('Stoly', 2);
-  sh.getRange(1, 1, 1, 4).setValues([['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id']])
-    .setFontWeight('bold').setBackground('#f1f5f9');
+  var sh = existuje || ss.insertSheet('Stoly', 2);
+  if (!existuje) {
+    sh.getRange(1, 1, 1, 4).setValues([['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id']])
+      .setFontWeight('bold').setBackground('#f1f5f9');
+    sh.setColumnWidth(1, 120);
+    sh.setColumnWidth(2, 180);
+    sh.setColumnWidth(3, 70);
+    sh.hideColumns(4);
+    sh.setFrozenRows(1);
+  }
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
   if (radky.length) sh.getRange(2, 1, radky.length, 4).setValues(radky);
-  sh.setColumnWidth(1, 120);
-  sh.setColumnWidth(2, 180);
-  sh.setColumnWidth(3, 70);
-  sh.hideColumns(4);
-  sh.setFrozenRows(1);
   _dsFont(sh);
+  return radky.length;
 }
 
 /** Vytvoří list Rezervace — jen pokud chybí. Vrátí ho. */
