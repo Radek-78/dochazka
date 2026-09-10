@@ -1125,8 +1125,9 @@ function _dmImportRezervace(ss, core, trans) {
   var jmenoByUid = {};
   _dsCti(core, 'USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
 
+  // rezervace stolů bývají v CORE (v TRANSACTION je list často prázdný) → CORE první
   var nalez = _dsCtiKdekoliv(
-    [{ ss: trans, jmeno: 'TRANSACTION' }, { ss: core, jmeno: 'CORE' }],
+    [{ ss: core, jmeno: 'CORE' }, { ss: trans, jmeno: 'TRANSACTION' }],
     ['MAP_RESERVATIONS', 'map_reservations', 'MAP_RESERVATION', 'RESERVATIONS', 'DESK_RESERVATIONS']
   );
   d.zdroj = nalez.zdroj;
