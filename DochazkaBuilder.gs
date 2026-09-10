@@ -152,12 +152,13 @@ function _dochMesicniList(ss, rok, mesic, zamestnanci, zkratky, statusyUnik, zkr
   if (maxRow < posledniData) sheet.insertRowsAfter(maxRow, posledniData - maxRow);
   else if (maxRow > posledniData) sheet.deleteRows(posledniData + 1, maxRow - posledniData);
 
-  // ── ř. 1: titulek ──
-  sheet.getRange(1, 1, 1, souhrnCol).merge()
-    .setValue(DOCH_MESICE_CZ[mesic - 1].toUpperCase() + ' ' + rok)
+  // ── ř. 1: titulek (bez slučování — jinak by kolidovalo se zmrazením sloupců) ──
+  sheet.getRange(1, 1, 1, souhrnCol)
     .setBackground(DOCH_BG_TITULEK).setFontColor(DOCH_FG_TITULEK)
-    .setFontWeight('bold').setFontSize(13)
-    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    .setFontWeight('bold').setFontSize(13).setVerticalAlignment('middle');
+  sheet.getRange(1, 1)
+    .setValue(DOCH_MESICE_CZ[mesic - 1].toUpperCase() + ' ' + rok)
+    .setHorizontalAlignment('left');
 
   // ── ř. 2-3: hlavička (čísla dnů + dny v týdnu), evidence víkendů/svátků ──
   var r2 = new Array(souhrnCol);
