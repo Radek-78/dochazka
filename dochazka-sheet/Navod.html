@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: "Lidl Font Cond Pro", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 0; color: #1e293b; font-size: 13px; line-height: 1.55; background: #fff; }
+
+    /* ── hlavička s rolí a rozcestníkem ── */
+    .top { position: sticky; top: 0; z-index: 5; background: #004fac; color: #fff; padding: 12px 18px 0; }
+    .top h1 { margin: 0 0 2px; font-size: 17px; font-weight: 900; }
+    .top .sub { font-size: 11px; color: #cfe3ff; }
+    .toc { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; }
+    .toc a { color: #fff; text-decoration: none; font-size: 11px; font-weight: 800;
+      padding: 5px 9px; border-radius: 6px 6px 0 0; background: rgba(255, 255, 255, .14); }
+    .toc a:hover { background: rgba(255, 255, 255, .3); }
+
+    .kdo { background: #eff6ff; border-bottom: 1px solid #dbeafe; padding: 10px 18px; }
+    .kdo b { font-weight: 900; }
+    .badge { display: inline-block; background: #004fac; color: #fff; border-radius: 999px;
+      padding: 2px 10px; font-weight: 900; font-size: 11px; margin-right: 6px; }
+    .badge.g { background: #16a34a; }
+    .badge.s { background: #64748b; }
+
+    .wrap { padding: 4px 18px 40px; }
+    h2 { font-size: 14px; font-weight: 900; margin: 26px 0 8px; padding-top: 8px;
+      border-top: 2px solid #e2e8f0; color: #0f172a; }
+    h2:first-of-type { border-top: 0; }
+    h3 { font-size: 12px; font-weight: 900; margin: 16px 0 5px; color: #334155; text-transform: uppercase; letter-spacing: .3px; }
+    p { margin: 6px 0; }
+    ul, ol { margin: 6px 0; padding-left: 20px; }
+    li { margin: 3px 0; }
+    code { background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+
+    table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 5px 8px; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; font-weight: 900; font-size: 11px; text-transform: uppercase; color: #475569; }
+    td.mid { text-align: center; }
+
+    .chip { display: inline-block; min-width: 30px; text-align: center; padding: 2px 7px;
+      border-radius: 5px; font-weight: 900; font-size: 12px; }
+    .arrow { color: #94a3b8; font-weight: 900; margin: 0 4px; }
+
+    .box { border-left: 4px solid #cbd5e1; background: #f8fafc; padding: 9px 12px; margin: 10px 0; border-radius: 0 7px 7px 0; }
+    .box.warn { border-color: #f59e0b; background: #fffbeb; }
+    .box.stop { border-color: #dc2626; background: #fef2f2; }
+    .box.ok { border-color: #16a34a; background: #f0fdf4; }
+    .box b { font-weight: 900; }
+
+    .adm { display: inline-block; background: #fde68a; color: #78350f; border-radius: 4px;
+      padding: 1px 6px; font-size: 10px; font-weight: 900; margin-left: 6px; vertical-align: 2px; }
+    .muted { color: #64748b; }
+    .foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e2e8f0;
+      display: flex; justify-content: flex-end; }
+    .btn { border: none; border-radius: 7px; padding: 8px 18px; font-weight: 800; cursor: pointer;
+      background: #004fac; color: #fff; }
+  </style>
+</head>
+
+<body>
+  <div class="top">
+    <h1>Docházka — jak to funguje</h1>
+    <div class="sub" id="sub"></div>
+    <div class="toc">
+      <a href="#zadavani">Zadávání</a>
+      <a href="#stoly">Stoly</a>
+      <a href="#citlive">Citlivé statusy</a>
+      <a href="#statusy">Statusy</a>
+      <a href="#listy">Listy</a>
+      <a href="#role">Role</a>
+      <a href="#spravce">Pro správce</a>
+      <a href="#problemy">Když něco nesedí</a>
+    </div>
+  </div>
+
+  <div class="kdo" id="kdo"></div>
+
+  <div class="wrap">
+
+    <h2 id="zadavani">Zadávání docházky</h2>
+    <p>Všechno se zadává přes <b>📋 Docházka → 📝 Zadat docházku</b>. Do buněk
+      v měsíčních listech nepiš ručně — mřížka je chráněná a ruční zápis obejde
+      přepočet dovolené i hlídání stolů.</p>
+
+    <h3>Jeden den</h3>
+    <ol>
+      <li>Klikni na políčko dne.</li>
+      <li><b>CELÝ DEN</b> — klikneš na status a tím je uloženo.</li>
+      <li><b>½ DEN</b> — vyber zvlášť dopoledne a odpoledne, pak <b>Uložit půlden</b>.</li>
+      <li><b>Vymazat den</b> smaže status i případnou rezervaci stolu.</li>
+    </ol>
+    <p class="muted">Dokud se ukládá, okno zůstane otevřené se symbolem ⟳ a textem
+      „Ukládám…". Zavře se samo, až server potvrdí. Když se něco nepovede, chyba
+      se ukáže rovnou v tom okně.</p>
+
+    <h3>Víc dní najednou</h3>
+    <p>Tlačítko <b>Hromadně</b> dole: zadáš rozsah dní, volitelně jen všední dny,
+      vybereš status a potvrdíš. Hodí se na dovolenou.</p>
+
+    <h3>Jiný měsíc</h3>
+    <p>Šipky <b>◀ ▶</b> v záhlaví okna. Mřížka na pozadí zůstane vidět, jen zešedne.</p>
+
+    <h2 id="stoly">Rezervace stolů</h2>
+    <p>Některé statusy vyžadují stůl — u nás <span id="deskLbl"></span>.
+      Když si takový status vybereš a stůl ještě nemáš, otevře se rovnou mapa
+      kanceláře a <b>status se uloží až spolu s volbou stolu</b>.</p>
+    <table>
+      <tr><th>Barva v mapě</th><th>Znamená</th></tr>
+      <tr><td><span class="chip" style="background:#dcfce7;color:#166534">zelená</span></td><td>volný — klikni a rezervuj</td></tr>
+      <tr><td><span class="chip" style="background:#bfdbfe;color:#1e3a8a">modrá</span></td><td>tvůj (klikem uvolníš)</td></tr>
+      <tr><td><span class="chip" style="background:#fee2e2;color:#991b1b">červená</span></td><td>obsazený někým jiným</td></tr>
+      <tr><td><span class="chip" style="background:#ffedd5;color:#7c2d12">oranžová</span></td><td>trvale přidělený</td></tr>
+    </table>
+    <ul>
+      <li>Máš-li stůl <b>trvale přidělený</b>, rezervovat nemusíš — mapa se ti neotevře.</li>
+      <li>Tlačítko <b>Bez stolu</b> uloží status a stůl neřeší.</li>
+      <li>Když status změníš na takový, co stůl nepotřebuje, rezervace se zruší sama.</li>
+    </ul>
+    <div class="box warn">
+      <b>Červený rámeček v mřížce</b> znamená kancelářský den bez rezervovaného
+      stolu. Není to chyba, jen upozornění — otevři ten den a stůl si vyber.
+    </div>
+
+    <h2 id="citlive">Citlivé statusy</h2>
+    <p>Buňka v Google Sheetu má <b>jednu hodnotu pro všechny</b> — nejde ji
+      vykreslit každému jinak. Aby se citlivé údaje (typicky zdravotní) neukazovaly
+      celému úseku, řeší se to takhle:</p>
+    <ul>
+      <li>Do sdílené mřížky se zapíše <b>náhradní status</b>. Skutečný tam nikdy není.</li>
+      <li>Skutečnou zkratku ti <b>v okně „Zadat docházku" ukáže</b> — tobě u sebe,
+        vedoucím u lidí, které mají na starost.</li>
+      <li>Kdo na ni nemá právo, uvidí všude jen náhradu.</li>
+    </ul>
+    <div id="citliveTab"></div>
+    <div class="box stop">
+      <b>Pozor na hranice.</b> Skutečné zkratky leží ve skrytém listu
+      <code>Citlivé</code>. Skrytý list není zamčený — kdo umí se Sheetem pracovat,
+      si ho zobrazí. Je to opatření proti nahlédnutí, ne proti záměru. Neber to
+      jako doložitelnou technickou ochranu.
+    </div>
+
+    <h2 id="statusy">Statusy v tomhle sešitu</h2>
+    <div id="statusyTab"></div>
+
+    <h2 id="listy">Listy v sešitu</h2>
+    <p>Sešit je <b>soběstačný</b> — nikam ven nesahá, všechno si čte ze svých listů.</p>
+    <table>
+      <tr><th>List</th><th>K čemu je</th><th>Upravovat?</th></tr>
+      <tr><td><code>01 Leden</code> … <code>12 Prosinec</code></td>
+        <td>samotná docházka — kdo, kdy, jaký status</td>
+        <td><b>ne</b>, jen přes okno</td></tr>
+      <tr><td><code>Uživatelé</code></td>
+        <td>lidé: oddělení, tým, pozice, e-mail, role, nástup/odchod</td>
+        <td>ano <span class="adm">správce</span></td></tr>
+      <tr><td><code>Pořadí</code></td>
+        <td>v jakém pořadí jdou oddělení a týmy v mřížce</td>
+        <td>ano <span class="adm">správce</span></td></tr>
+      <tr><td><code>Statusy</code></td>
+        <td>zkratky, barvy, co je dovolená, co chce stůl, co je citlivé</td>
+        <td>ano <span class="adm">správce</span></td></tr>
+      <tr><td><code>Stoly</code></td>
+        <td>stoly, jejich pozice v mapě a trvalí majitelé</td>
+        <td>ano <span class="adm">správce</span></td></tr>
+      <tr><td><code>Rezervace</code></td>
+        <td>kdo má který den jaký stůl</td>
+        <td>ne, plní se z okna</td></tr>
+      <tr><td><code>Mapa</code></td>
+        <td>jen náhled rozložení — přegeneruje se ze <code>Stoly</code></td>
+        <td>ne, přepíše se</td></tr>
+      <tr><td><code>Citlivé</code> <span class="muted">(skrytý)</span></td>
+        <td>skutečné zkratky citlivých statusů</td>
+        <td>ne</td></tr>
+    </table>
+    <div class="box">
+      Datum <b>Do</b> v listu <code>Uživatelé</code> znamená odchod — od dalšího
+      měsíce se ten člověk v mřížce negeneruje. V měsíci odchodu je u jména
+      červeně datum.
+    </div>
+
+    <h2 id="role">Role a co kdo smí</h2>
+    <p>Role se nastavuje v listu <code>Uživatelé</code>, sloupec <b>Role</b>.
+      Rozhoduje o dvou věcech zvlášť:</p>
+
+    <h3>1. Co je vidět v menu</h3>
+    <table>
+      <tr><th>Role</th><th>Menu</th></tr>
+      <tr><td>uživatel, AL, WGL</td><td>jen „Zadat docházku" a „Návod"</td></tr>
+      <tr><td>správce</td><td>+ přestavba listů, pomocné listy, import z aplikace</td></tr>
+    </table>
+
+    <h3>2. Čí docházku smí zadávat a u koho vidí skutečné citlivé statusy</h3>
+    <table>
+      <tr><th>Role</th><th>Rozsah</th></tr>
+      <tr><td>uživatel</td><td>jen sebe</td></tr>
+      <tr><td><b>AL</b></td><td>své oddělení</td></tr>
+      <tr><td><b>WGL</b></td><td>všechny</td></tr>
+      <tr><td><b>správce</b></td>
+        <td>podle sloupce <b>Pozice</b>: <i>Vedoucí úseku</i> → všechny,
+          <i>Vedoucí oddělení</i> → své oddělení, jinak <b>jen sebe</b></td></tr>
+    </table>
+    <div class="box ok">
+      Role <b>správce</b> je čistě technická — dává přístup do menu, ne k cizí
+      docházce. Správce, který je řadový zaměstnanec, zůstává u své vlastní.
+    </div>
+    <p>Kdo smí i za jiné, má v okně nahoře <b>rozbalovací výběr osoby</b>.
+      Přepnutím se načte měsíc vybraného člověka a zapisuje se jemu.</p>
+    <div class="box warn">
+      Změna role se v <b>menu</b> projeví po obnovení stránky (F5),
+      v <b>okně docházky</b> až po jeho zavření a novém otevření.
+    </div>
+
+    <h2 id="spravce">Pro správce <span class="adm">jen správce</span></h2>
+    <table>
+      <tr><th>Položka menu</th><th>Co udělá</th><th>Kdy</th></tr>
+      <tr><td>🔄 Postavit / obnovit všechny měsíce</td>
+        <td>přestaví všech 12 listů podle <code>Uživatelé</code> a <code>Pořadí</code>;
+          už zadanou docházku zachová</td>
+        <td>po změně lidí, týmů nebo pořadí</td></tr>
+      <tr><td>📅 Postavit / obnovit jen tento měsíc</td>
+        <td>totéž, ale jen pro otevřený měsíc</td>
+        <td>rychlá oprava jednoho měsíce</td></tr>
+      <tr><td>🧩 Zkontrolovat pomocné listy</td>
+        <td>doplní chybějící listy a sloupce, přegeneruje <code>Mapa</code></td>
+        <td>po aktualizaci skriptu</td></tr>
+      <tr><td>🔒 Skrýt citlivé statusy v listech</td>
+        <td>projde 12 měsíců a už zapsané citlivé statusy nahradí</td>
+        <td><b>po každém označení dalšího statusu jako citlivého</b></td></tr>
+      <tr><td>🧳 Z aplikace</td>
+        <td>jednorázové naplnění listů a import historie ze staré appky</td>
+        <td>jen při prvním nasazení</td></tr>
+    </table>
+    <div class="box warn">
+      Maskování citlivých statusů platí <b>jen pro nově zadávané dny</b>.
+      Historii srovná až <b>🔒 Skrýt citlivé statusy v listech</b>.
+    </div>
+    <p>Chceš přidat status? Nový řádek v <code>Statusy</code>: zkratka, název,
+      barva (<code>#rrggbb</code>), barva textu, a příznaky <i>Dovolená</i> /
+      <i>Vyžaduje stůl</i> / <i>Citlivý</i> + <i>Náhrada</i>. Pak
+      <b>🔄 Postavit / obnovit všechny měsíce</b>, ať se obarvení promítne.</p>
+    <div class="box">
+      Citlivý status <b>neoznačuj zároveň jako Dovolená</b> — souhrn se počítá
+      z toho, co je v mřížce, tedy z náhrady.
+    </div>
+
+    <h2 id="problemy">Když něco nesedí</h2>
+    <table>
+      <tr><th>Hláška / projev</th><th>Co s tím</th></tr>
+      <tr><td>„Tvůj e-mail není v listu Uživatelé"</td>
+        <td>správce tě doplní do listu <code>Uživatelé</code> včetně e-mailu,
+          kterým se hlásíš do Googlu</td></tr>
+      <tr><td>„V listu … není řádek pro …"</td>
+        <td>člověk má vyplněné datum <b>Do</b>, nebo se měsíc od jeho nástupu
+          nepřestavěl — spusť <b>🔄 Postavit / obnovit</b></td></tr>
+      <tr><td>„Nemáš oprávnění zadávat docházku za …"</td>
+        <td>hláška rovnou ukáže tvoji roli, pozici i výsledný rozsah</td></tr>
+      <tr><td>„Stůl … je obsazený"</td>
+        <td>někdo byl rychlejší, vyber jiný</td></tr>
+      <tr><td>V menu vidím míň/víc, než mám</td>
+        <td>obnov stránku (F5); pokud je tam <b>🔑 Zjistit moje oprávnění</b>,
+          klikni na to</td></tr>
+      <tr><td>Okno se otevírá pomalu</td>
+        <td>několik vteřin je normální — Google spouští skript na svých serverech
+          při každém volání znovu</td></tr>
+    </table>
+
+    <div class="foot">
+      <button class="btn" onclick="google.script.host.close()">Zavřít</button>
+    </div>
+  </div>
+
+  <script>
+    var K = <?!= KONTEXT ?>;
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function chip(s) {
+      return '<span class="chip" style="background:' + esc(s.color) + ';color:' + esc(s.fg) + '">'
+        + esc(s.abbr) + '</span>';
+    }
+    function ano(b) { return b ? '<b>ano</b>' : '<span class="muted">—</span>'; }
+
+    document.getElementById('sub').textContent = K.usek + '  ·  rok ' + K.rok;
+
+    // ── kdo se dívá ──
+    var ROZSAH = {
+      vse: ['g', 'můžeš zadávat docházku všem a vidíš jejich skutečné statusy'],
+      oddeleni: ['g', 'můžeš zadávat docházku svému oddělení a vidíš jeho skutečné statusy'],
+      ja: ['s', 'můžeš zadávat jen svoji docházku']
+    };
+    var kdo = document.getElementById('kdo');
+    if (K.chyba) {
+      kdo.innerHTML = '<b>⚠ ' + esc(K.chyba) + '</b><br>'
+        + '<span class="muted">Návod si přečíst můžeš, ale docházku zatím zadávat nepůjde.</span>';
+    } else {
+      var r = ROZSAH[K.rozsah] || ROZSAH.ja;
+      kdo.innerHTML = '<b>' + esc(K.jmeno) + '</b>'
+        + '<span class="muted">' + (K.pozice ? '  ·  ' + esc(K.pozice) : '') + '</span><br>'
+        + '<span class="badge">' + esc(K.role) + '</span>'
+        + '<span class="badge ' + r[0] + '">' + r[1] + '</span>';
+    }
+
+    // ── statusy vyžadující stůl ──
+    var desk = K.statusy.filter(function (s) { return s.desk; });
+    document.getElementById('deskLbl').innerHTML = desk.length
+      ? desk.map(chip).join(' ')
+      : '<span class="muted">zatím žádný</span>';
+
+    // ── citlivé statusy ──
+    var citlive = K.statusy.filter(function (s) { return s.citlivy && s.nahrada && s.nahrada !== s.abbr; });
+    document.getElementById('citliveTab').innerHTML = citlive.length
+      ? '<table><tr><th>Zadáš</th><th>Ostatní v mřížce uvidí</th></tr>'
+      + citlive.map(function (s) {
+        var n = K.statusy.filter(function (x) { return x.abbr === s.nahrada; })[0]
+          || { abbr: s.nahrada, color: '#e2e8f0', fg: '#334155', name: '' };
+        return '<tr><td>' + chip(s) + ' ' + esc(s.name) + '</td>'
+          + '<td><span class="arrow">→</span> ' + chip(n) + ' ' + esc(n.name) + '</td></tr>';
+      }).join('') + '</table>'
+      : '<div class="box"><b>Zatím žádný status není označený jako citlivý.</b> '
+      + 'Nastavuje se v listu <code>Statusy</code>, sloupce <i>Citlivý</i> a <i>Náhrada</i>.</div>';
+
+    // ── přehled statusů ──
+    document.getElementById('statusyTab').innerHTML = K.statusy.length
+      ? '<table><tr><th>Zkratka</th><th>Název</th><th>Počítá se do dovolené</th>'
+      + '<th>Vyžaduje stůl</th><th>Citlivý</th></tr>'
+      + K.statusy.map(function (s) {
+        return '<tr><td>' + chip(s) + '</td><td>' + esc(s.name) + '</td>'
+          + '<td class="mid">' + ano(s.vac) + '</td>'
+          + '<td class="mid">' + ano(s.desk) + '</td>'
+          + '<td class="mid">' + (s.citlivy && s.nahrada
+            ? '<b>ano</b> <span class="muted">→ ' + esc(s.nahrada) + '</span>'
+            : '<span class="muted">—</span>') + '</td></tr>';
+      }).join('') + '</table>'
+      : '<div class="box"><b>List Statusy je prázdný.</b> Bez statusů se docházka zadávat nedá — '
+      + 'obrať se na správce.</div>';
+  </script>
+</body>
+
+</html>

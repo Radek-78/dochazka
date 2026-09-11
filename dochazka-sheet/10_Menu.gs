@@ -9,7 +9,9 @@
  */
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
-  var menu = ui.createMenu('📋 Docházka').addItem('📝 Zadat docházku', 'otevriModal');
+  var menu = ui.createMenu('📋 Docházka')
+    .addItem('📝 Zadat docházku', 'otevriModal')
+    .addItem('📖 Návod', 'otevriNavod');
 
   var role = _dmRoleProMenu();
   if (!role) {
@@ -123,6 +125,44 @@ function _dsBarvaHlavicky(sheet, mesic, dopCol, dnes) {
 function otevriModal() {
   var html = HtmlService.createHtmlOutputFromFile('Modal').setWidth(760).setHeight(660);
   SpreadsheetApp.getUi().showModalDialog(html, 'Docházka');
+}
+
+function otevriNavod() {
+  var t = HtmlService.createTemplateFromFile('Navod');
+  t.KONTEXT = JSON.stringify(_dmKontextNavodu());
+  SpreadsheetApp.getUi().showModalDialog(
+    t.evaluate().setWidth(900).setHeight(720), 'Návod — jak tenhle sešit funguje');
+}
+
+/**
+ * Podklady pro návod: kdo se dívá a jak je sešit doopravdy nastavený.
+ * Návod díky tomu ukazuje skutečné statusy a rovnou říká, co smí čtenář sám.
+ * Nic z toho není nutné — když se to nepovede, ukáže se obecná verze.
+ */
+function _dmKontextNavodu() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var k = {
+    rok: ROK, usek: USEK_NAZEV, jmeno: '', role: '', pozice: '', rozsah: '',
+    statusy: [], chyba: ''
+  };
+  try {
+    var me = _dmJa(ss);
+    k.jmeno = me.jmeno;
+    k.role = me.role;
+    k.pozice = me.pozice || '';
+    k.rozsah = _dmRozsah(me);
+  } catch (e) {
+    k.chyba = String((e && e.message) || e);
+  }
+  try {
+    k.statusy = _dsCtiStatusy(ss).map(function (s) {
+      return {
+        abbr: s.abbr, name: s.name, color: s.color, fg: s.fg,
+        vac: s.vac, desk: s.desk, citlivy: s.citlivy, nahrada: s.nahrada
+      };
+    });
+  } catch (e) { /* bez statusů se návod pořád dá číst */ }
+  return k;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

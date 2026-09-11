@@ -25,6 +25,7 @@ kvůli orientaci. Pořadí načítání řídí `filePushOrder` v `.clasp.json`.
 | `70_Modal.gs` | serverové funkce modalu „Zadat můj měsíc" |
 | `90_Utils.gs` | drobné sdílené pomocné funkce (datum, barvy, svátky) |
 | `Modal.html` | klient modalu |
+| `Navod.html` | návod pro uživatele — šablona, do které `otevriNavod` vloží roli a skutečné statusy |
 | `appsscript.json` | manifest — deklaruje závislost na **Sheets API v4** |
 
 ## Geometrie měsíčního listu
