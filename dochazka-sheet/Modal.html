@@ -156,7 +156,7 @@
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
     // ── ⏱ profilace: kde se čeká ─────────────────────────────────────────
-    var PERF = { t0: Date.now(), radky: [], open: false, max: null };
+    var PERF = { t0: Date.now(), radky: [], open: false, max: null, cekaniMs: 0 };
 
     function plog(txt, ms) {
       var cas = (ms === undefined) ? '        ' : ('     ' + ms).slice(-6) + ' ms';
@@ -169,7 +169,10 @@
     function perfRender() {
       var el = document.getElementById('perf');
       if (!el) return;
-      var hlavicka = '<b>⏱ od otevření ' + (Date.now() - PERF.t0) + ' ms</b>'
+      // „od otevření" obsahuje i čas, kdy se přemýšlelo nad kliknutím — proto zvlášť
+      // i skutečné čekání na server, to je jediné, co jde kódem ovlivnit.
+      var hlavicka = '<b>⏱ čekání na server ' + PERF.cekaniMs + ' ms</b>'
+        + '  ·  od otevření ' + (Date.now() - PERF.t0) + ' ms'
         + (PERF.max ? '  ·  nejpomalejší: <span class="hot">' + esc(PERF.max.txt) + ' (' + PERF.max.ms + ' ms)</span>' : '');
       el.innerHTML = hlavicka + (PERF.open
         ? '\n' + PERF.radky.map(esc).join('\n') + '\n<b>(klikni pro sbalení)</b>'
@@ -179,6 +182,7 @@
     function pserver(nazev, res, tSend) {
       var celkem = Date.now() - tSend;
       var s = res && res.log ? res.log : null;
+      PERF.cekaniMs += celkem;
       plog(nazev + ' — celé kolo', celkem);
       if (!s) return;
       var boot = s.boot || 0;
