@@ -41,29 +41,31 @@ function onOpen() {
 
 /**
  * Role pro sestavení menu, nebo '' když ji nejde zjistit.
- * Pořadí je dané výkonem: zapamatovaná role je zdarma, teprve když chybí, sáhne
- * se do listu (v jednoduchém triggeru to projde jen uživateli, který už skriptu
- * povolil přístup — typicky prvním otevřením modalu).
+ *
+ * Čte se PŘÍMO z listu, aby se změna role projevila hned po obnovení sešitu.
+ * Je to jedno čtení malého listu Uživatelé (ne celá dávka), takže to otevření
+ * sešitu znatelně nezdrží. Zapamatovaná role z UserProperties je jen záloha pro
+ * případ, že onOpen jako jednoduchý trigger identitu zjistit nesmí.
  */
 function _dmRoleProMenu() {
-  var props = null;
-  try { props = PropertiesService.getUserProperties(); } catch (e) {}
-  if (props) {
-    var ulozena = props.getProperty('ROLE') || '';
-    if (ulozena) return ulozena;
-  }
   try {
-    var lide = _dsCtiUzivatele(SpreadsheetApp.getActiveSpreadsheet());
-    if (!lide.length) return R_SPRAVCE;          // prázdný sešit musí jít postavit
     var email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
-    if (!email) return '';
-    var me = lide.filter(function (u) { return u.email && u.email.toLowerCase() === email; })[0];
-    if (!me) return '';
-    if (props) props.setProperty('ROLE', me.role);
-    return me.role;
-  } catch (e) {
-    return '';
-  }
+    if (email) {
+      var t = _dsTabulka(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(L_UZIV));
+      if (!t.radky.length) return R_SPRAVCE;        // prázdný sešit musí jít postavit
+      for (var i = 0; i < t.radky.length; i++) {
+        var r = t.radky[i].r;
+        if (String(t.v(r, 'E-mail') || '').trim().toLowerCase() !== email) continue;
+        var role = _dsRole(t.v(r, 'Role'));
+        try { PropertiesService.getUserProperties().setProperty('ROLE', role); } catch (e) {}
+        return role;
+      }
+      return '';                                    // e-mail v listu není
+    }
+  } catch (e) { /* spadneme na zapamatovanou roli níž */ }
+
+  try { return PropertiesService.getUserProperties().getProperty('ROLE') || ''; } catch (e) {}
+  return '';
 }
 
 /** Dohledá roli a přestaví menu — pro případ, že ji onOpen sám zjistit nemohl. */

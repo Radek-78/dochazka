@@ -79,11 +79,24 @@ Dvě pojistky proti zamčení sešitu (`_dmVyzadujSpravce`): prázdný list `Už
 a stav, kdy roli `správce` nemá vůbec nikdo — v obou případech se položky menu
 nezamykají.
 
-**Menu** staví `_dmRoleProMenu`: nejdřív zapamatovaná role z `UserProperties`
-(zdarma), a když chybí, jednorázově dohledání v listu. `onOpen` je jednoduchý
-trigger, takže identita v něm jde zjistit až potom, co uživatel skriptu povolil
-přístup — dokud se to nepovede, má menu jen „📝 Zadat docházku" a „🔑 Zjistit
-moje oprávnění".
+**Menu** staví `_dmRoleProMenu` — čte roli **přímo z listu**, aby se změna
+projevila hned po obnovení sešitu. `onOpen` je jednoduchý trigger, takže identita
+v něm jde zjistit až potom, co uživatel skriptu povolil přístup; dokud se to
+nepovede, použije se poslední známá role z `UserProperties`, a když není ani ta,
+má menu jen „📝 Zadat docházku" a „🔑 Zjistit moje oprávnění".
+
+Pozor na rozdíl: **menu** čte roli z listu (okamžitě), **modal a zápisy** jedou
+z `UserProperties` kvůli rychlosti a obnoví se při otevření modalu.
+
+### Test rolí
+
+1. Jednou spusť **🔄 Postavit / obnovit všechny měsíce** (nebo 🧩) — tím vznikne
+   sloupec `Role`, pokud v listu `Uživatelé` ještě není.
+2. Ve svém řádku přepiš `Role` a **obnov stránku** (F5). Menu se změní hned.
+3. Modal (výběr osoby) se řídí rolí z posledního otevření — po změně role ho
+   zavři a otevři znovu.
+4. Demontovat sám sebe je bezpečné: roli si kdykoli přepíšeš zpátky přímo
+   v listu, na to menu nepotřebuješ.
 
 ## Jednorázové nastavení
 
