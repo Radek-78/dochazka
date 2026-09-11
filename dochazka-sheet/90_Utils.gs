@@ -84,11 +84,27 @@ function _dsFont(sheet) {
   sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).setFontFamily(DS_FONT);
 }
 
-/** Datum ze živé DB → "yyyy-MM-dd" nebo '' pro zápis do listu. */
+// Session.getScriptTimeZone() je volání služby — drž ho na jeden běh skriptu.
+var _DS_TZ = null;
+function _dsTz() {
+  if (!_DS_TZ) _DS_TZ = Session.getScriptTimeZone();
+  return _DS_TZ;
+}
+
+/**
+ * Datum z buňky / živé DB → "yyyy-MM-dd" nebo ''.
+ * Sloupec Datum v listu Rezervace je textový, takže naprostá většina hodnot je
+ * ISO řetězec — ten se vrací rovnou. Dřív šel KAŽDÝ řádek přes Session +
+ * Utilities.formatDate, což u celého listu dělalo stovky volání služeb.
+ */
 function _dsFmtDatum(v) {
+  if (typeof v === 'string') {
+    var s = v.replace(/^'/, '').trim();
+    if (/^\d{4}-\d{2}-\d{2}(?:[T ]|$)/.test(s)) return s.substring(0, 10);
+  }
   var d = _dsParseDatum(v);
   if (!d) return '';
-  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return Utilities.formatDate(d, _dsTz(), 'yyyy-MM-dd');
 }
 
 /** Hodnota z buňky/DB → Date nebo null. */

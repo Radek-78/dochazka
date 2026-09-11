@@ -44,6 +44,11 @@
  * ============================================================================
  */
 
+// Začátek vyhodnocování skriptu. Apps Script načte a vyhodnotí VŠECHNY soubory
+// při každém volání znovu — tohle měří, kolik z toho padne, než se vůbec spustí
+// volaná funkce (viz panel ⏱ v modalu).
+var _DM_BOOT = Date.now();
+
 var ZDROJ_CORE_ID = '13RKMeOxnXVsJ7omEVElPP2BCJe5_bqtFYklbmE5YZ6g';
 var ZDROJ_TRANSACTION_ID = '1gJsTyi8r0yKaJ1ODOIT9x9XM6Dvdc8rKf1QucYLwBB0';   // pro "Načíst docházku z aplikace"
 var USEK_NAZEV = 'DL Plánování a řízení zásob';

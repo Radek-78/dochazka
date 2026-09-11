@@ -181,7 +181,9 @@
       var s = res && res.log ? res.log : null;
       plog(nazev + ' — celé kolo', celkem);
       if (!s) return;
-      plog('   · z toho režie google.script.run (síť + sandbox)', celkem - s.celkem);
+      var boot = s.boot || 0;
+      plog('   · z toho režie google.script.run (síť + sandbox)', celkem - s.celkem - boot);
+      plog('   · z toho načtení skriptu Apps Scriptem', boot);
       plog('   · z toho práce serveru', s.celkem);
       s.kroky.forEach(function (k) { plog('      – ' + k.co, k.ms); });
     }
