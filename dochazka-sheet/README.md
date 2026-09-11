@@ -91,6 +91,12 @@ list — jen červené, není co mazat), `'plne'` (i úklid starých) a `'jen_pi
 Stavba listu používá `'nove'` — dřív běžela s `'jen_pismo'` a rámečky doplňoval
 až import, takže po přestavbě chyběly.
 
+> ⚠ **`setBorder(…, vertical, horizontal, …)`**: `false` vnitřní ohraničení
+> **SMAŽE**, `null` ho nechá být. Vnější rám listu i rámy oddělení proto musí
+> mít `null` — s `false` smazaly červené rámečky buněk. A indikace stolů se
+> kreslí **až po nich**, ať ji nic nepřekreslí. Výjimka je dvojice půldnů
+> (1×2), kde `false` správně odstraní dělicí čáru uprostřed.
+
 `DS_CHIP_TON` v `00_Konfig.gs` přepíná vzhled: `0` = plná barva (výchozí),
 `0.5–0.85` = jemný tón na bílé s tmavým textem. Je součástí podpisu listu,
 takže změna vynutí přestavbu měsíců.

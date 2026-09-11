@@ -6,7 +6,7 @@
 // ── měsíční list ─────────────────────────────────────────────────────────
 
 // Bumpuj při JAKÉKOLI změně struktury listu (kvůli fast-path porovnání podpisu).
-var DS_BUILD_VER = 7;
+var DS_BUILD_VER = 8;
 
 /** Podpis struktury listu (hash) — když se nezmění, přestavba se přeskočí. */
 function _dsPodpisListu(mesic, radky, N) {
@@ -344,15 +344,17 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   });
   sheet.setConditionalFormatRules(pravidla);
 
-  // ── indikace stolů: červené písmo i rámeček. Na čerstvém listu není co mazat,
-  //    takže se kreslí jen ty červené a dávka zůstane malá.
+  // ── ohraničení: vnější rámeček (hrany v mezerových řádcích) + rámy bloků; vnitřní dělení dělají 1px mezery ──
+  // `null` u vnitřních hran znamená „nesahat" — `false` by je smazalo včetně
+  // červených rámečků jednotlivých buněk.
+  sheet.getRange(mezR, 1, dataR + 1, souhrnCol)
+    .setBorder(true, true, true, true, null, null, '#cbd5e1', SpreadsheetApp.BorderStyle.SOLID);
+  bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
+
+  // ── indikace stolů: červené písmo i rámeček. Až PO rámech, ať je nic nepřekreslí.
+  //    Na čerstvém listu není co mazat, takže se kreslí jen ty červené.
   var rezM = _dmRezMesic(ss, mesic);
   _dmObnovStulyList(sheet, mesic, deskAbbr, rezM, 'nove');
-
-  // ── ohraničení: vnější rámeček (hrany v mezerových řádcích) + rámy bloků; vnitřní dělení dělají 1px mezery ──
-  sheet.getRange(mezR, 1, dataR + 1, souhrnCol)
-    .setBorder(true, true, true, true, false, false, '#cbd5e1', SpreadsheetApp.BorderStyle.SOLID);
-  bloky.forEach(function (b) { _dsRamOddeleni(sheet, b[0], b[1], souhrnCol); });
 
   // ── rozměry ──
   sheet.setFrozenRows(DS_HLAVICKA_RADKU);
@@ -395,8 +397,9 @@ function _dsRamOddeleni(sheet, r1, r2, lastCol) {
   if (r2 < r1) return;
   var top = Math.max(DS_PRVNI_DATA_RADEK - 1, r1 - 1);   // mezerový řádek nad blokem
   var bot = r2 + 1;                                        // mezerový řádek pod blokem
+  // vnitřní hrany `null` = nesahat na ně (jinak by zmizely rámečky buněk)
   sheet.getRange(top, 1, bot - top + 1, lastCol)
-    .setBorder(true, true, true, true, false, false, '#64748b', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    .setBorder(true, true, true, true, null, null, '#64748b', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 }
 
 /** Přečte docházku z (starého) měsíčního listu: { user_id: { den: {full,dop,odp} } }. */
