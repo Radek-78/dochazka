@@ -44,7 +44,8 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 |---|---|
 | `Uživatelé` | lidé: `Jméno · Oddělení · Tým · Pozice · E-mail · Vedoucí · Role · Od · Do · user_id` |
 | `Pořadí` | řazení: jména nahoru, pořadí oddělení, pořadí týmů |
-| `Statusy` | `Zkratka · Název · Barva · Barva textu · Dovolená · Vyžaduje stůl · Aktivní` |
+| `Statusy` | `Zkratka · Název · Barva · Barva textu · Dovolená · Vyžaduje stůl · Citlivý · Náhrada · Aktivní` |
+| `Citlivé` | skrytý: `Datum · user_id · Dopoledne · Odpoledne` — skutečné zkratky citlivých statusů |
 | `Stoly` | `Stůl · Trvale (jméno) · Aktivní · Řádek · Sloupec · cell_id · trvale_uid` |
 | `Rezervace` | `Datum · Stůl · Jméno · user_id` |
 | `Mapa` | jen náhled — přegeneruje se ze `Stoly` (podle `Řádek`/`Sloupec`) |
@@ -87,6 +88,36 @@ má menu jen „📝 Zadat docházku" a „🔑 Zjistit moje oprávnění".
 
 Pozor na rozdíl: **menu** čte roli z listu (okamžitě), **modal a zápisy** jedou
 z `UserProperties` kvůli rychlosti a obnoví se při otevření modalu.
+
+## Citlivé statusy (GDPR)
+
+Status označený v listu `Statusy` jako **`Citlivý`** se do měsíčního listu
+**nikdy nezapíše** — v mřížce stojí jeho **`Náhrada`** a skutečná zkratka jde
+do skrytého listu `Citlivé`. Modal ji dosadí jen tomu, kdo na ni má právo.
+
+Důvod: buňka v Sheetu má jednu hodnotu pro všechny. Vykreslit ji každému jinak
+nejde, takže jediná možnost je nedat ji do sdílené mřížky vůbec.
+
+| kdo | vidí skutečné statusy |
+|---|---|
+| kdokoli | své vlastní |
+| `AL` | + své oddělení |
+| `WGL` | + všechny |
+| `správce` | podle sloupce `Pozice`: `Vedoucí úseku` → jako WGL, `Vedoucí oddělení` → jako AL, jinak jen své |
+
+Pozice se porovnávají s `DS_POZICE_USEK` / `DS_POZICE_ODDELENI` v `00_Konfig.gs` —
+**musí přesně sedět s hodnotami ve sloupci `Pozice`.**
+
+Co je citlivé, rozhoduje **vždy server** (`_dsNahrady`); klient by si mohl říct,
+že nic citlivé není. Mapa se drží v `DocumentProperties`, aby uložení dne
+nestálo čtení listu, a obnovuje ji `_dsNahradyZListu` při otevření modalu a při
+přestavbě listů. Souhrn dovolené se počítá z **maskovaných** hodnot, ať sedí
+s tím, co v mřížce opravdu stojí — citlivý status proto neoznačuj jako `Dovolená`.
+
+> ⚠ **Není to plná GDPR shoda.** List `Citlivé` je skrytý, ne chráněný — kdo smí
+> sešit editovat, si ho odkryje. Oproti stavu, kdy citlivý status svítil přímo
+> v mřížce, je to velký posun, ale skutečnou hranici by dalo jen úložiště mimo
+> tenhle sešit (malá web app běžící pod vlastníkem).
 
 ### Test rolí
 

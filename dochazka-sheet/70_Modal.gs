@@ -40,7 +40,8 @@ function _dmJaZListu(ss, email) {
   }
   try {
     PropertiesService.getUserProperties().setProperty('JA', JSON.stringify({
-      user_id: me.user_id, jmeno: me.jmeno, oddNazev: me.oddNazev, role: me.role, email: me.email
+      user_id: me.user_id, jmeno: me.jmeno, oddNazev: me.oddNazev, pozice: me.pozice,
+      role: me.role, email: me.email
     }));
   } catch (e) {}
   return me;
@@ -51,6 +52,30 @@ function _dmSmiZa(ja, cil) {
   if (String(ja.user_id) === String(cil.user_id)) return true;      // sám za sebe vždycky
   if (ja.role === R_SPRAVCE || ja.role === R_WGL) return true;      // kdokoli
   if (ja.role === R_AL) return !!ja.oddNazev && ja.oddNazev === cil.oddNazev;
+  return false;
+}
+
+/**
+ * Rozsah, ve kterém člověk vidí SKUTEČNÉ citlivé statusy: 'vse' | 'oddeleni' | 'ja'.
+ * U role správce nerozhoduje role, ale pozice — technický správce se tím sám
+ * o sobě k údajům o zdraví nedostane.
+ */
+function _dmRozsahVideni(ja) {
+  if (ja.role === R_WGL) return 'vse';
+  if (ja.role === R_AL) return 'oddeleni';
+  if (ja.role === R_SPRAVCE) {
+    if (_dsPoziceJe(ja.pozice, DS_POZICE_USEK)) return 'vse';
+    if (_dsPoziceJe(ja.pozice, DS_POZICE_ODDELENI)) return 'oddeleni';
+  }
+  return 'ja';
+}
+
+/** Uvidí `ja` skutečné citlivé statusy člověka `cil`? Sám sebe vidí vždycky. */
+function _dmVidiSkutecne(ja, cil) {
+  if (String(ja.user_id) === String(cil.user_id)) return true;
+  var r = _dmRozsahVideni(ja);
+  if (r === 'vse') return true;
+  if (r === 'oddeleni') return !!ja.oddNazev && ja.oddNazev === cil.oddNazev;
   return false;
 }
 
@@ -106,6 +131,7 @@ function dm_init() {
     .map(function (u) { return { userId: u.user_id, jmeno: u.jmeno, odd: u.oddNazev }; });
 
   var statusy = _dsCtiStatusy(ss);
+  _dsNahradyZListu(ss);                    // obnoví sdílenou mapu citlivých statusů
   var stolyRows = _dsCtiStoly(ss).filter(function (s) { return s.aktivni; });
   var stoly = stolyRows.map(function (s) {
     return { label: s.stul, trvale: s.trvale, trvaleUid: s.trvaleUid };
@@ -121,7 +147,7 @@ function dm_init() {
 
   var out = {
     rok: ROK, mesic: mesic, userId: me.user_id, jmeno: me.jmeno, usek: USEK_NAZEV,
-    role: me.role, lide: lide,
+    role: me.role, rozsahVideni: _dmRozsahVideni(me), lide: lide,
     statusy: statusy,
     vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
     deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; }),
@@ -146,6 +172,10 @@ function dm_mesic(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var cil = _dmCil(ss, payload.userId);
   var b = _dmMujBlok(_dmListMesice(payload.mesic), cil, payload.mesic);
+  // v mřížce jsou náhrady; skutečné citlivé statusy dostane jen oprávněný
+  if (_dmVidiSkutecne(_dmJa(ss), cil)) {
+    _dmDosadCitlive(b.dny, _dmCitliveMesic(ss, cil.user_id, payload.mesic), _dsNahrady(ss));
+  }
   return {
     mesic: payload.mesic, rok: ROK, row: b.row,
     dny: b.dny, souhrn: b.souhrn, rezMesic: _dmRezMesic(ss, payload.mesic)
@@ -200,6 +230,20 @@ function _dmRadekOveren(sheet, cil, mesic, tip) {
 function _dmChybiRadek(sheet, cil) {
   return 'V listu ' + sheet.getName() + ' není řádek pro: ' + (cil.jmeno || cil.user_id) +
     '.\nMožná má vyplněné datum Do, nebo se list od té doby nepřestavěl.';
+}
+
+/**
+ * Dosadí do dnů skutečné citlivé statusy místo náhrad.
+ * Dosazuje jen tam, kde v mřížce opravdu stojí očekávaná náhrada — osamocený
+ * záznam v listu Citlivé (např. po ruční úpravě mřížky) se tím ignoruje.
+ */
+function _dmDosadCitlive(dny, skutecne, nahrady) {
+  dny.forEach(function (d) {
+    var x = skutecne[d.den];
+    if (!x) return;
+    if (x.dop && d.dop === _dsMaska(nahrady, x.dop)) d.dop = x.dop;
+    if (x.odp && !d.full && d.odp === _dsMaska(nahrady, x.odp)) d.odp = x.odp;
+  });
 }
 
 /** Stav dne, jak bude v listu vypadat po zápisu — bez nutnosti číst ho zpátky. */
@@ -303,7 +347,19 @@ function dm_uloz(payload) {
     var N = _dmDniVMesici(payload.mesic);
     var row = _dmRadekOveren(sheet, cil, payload.mesic, payload.row);
 
-    _dmZapisDen(sheet, row, payload.den, payload.rezim, payload.dop, payload.odp);
+    // O tom, co je citlivé, rozhoduje server — do sdílené mřížky jde náhrada
+    // a skutečná zkratka zvlášť do skrytého listu Citlivé.
+    var nahrady = _dsNahrady(ss);
+    var skutDop = payload.rezim === 'CLEAR' ? '' : String(payload.dop || '');
+    var skutOdp = payload.rezim === 'HALF' ? String(payload.odp || '') : '';
+    _dmZapisDen(sheet, row, payload.den, payload.rezim,
+      _dsMaska(nahrady, skutDop), _dsMaska(nahrady, skutOdp));
+    // Když nic citlivého nezapisujeme a klient netvrdí, že tam něco bylo, nemá
+    // smysl list Citlivé vůbec otevírat. Kdyby se klient spletl, osamocený
+    // záznam se stejně nikde nezobrazí (viz _dmDosadCitlive).
+    if (nahrady[skutDop] || nahrady[skutOdp] || payload.byloCitlive) {
+      _dmZapisCitlive(ss, cil.user_id, payload.mesic, payload.den, skutDop, skutOdp, nahrady);
+    }
 
     var souhrn = payload.souhrn;
     if (souhrn === undefined || souhrn === null || isNaN(Number(souhrn))) {
@@ -331,9 +387,11 @@ function dm_uloz(payload) {
       maStul = maStul || !!payload.maRezervaci;
     }
 
-    var den = _dmDenPoZapisu(payload.mesic, payload.den, payload.rezim, payload.dop, payload.odp);
+    var den = _dmDenPoZapisu(payload.mesic, payload.den, payload.rezim, skutDop, skutOdp);
     try {
-      _dmObnovStul(sheet, row, payload.den, payload.deskAbbr || [], maStul, den);
+      _dmObnovStul(sheet, row, payload.den, payload.deskAbbr || [], maStul, {
+        dop: _dsMaska(nahrady, den.dop), odp: _dsMaska(nahrady, den.odp), full: den.full
+      });
     } catch (e) {}
     try { sheet.getRange(row, _gDop(payload.den)).activate(); } catch (e) {}
 
@@ -358,6 +416,10 @@ function dm_hromadne(payload) {
     var od = Math.max(1, Math.min(N, Number(payload.odDen) || 1));
     var doo = Math.max(od, Math.min(N, Number(payload.doDen) || N));
     var potrebaStul = _dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr);
+    var nahrady = _dsNahrady(ssH);
+    var hDop = payload.rezim === 'CLEAR' ? '' : String(payload.dop || '');
+    var hOdp = payload.rezim === 'HALF' ? String(payload.odp || '') : '';
+    var mDop = _dsMaska(nahrady, hDop), mOdp = _dsMaska(nahrady, hOdp);
     // dny, kdy mám rezervaci, zná klient → list Rezervace se nemusí číst vůbec
     var rezDny = {};
     (payload.rezDny || []).forEach(function (x) { rezDny[Number(x)] = 1; });
@@ -368,7 +430,10 @@ function dm_hromadne(payload) {
         var dow = new Date(ROK, payload.mesic - 1, d).getDay();
         if (dow === 0 || dow === 6) continue;
       }
-      _dmZapisDen(sheet, mr.row, d, payload.rezim, payload.dop, payload.odp);
+      _dmZapisDen(sheet, mr.row, d, payload.rezim, mDop, mOdp);
+      if (nahrady[hDop] || nahrady[hOdp] || payload.byloCitlive) {
+        _dmZapisCitlive(ssH, cil.user_id, payload.mesic, d, hDop, hOdp, nahrady);
+      }
       if (!potrebaStul && rezDny[d]) {
         if (_dmZrusRezervaci(ssH, cil.user_id, payload.mesic, d)) rezZmena = true;
         delete rezDny[d];
@@ -390,6 +455,9 @@ function dm_hromadne(payload) {
     } catch (e) {}
     try { sheet.getRange(mr.row, 1).activate(); } catch (e) {}
     var dnyZpet = _dmDenData(sheet, mr.row, payload.mesic);
+    if (_dmVidiSkutecne(_dmJa(ssH), cil)) {          // v mřížce jsou náhrady
+      _dmDosadCitlive(dnyZpet, _dmCitliveMesic(ssH, cil.user_id, payload.mesic), nahrady);
+    }
     var vysl = { dny: dnyZpet, souhrn: souhrn };
     if (rezZmena) vysl.rezMesic = _dmRezMesic(ssH, payload.mesic);   // jinak si klient nechá svoje
     return vysl;

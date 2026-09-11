@@ -67,10 +67,12 @@ function _dsStatusyZAplikace() {
     var ab = String(s.abbreviation || '').trim();
     if (!ab || videno[ab]) return;
     videno[ab] = 1;
+    // Citlivý / Náhrada aplikace nezná — vyplní se ručně v listu Statusy.
     out.push([
       ab, s.name || '', _dsHex(s.color, '#94a3b8'), _dsHex(s.text_color, '#ffffff'),
       String(s.is_vacation) === 'true' ? 'ano' : '',
       String(s.allows_desk_reservation) === 'true' ? 'ano' : '',
+      '', '',
       String(s.active) === 'false' ? '' : 'ano'
     ]);
   });

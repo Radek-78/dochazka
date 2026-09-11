@@ -48,6 +48,13 @@ function _dsRole(v) {
   return R_UZIV;
 }
 
+/** Je pozice jedna ze seznamu? (bez ohledu na velikost písmen a okrajové mezery) */
+function _dsPoziceJe(pozice, seznam) {
+  var p = String(pozice || '').trim().toLowerCase();
+  if (!p) return false;
+  return (seznam || []).some(function (x) { return String(x).trim().toLowerCase() === p; });
+}
+
 function _dsJmeno(u) {
   return ((u.last_name || '') + ' ' + (u.first_name || '')).trim();
 }

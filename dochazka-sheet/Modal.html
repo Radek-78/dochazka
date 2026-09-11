@@ -226,7 +226,26 @@
       render();
     }
 
-    /** Souhrn dovolené s už promítnutou změnou dne — server ho pak jen zapíše. */
+    function citlivy(ab) {
+      var s = st(ab);
+      return !!(s && s.citlivy && s.nahrada && s.nahrada !== s.abbr);
+    }
+    /** Měl ten den citlivý status? Server podle toho pozná, že má list Citlivé uklidit. */
+    function byloCitlive(den) {
+      var d = S.dny.filter(function (x) { return x.den === den; })[0];
+      return !!d && (citlivy(d.dop) || citlivy(d.odp));
+    }
+
+    /** Zkratka tak, jak bude v mřížce — citlivý status je tam nahrazený. */
+    function maska(ab) {
+      var s = st(ab);
+      return (s && s.citlivy && s.nahrada && s.nahrada !== s.abbr) ? s.nahrada : (ab || '');
+    }
+
+    /**
+     * Souhrn dovolené s už promítnutou změnou dne — server ho pak jen zapíše.
+     * Počítá se z MASKOVANÝCH hodnot, ať souhrn odpovídá tomu, co v mřížce stojí.
+     */
     function souhrnPo(den, rezim, dop, odp) {
       var vac = S.init.vacAbbr || [];
       var n = 0;
@@ -237,6 +256,7 @@
           a = rezim === 'CLEAR' ? '' : (dop || '');
           b = full ? '' : (odp || '');
         }
+        a = maska(a); b = maska(b);
         if (full) { if (vac.indexOf(a) !== -1) n += 1; }
         else {
           if (vac.indexOf(a) !== -1) n += 0.5;
@@ -513,6 +533,7 @@
           userId: S.cil.userId, mesic: S.mesic, den: den,
           rezim: rezim, dop: dop, odp: odp, stul: stul,
           row: S.row, souhrn: souhrnPo(den, rezim, dop, odp),
+          byloCitlive: byloCitlive(den),
           maTrvalyStul: maTrvalyStul(), maRezervaci: !!mojeRez(den),
           vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr
         });
@@ -578,6 +599,7 @@
           jenVsedni: document.getElementById('bVsedni').checked,
           rezim: rezim, dop: dop, odp: odp, row: S.row,
           maTrvalyStul: maTrvalyStul(), rezDny: mojeRezDny(),
+          byloCitlive: S.dny.some(function (d) { return citlivy(d.dop) || citlivy(d.odp); }),
           vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr
         });
     }

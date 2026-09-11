@@ -29,6 +29,7 @@ function nactiDochazku() {
   var vacAbbr = _dsCtiStatusy(ss).filter(function (s) { return s.vac; })
     .map(function (s) { return s.abbr; });
   var deskAbbr = _dsDeskAbbr(ss);
+  var nahrady = _dsNahradyZListu(ss);   // do sdílené mřížky smí jen náhrady
 
   var radkaVMesici = {};   // user_id -> { mesic -> row }
   for (var m = 1; m <= 12; m++) {
@@ -58,6 +59,7 @@ function nactiDochazku() {
   }
 
   var podleM = {};   // mesic -> [ {row, den, slot, ab} ]
+  var citliveDny = {};
   zaznamy.forEach(function (a) {
     if (String(a.approved).toLowerCase() === 'rejected') return;
     var datum = String(a.date || '').substring(0, 10);
@@ -68,10 +70,22 @@ function nactiDochazku() {
     if (!row) return;
     var ab = abbr[String(a.status_id).trim()];
     if (!ab) return;
+    var den = parseInt(datum.substring(8, 10), 10);
+    var slot = String(a.slot || 'ALL_DAY').toUpperCase();
     (podleM[mm] = podleM[mm] || []).push({
-      row: row, den: parseInt(datum.substring(8, 10), 10),
-      slot: String(a.slot || 'ALL_DAY').toUpperCase(), ab: ab
+      row: row, den: den, slot: slot, ab: _dsMaska(nahrady, ab)
     });
+    if (nahrady[ab]) {                       // skutečná zkratka mimo mřížku
+      var k = uid + '|' + mm + '|' + den;
+      var e = citliveDny[k] || (citliveDny[k] = { uid: uid, mesic: mm, den: den, dop: '', odp: '' });
+      if (slot === 'PM') e.odp = ab; else e.dop = ab;
+    }
+  });
+
+  var klice = Object.keys(citliveDny);
+  klice.forEach(function (k) {
+    var e = citliveDny[k];
+    _dmZapisCitlive(ss, e.uid, e.mesic, e.den, e.dop, e.odp, nahrady);
   });
 
   var pocet = 0;
@@ -91,6 +105,7 @@ function nactiDochazku() {
   }
 
   ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
+    (klice.length ? 'Citlivých dnů skrytých za náhradu: ' + klice.length + '\n' : '') +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v listu ' + L_STATUSY + ' nemá nikdo „Vyžaduje stůl")') + '\n' +
     'Kancelářských dnů bez rezervace (červený rámeček): ' + zvyrazneno + '\n\n' +
     'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');

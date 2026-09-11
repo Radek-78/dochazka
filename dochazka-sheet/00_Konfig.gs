@@ -79,6 +79,7 @@ var L_STOLY = 'Stoly';
 var L_REZERVACE = 'Rezervace';
 var L_MAPA = 'Mapa';
 var L_STATUSY = 'Statusy';
+var L_CITLIVE = 'Citlivé';
 var L_CACHE_PREFIX = 'Z_';
 
 var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Role', 'Od', 'Do', 'user_id'];
@@ -95,7 +96,17 @@ var R_UZIV = 'uživatel', R_AL = 'AL', R_WGL = 'WGL', R_SPRAVCE = 'správce';
 // (jména se mohou shodovat). Řádek/Sloupec jsou pozice stolu v mapě (0-based).
 // Oba skryté sloupce (cell_id, trvale_uid) jsou na konci.
 var DS_STOLY_HLAVICKA = ['Stůl', 'Trvale (jméno)', 'Aktivní', 'Řádek', 'Sloupec', 'cell_id', 'trvale_uid'];
-var DS_STATUSY_HLAVICKA = ['Zkratka', 'Název', 'Barva', 'Barva textu', 'Dovolená', 'Vyžaduje stůl', 'Aktivní'];
+var DS_STATUSY_HLAVICKA = ['Zkratka', 'Název', 'Barva', 'Barva textu', 'Dovolená', 'Vyžaduje stůl',
+  'Citlivý', 'Náhrada', 'Aktivní'];
+// Citlivý status se do měsíčního listu NIKDY nezapíše — v mřížce je jeho Náhrada
+// a skutečná zkratka jde do listu Citlivé. Modal ji dosadí jen tomu, kdo na ni má právo.
+var DS_CITLIVE_HLAVICKA = ['Datum', 'user_id', 'Dopoledne', 'Odpoledne'];
+
+// Rozsah viditelnosti citlivých statusů u role „správce" se řídí jeho pozicí —
+// technický správce se tím sám o sobě k údajům o zdraví nedostane.
+// ⚠ Musí přesně sedět s hodnotami ve sloupci Pozice v listu Uživatelé.
+var DS_POZICE_USEK = ['Vedoucí úseku'];        // vidí jako WGL (všechny)
+var DS_POZICE_ODDELENI = ['Vedoucí oddělení']; // vidí jako AL (své oddělení)
 var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
 
 // ── cache čtení na jeden běh skriptu ────────────────────────────────────

@@ -9,21 +9,40 @@
 // požadavkem. Když služba není zapnutá (nebo list ještě neexistuje), spadne to
 // zpátky na SpreadsheetApp — jen pomaleji.
 
-var DS_LOKALNI_LISTY = [L_UZIV, L_STATUSY, L_STOLY, L_REZERVACE];
+var DS_LOKALNI_LISTY = [L_UZIV, L_STATUSY, L_STOLY, L_REZERVACE, L_CITLIVE];
+
+/**
+ * Vloží do listu sloupec `nazev` hned za `poNazvu`, pokud tam ještě není.
+ * `hlav` je pole názvů sloupců a průběžně se aktualizuje.
+ * Vrací 1-based index nového sloupce, nebo 0 když se nic nedělalo.
+ */
+function _dsPridejSloupec(sh, hlav, nazev, poNazvu) {
+  if (hlav.indexOf(nazev) !== -1) return 0;
+  var po = hlav.indexOf(poNazvu);
+  if (po === -1) return 0;                   // neznámý formát, nech být
+  sh.insertColumnAfter(po + 1);
+  sh.getRange(1, po + 2).setValue(nazev).setFontWeight('bold').setBackground('#f1f5f9');
+  hlav.splice(po + 1, 0, nazev);
+  return po + 2;
+}
 
 /** { názevListu: 2D pole včetně hlavičky } pro všechny pomocné listy najednou. */
 function _dsCtiListyDavkove(ss, nazvy) {
   var out = {};
-  if (_dsMaSheetsApi()) {
+  // batchGet spadne na CELÉM požadavku, když jediný list neexistuje → ptej se
+  // jen na ty, co v sešitu opravdu jsou (typicky před prvním „Postavit listy").
+  var existuji = nazvy.filter(function (n) { return !!ss.getSheetByName(n); });
+  if (existuji.length && _dsMaSheetsApi()) {
     try {
       var odp = Sheets.Spreadsheets.Values.batchGet(ss.getId(), {
-        ranges: nazvy.map(function (n) { return "'" + String(n).replace(/'/g, "''") + "'"; }),
+        ranges: existuji.map(function (n) { return "'" + String(n).replace(/'/g, "''") + "'"; }),
         valueRenderOption: 'UNFORMATTED_VALUE',
         dateTimeRenderOption: 'SERIAL_NUMBER'
       });
-      (odp.valueRanges || []).forEach(function (vr, i) { out[nazvy[i]] = vr.values || []; });
+      (odp.valueRanges || []).forEach(function (vr, i) { out[existuji[i]] = vr.values || []; });
+      nazvy.forEach(function (n) { if (!out[n]) out[n] = []; });
       return out;
-    } catch (e) { out = {}; }     // chybějící list / vypnutá služba → klasická cesta
+    } catch (e) { out = {}; }     // vypnutá služba → klasická cesta
   }
   nazvy.forEach(function (n) {
     var sh = ss.getSheetByName(n);
@@ -47,6 +66,7 @@ function _dsNactiZdroj() {
   _dsSeedStoly(ss);                        // vytvoří list Stoly jen pokud chybí
   _dsListStatusy(ss);                      // vytvoří list Statusy jen pokud chybí
   _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
+  _dsListCitlive(ss);                      // skrytý list se skutečnými citlivými statusy
 
   var shU = ss.getSheetByName(L_UZIV);
   if (shU) _dsUpgradeUzivHlavicku(shU);    // doplní chybějící sloupce (Pozice, Role)
@@ -62,6 +82,7 @@ function _dsNactiZdroj() {
   _dsListMapa(ss);                         // náhledová mapa stolů (vždy přegeneruje)
 
   var statusy = _dsCtiStatusy(ss);
+  _dsNahradyZListu(ss);                    // obnoví sdílenou mapu citlivých statusů
   if (statusy.length === 0) {
     throw new Error('List ' + L_STATUSY + ' je prázdný.\n\nDoplň statusy ručně, nebo je jednorázově natáhni: ' +
       '📋 Docházka → 🧳 Z aplikace → Naplnit listy z aplikace.');
@@ -86,9 +107,11 @@ function _dsListStatusy(ss, radky) {
     sh = ss.insertSheet(L_STATUSY, Math.min(3, ss.getSheets().length));
     sh.getRange(1, 1, 1, W).setValues([DS_STATUSY_HLAVICKA])
       .setFontWeight('bold').setBackground('#f1f5f9');
-    [80, 220, 90, 100, 80, 110, 70].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
+    [80, 220, 90, 100, 80, 110, 80, 90, 70].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
     sh.setFrozenRows(1);
     _dsFont(sh);
+  } else {
+    _dsUpgradeStatusyHlavicku(sh);
   }
   if (radky && radky.length) {
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
@@ -99,6 +122,17 @@ function _dsListStatusy(ss, radky) {
     _dsCacheZrus('STATUSY');
   }
   return sh;
+}
+
+/** Doplní do staršího listu Statusy chybějící sloupce Citlivý a Náhrada. */
+function _dsUpgradeStatusyHlavicku(sh) {
+  var hlav = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+    .map(function (x) { return String(x).trim(); });
+  var a = _dsPridejSloupec(sh, hlav, 'Citlivý', 'Vyžaduje stůl');
+  var b = _dsPridejSloupec(sh, hlav, 'Náhrada', 'Citlivý');
+  if (a) sh.setColumnWidth(a, 80);
+  if (b) sh.setColumnWidth(b, 90);
+  if (a || b) _dsCacheZrus('STATUSY');
 }
 
 /** Statusy z listu Statusy (jen aktivní, bez duplicitních zkratek; cache na jeden běh). */
@@ -117,11 +151,50 @@ function _dsCtiStatusy(ss) {
         color: _dsHex(t.v(x.r, 'Barva'), '#94a3b8'),
         fg: _dsHex(t.v(x.r, 'Barva textu'), '#ffffff'),
         vac: ano(x.r, 'Dovolená'),
-        desk: ano(x.r, 'Vyžaduje stůl')
+        desk: ano(x.r, 'Vyžaduje stůl'),
+        citlivy: ano(x.r, 'Citlivý'),
+        nahrada: String(t.v(x.r, 'Náhrada') || '').trim()
       });
     });
     return out;
   });
+}
+
+/**
+ * { zkratka: náhrada } pro statusy označené jako citlivé.
+ * Citlivý status bez vyplněné náhrady se chová jako necitlivý — radši ať je
+ * v mřížce vidět pravda, než aby zmizel do prázdné buňky.
+ *
+ * Rozhoduje o tom VŽDY server (klient by si mohl říct, že nic citlivé není).
+ * Aby to nestálo čtení listu při každém uložení dne, drží se mapa
+ * v DocumentProperties; obnovuje ji `_dsNahradyZListu` při otevření modalu
+ * a při přestavbě listů. Klient do DocumentProperties nevidí.
+ */
+function _dsNahrady(ss) {
+  return _dsCache('NAHRADY', function () {
+    try {
+      var ulozene = PropertiesService.getDocumentProperties().getProperty('NAHRADY');
+      if (ulozene) return JSON.parse(ulozene);
+    } catch (e) {}
+    return _dsNahradyZListu(ss);
+  });
+}
+
+/** Přečte náhrady z listu Statusy a uloží je pro příští běhy. */
+function _dsNahradyZListu(ss) {
+  var m = {};
+  _dsCtiStatusy(ss).forEach(function (s) {
+    if (s.citlivy && s.nahrada && s.nahrada !== s.abbr) m[s.abbr] = s.nahrada;
+  });
+  try { PropertiesService.getDocumentProperties().setProperty('NAHRADY', JSON.stringify(m)); } catch (e) {}
+  _DS_CACHE['NAHRADY'] = m;
+  return m;
+}
+
+/** Zkratka, jak se má zapsat do sdílené mřížky (citlivá → náhrada). */
+function _dsMaska(nahrady, ab) {
+  var z = String(ab || '').trim();
+  return nahrady[z] || z;
 }
 
 /** Zkratky statusů, které vyžadují rezervaci stolu. */
@@ -477,6 +550,97 @@ function _dsListRezervace(ss) {
   sh.setFrozenRows(1);
   _dsFont(sh);
   return sh;
+}
+
+// ── list Citlivé ─────────────────────────────────────────────────────────
+// Skutečné zkratky citlivých statusů. Do měsíčních listů se nikdy nedostanou —
+// tam je jen náhrada. Modal je dosadí jen tomu, kdo na ně má právo.
+// ⚠ Skrytí listu je opatření proti nahlédnutí, ne ochrana: kdo smí sešit
+//   editovat, si ho odkryje. Skutečnou hranici by dalo jen jiné úložiště.
+
+/** Vytvoří skrytý list Citlivé — jen pokud chybí. Vrátí ho. */
+function _dsListCitlive(ss) {
+  var sh = ss.getSheetByName(L_CITLIVE);
+  if (sh) return sh;
+  sh = ss.insertSheet(L_CITLIVE);
+  sh.getRange(1, 1, 1, DS_CITLIVE_HLAVICKA.length).setValues([DS_CITLIVE_HLAVICKA])
+    .setFontWeight('bold').setBackground('#f1f5f9');
+  sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');   // datum jako text
+  [110, 110, 100, 100].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
+  sh.setFrozenRows(1);
+  _dsFont(sh);
+  sh.hideSheet();
+  _dsCacheZrus('CITLIVE');
+  return sh;
+}
+
+/**
+ * Celý list Citlivé přečtený jednou za běh.
+ * { rows:[{radek,datum,rok,mesic,den,uid,dop,odp}], volne:[prázdné řádky], dalsi }
+ */
+function _dmCtiCitlive(ss) {
+  return _dsCache('CITLIVE', function () {
+    var t = _dsTabulkaLok(ss, L_CITLIVE);
+    var prazdny = { rows: [], volne: [], dalsi: 2 };
+    if (!t.radky.length || t.H['Datum'] === undefined || t.H['user_id'] === undefined) return prazdny;
+
+    var rows = [], volne = [];
+    t.radky.forEach(function (x) {
+      var d = _dsFmtDatum(t.v(x.r, 'Datum'));
+      var uid = String(t.v(x.r, 'user_id') || '').trim();
+      if (!d || !uid) { volne.push(x.radek); return; }
+      rows.push({
+        radek: x.radek, datum: d,
+        rok: Number(d.substring(0, 4)) || 0,
+        mesic: Number(d.substring(5, 7)) || 0,
+        den: Number(d.substring(8, 10)) || 0,
+        uid: uid,
+        dop: String(t.v(x.r, 'Dopoledne') || '').trim(),
+        odp: String(t.v(x.r, 'Odpoledne') || '').trim()
+      });
+    });
+    return { rows: rows, volne: volne, dalsi: t.data.length + 1 };
+  });
+}
+
+/** Citlivé záznamy jednoho člověka v daném měsíci → { den: {dop, odp} }. */
+function _dmCitliveMesic(ss, userId, mesic) {
+  var out = {};
+  _dmCtiCitlive(ss).rows.forEach(function (r) {
+    if (r.rok !== ROK || r.mesic !== mesic || r.uid !== String(userId)) return;
+    out[r.den] = { dop: r.dop, odp: r.odp };
+  });
+  return out;
+}
+
+/**
+ * Uloží / smaže skutečné statusy jednoho dne. `dop`/`odp` jsou SKUTEČNÉ zkratky;
+ * zapíšou se jen ty citlivé, zbytek se z listu odstraní.
+ * Vrací true, když se listem pohnulo.
+ */
+function _dmZapisCitlive(ss, userId, mesic, den, dop, odp, nahrady) {
+  var cDop = nahrady[String(dop || '').trim()] ? String(dop).trim() : '';
+  var cOdp = nahrady[String(odp || '').trim()] ? String(odp).trim() : '';
+  var stav = _dmCtiCitlive(ss);
+  var datum = ROK + '-' + ('0' + mesic).slice(-2) + '-' + ('0' + den).slice(-2);
+  var moje = stav.rows.filter(function (r) {
+    return r.uid === String(userId) && r.datum === datum;
+  })[0];
+
+  if (!cDop && !cOdp) {
+    if (!moje) return false;
+    _dsListCitlive(ss).getRange(moje.radek, 1, 1, 4).clearContent();
+    _dsCacheZrus('CITLIVE');
+    return true;
+  }
+  if (moje && moje.dop === cDop && moje.odp === cOdp) return false;
+
+  var sh = _dsListCitlive(ss);
+  var cil = moje ? moje.radek : (stav.volne.length ? stav.volne[0] : stav.dalsi);
+  sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']])
+    .setValues([[datum, userId, cDop, cOdp]]);
+  _dsCacheZrus('CITLIVE');
+  return true;
 }
 
 /** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
