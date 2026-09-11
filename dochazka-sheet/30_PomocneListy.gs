@@ -643,6 +643,81 @@ function _dmZapisCitlive(ss, userId, mesic, den, dop, odp, nahrady) {
   return true;
 }
 
+/**
+ * Projde měsíční listy a už zapsané citlivé statusy v nich nahradí náhradou;
+ * skutečné zkratky přesune do listu Citlivé.
+ *
+ * Maskování při zápisu platí jen pro nově zadávané dny, takže tohle je způsob,
+ * jak srovnat historii — typicky po označení statusu jako citlivého.
+ * Opakované spuštění nic nezkazí: v mřížce už žádná citlivá zkratka není.
+ * Vrací { dnu, mesicu }.
+ */
+function _dsZamaskujListy(ss) {
+  var vysl = { dnu: 0, mesicu: 0 };
+  var nahrady = _dsNahradyZListu(ss);
+  if (!Object.keys(nahrady).length) return vysl;
+
+  // stávající záznamy, ať se nezdvojí
+  var mapa = {};
+  _dmCtiCitlive(ss).rows.forEach(function (r) {
+    mapa[r.uid + '|' + r.datum] = { datum: r.datum, uid: r.uid, dop: r.dop, odp: r.odp };
+  });
+
+  var deskAbbr = _dsDeskAbbr(ss);
+  for (var m = 1; m <= 12; m++) {
+    var sh = ss.getSheetByName(_dsNazevMesice(m));
+    if (!sh) continue;
+    var N = _dmDniVMesici(m);
+    var prvni = DS_PRVNI_DATA_RADEK;
+    var n = sh.getLastRow() - prvni + 1;
+    if (n < 1) continue;
+
+    var uids = sh.getRange(prvni, _gUid(N), n, 1).getValues();
+    // sloupec A nese formátované jméno — psát smíme jen do oblasti dnů
+    var rng = sh.getRange(prvni, DS_DEN1_COL, n, N * DS_DEN_KROK);
+    var grid = rng.getValues();
+    var merged = {};
+    rng.getMergedRanges().forEach(function (mr) { merged[mr.getRow() + '_' + mr.getColumn()] = 1; });
+
+    var zmena = false;
+    for (var i = 0; i < n; i++) {
+      var uid = String(uids[i][0] || '').trim();
+      if (!uid) continue;                                  // mezera / nadpis
+      for (var d = 1; d <= N; d++) {
+        var idx = (d - 1) * DS_DEN_KROK;
+        var full = !!merged[(prvni + i) + '_' + _gDop(d)];
+        var vDop = String(grid[i][idx] || '').trim();
+        var vOdp = full ? '' : String(grid[i][idx + 1] || '').trim();
+        if (!nahrady[vDop] && !nahrady[vOdp]) continue;
+
+        var datum = ROK + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+        var k = uid + '|' + datum;
+        var e = mapa[k] || (mapa[k] = { datum: datum, uid: uid, dop: '', odp: '' });
+        if (nahrady[vDop]) { e.dop = vDop; grid[i][idx] = nahrady[vDop]; }
+        if (nahrady[vOdp]) { e.odp = vOdp; grid[i][idx + 1] = nahrady[vOdp]; }
+        zmena = true;
+        vysl.dnu++;
+      }
+    }
+    if (zmena) {
+      rng.setValues(grid);
+      _dmObnovStulyList(sh, m, deskAbbr, _dmRezMesic(ss, m));   // náhrada může mít jiná pravidla stolu
+      vysl.mesicu++;
+    }
+  }
+
+  var radky = Object.keys(mapa).map(function (k) { return mapa[k]; })
+    .filter(function (e) { return e.dop || e.odp; })
+    .sort(function (a, b) { return a.datum < b.datum ? -1 : (a.datum > b.datum ? 1 : 0); })
+    .map(function (e) { return [e.datum, e.uid, e.dop, e.odp]; });
+
+  var shC = _dsListCitlive(ss);
+  if (shC.getLastRow() > 1) shC.getRange(2, 1, shC.getLastRow() - 1, 4).clearContent();
+  if (radky.length) shC.getRange(2, 1, radky.length, 4).setNumberFormat('@').setValues(radky);
+  _dsCacheZrus('CITLIVE');
+  return vysl;
+}
+
 /** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
 function _dsCtiStoly(ss) {
   return _dsCache('STOLY', function () {

@@ -22,6 +22,7 @@ function onOpen() {
       .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
       .addSeparator()
       .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
+      .addItem('🔒 Skrýt citlivé statusy v listech', 'skryjCitlive')
       .addSeparator()
       // Jediná část menu, která sahá do sešitů živé aplikace. Až aplikace skončí,
       // smaže se tohle podmenu spolu s 20_Zdroje.gs a 60_Import.gs.
@@ -191,6 +192,38 @@ function smazCacheZdroju() {
   });
   _dsCacheZrus();
   SpreadsheetApp.getUi().alert('Smazáno ' + n + ' cache listů. Zdroje se teď čtou živě z CORE.');
+}
+
+/**
+ * Přepíše už zapsané citlivé statusy náhradou. Maskování při zápisu se týká jen
+ * nových dnů, takže tímhle se srovná historie — po označení statusu jako
+ * citlivého, po importu ze starých dat apod.
+ */
+function skryjCitlive() {
+  _dmVyzadujSpravce();
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var nahrady = _dsNahradyZListu(ss);
+  var zkratky = Object.keys(nahrady);
+  if (!zkratky.length) {
+    ui.alert('V listu ' + L_STATUSY + ' není žádný status, který má „Citlivý" = ano ' +
+      'a zároveň vyplněnou „Náhradu".\n\nDoplň to a spusť znovu.');
+    return;
+  }
+  if (ui.alert('Přepsat v měsíčních listech tyhle statusy náhradou?\n\n' +
+    zkratky.map(function (z) { return '   ' + z + '   →   ' + nahrady[z]; }).join('\n') +
+    '\n\nSkutečné zkratky se přesunou do skrytého listu ' + L_CITLIVE +
+    ' a v modalu je uvidí jen ten, kdo na ně má právo.\nProjde se všech 12 měsíců, chvíli to potrvá.',
+    ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var v = _dsZamaskujListy(ss);
+  ui.alert('Hotovo.\n\n' +
+    'Přepsaných dnů: ' + v.dnu + '\n' +
+    'Dotčených měsíců: ' + v.mesicu + '\n\n' +
+    (v.dnu === 0
+      ? 'V mřížce žádná z těch zkratek nebyla — buď už je skrytá, nebo se zatím nezadala.'
+      : 'Skutečné zkratky jsou teď jen v listu ' + L_CITLIVE + '.'));
 }
 
 /** Hláška o stolech, u kterých se jméno trvalého majitele nedá jednoznačně přiřadit. */

@@ -108,6 +108,12 @@ nejde, takže jediná možnost je nedat ji do sdílené mřížky vůbec.
 Pozice se porovnávají s `DS_POZICE_USEK` / `DS_POZICE_ODDELENI` v `00_Konfig.gs` —
 **musí přesně sedět s hodnotami ve sloupci `Pozice`.**
 
+**Maskování při zápisu platí jen pro nově zadávané dny.** Na to, co už v listech
+je, se pouští jednorázově **🔒 Skrýt citlivé statusy v listech** (`skryjCitlive`) —
+projde 12 měsíců, v mřížce zkratku nahradí a skutečnou přesune do `Citlivé`.
+Spouštěj po každém označení dalšího statusu jako citlivého; opakované spuštění
+nic nezkazí.
+
 Co je citlivé, rozhoduje **vždy server** (`_dsNahrady`); klient by si mohl říct,
 že nic citlivé není. Mapa se drží v `DocumentProperties`, aby uložení dne
 nestálo čtení listu, a obnovuje ji `_dsNahradyZListu` při otevření modalu a při
