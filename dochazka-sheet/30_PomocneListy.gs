@@ -63,6 +63,7 @@ function _dsTabulkaLok(ss, nazev) {
  */
 function _dsNactiZdroj() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  _dsListNastaveni(ss);                    // rok sešitu (zdroj pravdy pro ROK)
   _dsSeedStoly(ss);                        // vytvoří list Stoly jen pokud chybí
   _dsListStatusy(ss);                      // vytvoří list Statusy jen pokud chybí
   _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
@@ -92,6 +93,78 @@ function _dsNactiZdroj() {
     vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
     deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; })
   };
+}
+
+// ── list Nastavení ───────────────────────────────────────────────────────
+
+/**
+ * Zajistí list Nastavení s rokem sešitu. S `rok` ho nastaví (to dělá příprava
+ * nového roku), bez něj jen doplní chybějící list s aktuální hodnotou.
+ * Umí pracovat i nad CIZÍM sešitem — proto bere `ss` a nesahá na globální ROK.
+ */
+function _dsListNastaveni(ss, rok) {
+  var sh = ss.getSheetByName(L_NASTAVENI);
+  if (!sh) {
+    sh = ss.insertSheet(L_NASTAVENI);
+    sh.getRange(1, 1, 1, 2).setValues([DS_NASTAVENI_HLAVICKA])
+      .setFontWeight('bold').setBackground('#f1f5f9');
+    sh.setColumnWidth(1, 140);
+    sh.setColumnWidth(2, 220);
+    sh.setFrozenRows(1);
+    _dsFont(sh);
+  }
+
+  var radek = 0;
+  if (sh.getLastRow() > 1) {
+    var data = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim() === 'Rok') { radek = i + 2; break; }
+    }
+  }
+  if (!radek) radek = Math.max(2, sh.getLastRow() + 1);
+
+  if (rok || !_dsPlatnyRok(sh.getRange(radek, 2).getValue())) {
+    sh.getRange(radek, 1, 1, 2)
+      .setValues([['Rok', _dsPlatnyRok(rok) ? Number(rok) : new Date().getFullYear()]]);
+    sh.getRange(radek, 3).setValue('Rok, pro který je tenhle sešit. Měň jen přes menu.')
+      .setFontColor('#94a3b8').setFontSize(10);
+  }
+  return sh;
+}
+
+/**
+ * Připraví KOPII sešitu na jiný rok: nastaví rok, vyhodí data vázaná na starý
+ * rok a smaže měsíční listy, aby se v kopii postavily načisto.
+ *
+ * Měsíce se tady záměrně nestaví — stavěly by se podle roku TOHOHLE skriptu,
+ * ne podle roku kopie. Postaví si je kopie sama přes „Postavit / obnovit".
+ * Vrací { mesicu, vycisteno:[názvy listů] }.
+ */
+function _dsPripravRok(ss, rok) {
+  _dsListNastaveni(ss, rok);
+
+  var vycisteno = [];
+  [L_REZERVACE, L_CITLIVE].forEach(function (nazev) {
+    var sh = ss.getSheetByName(nazev);
+    if (!sh || sh.getLastRow() < 2) return;
+    sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(1, sh.getLastColumn())).clearContent();
+    vycisteno.push(nazev);
+  });
+
+  var mesicu = 0;
+  for (var m = 1; m <= 12; m++) {
+    var sh2 = ss.getSheetByName(_dsNazevMesice(m));
+    if (!sh2) continue;
+    ss.deleteSheet(sh2);
+    mesicu++;
+  }
+  return { mesicu: mesicu, vycisteno: vycisteno };
+}
+
+/** Název souboru pro jiný rok: „Docházka DL 2026" → „Docházka DL 2027". */
+function _dsNazevProRok(nazev, rok) {
+  var bez = String(nazev || '').replace(/(19|20)\d\d/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return (bez || 'Docházka') + ' ' + rok;
 }
 
 // ── list Statusy ─────────────────────────────────────────────────────────

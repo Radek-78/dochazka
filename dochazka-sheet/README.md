@@ -47,12 +47,40 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 | `Pořadí` | řazení: jména nahoru, pořadí oddělení, pořadí týmů |
 | `Statusy` | `Zkratka · Název · Barva · Barva textu · Dovolená · Vyžaduje stůl · Citlivý · Náhrada · Aktivní` |
 | `Citlivé` | skrytý: `Datum · user_id · Dopoledne · Odpoledne` — skutečné zkratky citlivých statusů |
+| `Nastavení` | `Klíč · Hodnota` — zatím jen `Rok`, pro který je sešit |
 | `Stoly` | `Stůl · Trvale (jméno) · Aktivní · Řádek · Sloupec · cell_id · trvale_uid` |
 | `Rezervace` | `Datum · Stůl · Jméno · user_id` |
 | `Mapa` | jen náhled — přegeneruje se ze `Stoly` (podle `Řádek`/`Sloupec`) |
 
 `Řádek`/`Sloupec` jsou 0-based pozice v mapě; stůl s prázdnou pozicí se v mapě
 nekreslí, ale rezervovat se dá. Rozměry mapy se dopočtou z nejvyšší pozice.
+
+## Rok sešitu a nový rok
+
+`ROK` je **uložená hodnota** (list `Nastavení`, řádek `Rok`), ne
+`new Date().getFullYear()`. Jinak by se sešit 1. ledna sám přepnul na nový rok,
+měsíční listy by se přestavěly na jiné dny v týdnu a loňská docházka by se
+rozsypala. Takhle zůstane loňský sešit loňským — archivem.
+
+`_dsRok()` cachuje hodnotu do `DocumentProperties` jako `"<rok>|<id sešitu>"`.
+Kopie sešitu má jiné ID, takže si rok přečte z listu znovu a **sama se opraví**
+i v případě, že by se properties zkopírovaly.
+
+**📆 Vytvořit sešit pro nový rok** (`vytvorSesitProRok`, jen správce):
+
+1. Zkopíruje soubor přes `DriveApp` do stejné složky — **jedině tak se
+   zkopíruje i tenhle bound skript**, takže kopie rovnou funguje.
+2. Přenese sdílení (editory i prohlížeče).
+3. `_dsPripravRok` v kopii nastaví rok, vyčistí `Rezervace` a `Citlivé`
+   a smaže měsíční listy.
+4. Měsíce si postaví **kopie sama** přes 🔄 — stavěly by se jinak podle roku
+   toho skriptu, co kopii vyrábí.
+
+Podpisy fast-path (`PODPIS_<m>`) řešit netřeba — rok je součástí hashe, takže
+kopie se přestaví i kdyby se properties přenesly.
+
+> ⚠ `DriveApp` znamená **oprávnění k Disku**. Po nasazení se všem uživatelům
+> jednou objeví obrazovka se schvalováním přístupu.
 
 ## Role
 

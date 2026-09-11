@@ -26,6 +26,8 @@ function onOpen() {
       .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
       .addItem('🔒 Skrýt citlivé statusy v listech', 'skryjCitlive')
       .addSeparator()
+      .addItem('📆 Vytvořit sešit pro nový rok', 'vytvorSesitProRok')
+      .addSeparator()
       // Jediná část menu, která sahá do sešitů živé aplikace. Až aplikace skončí,
       // smaže se tohle podmenu spolu s 20_Zdroje.gs a 60_Import.gs.
       .addSubMenu(ui.createMenu('🧳 Z aplikace (jednorázově)')
@@ -266,6 +268,58 @@ function skryjCitlive() {
       : 'Skutečné zkratky jsou teď jen v listu ' + L_CITLIVE + '.'));
 }
 
+/**
+ * Vytvoří kopii celého sešitu pro jiný rok.
+ *
+ * Kopíruje se přes Disk, protože jedině tak se s sešitem zkopíruje i tenhle
+ * skript — nový sešit tedy rovnou funguje. Lidi, pořadí, statusy, stoly a mapa
+ * se přenesou; rezervace, citlivé záznamy a měsíční listy ne, ty jsou vázané
+ * na rok. Měsíce si kopie postaví sama (podle SVÉHO roku).
+ */
+function vytvorSesitProRok() {
+  _dmVyzadujSpravce();
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var odp = ui.prompt('Nový sešit pro rok',
+    'Tenhle sešit je pro rok ' + ROK + '. Pro který rok vytvořit nový?',
+    ui.ButtonSet.OK_CANCEL);
+  if (odp.getSelectedButton() !== ui.Button.OK) return;
+
+  var zadano = String(odp.getResponseText()).trim();
+  if (!_dsPlatnyRok(zadano)) { ui.alert('„' + zadano + '" nevypadá jako rok.'); return; }
+  var rok = Number(zadano);
+  if (rok === ROK) { ui.alert('Tenhle sešit je pro rok ' + ROK + ' už teď.'); return; }
+
+  var nazev = _dsNazevProRok(ss.getName(), rok);
+  var zdroj = DriveApp.getFileById(ss.getId());
+  var lidi = zdroj.getEditors().length + zdroj.getViewers().length;
+
+  if (ui.alert('Vytvořit „' + nazev + '"?\n\n' +
+    'PŘENESE SE: ' + [L_UZIV, L_PORADI, L_STATUSY, L_STOLY, L_MAPA].join(', ') + ' a tenhle skript.\n' +
+    'NEPŘENESE SE: docházka, ' + L_REZERVACE + ', ' + L_CITLIVE + ' — to je vázané na rok.\n\n' +
+    'Sdílení se zkopíruje taky (' + lidi + ' lidí). Původní sešit zůstane beze změny.',
+    ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var slozky = zdroj.getParents();
+  var kopie = slozky.hasNext() ? zdroj.makeCopy(nazev, slozky.next()) : zdroj.makeCopy(nazev);
+
+  var neprosli = 0;
+  zdroj.getEditors().forEach(function (u) { try { kopie.addEditor(u); } catch (e) { neprosli++; } });
+  zdroj.getViewers().forEach(function (u) { try { kopie.addViewer(u); } catch (e) { neprosli++; } });
+
+  var v = _dsPripravRok(SpreadsheetApp.open(kopie), rok);
+
+  ui.alert('Hotovo — „' + nazev + '"\n\n' +
+    'Rok nastaven na ' + rok + '.\n' +
+    'Smazáno měsíčních listů: ' + v.mesicu + '\n' +
+    'Vyčištěno: ' + (v.vycisteno.join(', ') || '— nebylo co') + '\n' +
+    (neprosli ? 'Sdílení se nepodařilo předat u ' + neprosli + ' lidí — dořeš ručně.\n' : '') +
+    '\nOtevři nový sešit a spusť v něm 🔄 Postavit / obnovit všechny měsíce.\n' +
+    'Měsíce staví až kopie sama, aby je postavila pro svůj rok.\n\n' +
+    kopie.getUrl());
+}
+
 /** Hláška o stolech, u kterých se jméno trvalého majitele nedá jednoznačně přiřadit. */
 function _dsHlaskaNejasneStoly(nejasne) {
   if (!nejasne || !nejasne.length) return '';
@@ -279,7 +333,7 @@ function vytvorPomocneListy() {
   _dmVyzadujSpravce();
   _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var stav = [L_UZIV, L_PORADI, L_STATUSY, L_STOLY, L_REZERVACE, L_MAPA].map(function (n) {
+  var stav = [L_NASTAVENI, L_UZIV, L_PORADI, L_STATUSY, L_STOLY, L_REZERVACE, L_MAPA].map(function (n) {
     var sh = ss.getSheetByName(n);
     var radku = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
     return (sh ? '✓ ' : '– ') + n + (sh ? '  (' + radku + ' řádků)' : '  chybí');

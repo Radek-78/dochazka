@@ -175,6 +175,9 @@
       <tr><td><code>Citlivé</code> <span class="muted">(skrytý)</span></td>
         <td>skutečné zkratky citlivých statusů</td>
         <td>ne</td></tr>
+      <tr><td><code>Nastavení</code></td>
+        <td>rok, pro který je tenhle sešit</td>
+        <td>jen přes menu</td></tr>
     </table>
     <div class="box">
       Datum <b>Do</b> v listu <code>Uživatelé</code> znamená odchod — od dalšího
@@ -230,10 +233,27 @@
       <tr><td>🔒 Skrýt citlivé statusy v listech</td>
         <td>projde 12 měsíců a už zapsané citlivé statusy nahradí</td>
         <td><b>po každém označení dalšího statusu jako citlivého</b></td></tr>
+      <tr><td>📆 Vytvořit sešit pro nový rok</td>
+        <td>vyrobí kopii celého sešitu pro jiný rok — lidi, pořadí, statusy,
+          stoly a mapu přenese, docházku a rezervace ne</td>
+        <td>na konci roku, když se připravuje ten další</td></tr>
       <tr><td>🧳 Z aplikace</td>
         <td>jednorázové naplnění listů a import historie ze staré appky</td>
         <td>jen při prvním nasazení</td></tr>
     </table>
+
+    <h3>Nový rok</h3>
+    <p>Rok sešitu je <b>uložený</b> v listu <code>Nastavení</code>, neodvozuje se
+      z kalendáře. Díky tomu se sešit 1. ledna sám nepřepne a loňský zůstane
+      loňským — archivem.</p>
+    <ol>
+      <li><b>📆 Vytvořit sešit pro nový rok</b> → zadáš rok. Vznikne kopie ve
+        stejné složce, se stejným sdílením.</li>
+      <li>Otevřeš novou kopii a spustíš v ní <b>🔄 Postavit / obnovit všechny
+        měsíce</b>. Měsíce staví až kopie sama, aby je postavila pro svůj rok.</li>
+      <li>Zkontroluješ <code>Uživatelé</code> — kdo odešel, má datum <b>Do</b>
+        a v mřížce se už neobjeví.</li>
+    </ol>
     <div class="box warn">
       Maskování citlivých statusů platí <b>jen pro nově zadávané dny</b>.
       Historii srovná až <b>🔒 Skrýt citlivé statusy v listech</b>.

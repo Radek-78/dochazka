@@ -47,7 +47,6 @@
 var ZDROJ_CORE_ID = '13RKMeOxnXVsJ7omEVElPP2BCJe5_bqtFYklbmE5YZ6g';
 var ZDROJ_TRANSACTION_ID = '1gJsTyi8r0yKaJ1ODOIT9x9XM6Dvdc8rKf1QucYLwBB0';   // pro "Načíst docházku z aplikace"
 var USEK_NAZEV = 'DL Plánování a řízení zásob';
-var ROK = new Date().getFullYear();
 
 var DS_FONT = 'Lidl Font Cond Pro';
 // Vzhled chipu statusu v mřížce: 0 = plná barva statusu + bílý text,
@@ -80,7 +79,54 @@ var L_REZERVACE = 'Rezervace';
 var L_MAPA = 'Mapa';
 var L_STATUSY = 'Statusy';
 var L_CITLIVE = 'Citlivé';
+var L_NASTAVENI = 'Nastavení';
 var L_CACHE_PREFIX = 'Z_';
+var DS_NASTAVENI_HLAVICKA = ['Klíč', 'Hodnota'];
+
+// ── rok sešitu ───────────────────────────────────────────────────────────
+// Rok je ULOŽENÝ, ne dopočítaný z hodin. Jinak by se sešit 1. ledna sám
+// „přepnul" na nový rok a loňská docházka by se rozsypala do jiných dnů
+// v týdnu. Díky tomu je taky loňský sešit napořád loňský — archiv.
+//
+// Zdroj pravdy je list Nastavení, řádek „Rok". Hodnota se cachuje do
+// DocumentProperties spolu s ID sešitu: kopie sešitu má jiné ID, takže si
+// rok přečte z listu znovu a sama se opraví.
+var _DS_ROK = null;
+
+function _dsPlatnyRok(v) {
+  var n = Number(v);
+  return n >= 2000 && n <= 2100;
+}
+
+function _dsRok() {
+  if (_DS_ROK) return _DS_ROK;
+  var letos = new Date().getFullYear();
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var props = PropertiesService.getDocumentProperties();
+    var kus = String(props.getProperty('ROK') || '').split('|');
+    if (kus.length === 2 && kus[1] === ss.getId() && _dsPlatnyRok(kus[0])) {
+      return (_DS_ROK = Number(kus[0]));
+    }
+    var rok = letos;
+    var sh = ss.getSheetByName(L_NASTAVENI);
+    if (sh && sh.getLastRow() > 1) {
+      var data = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+      for (var i = 0; i < data.length; i++) {
+        if (String(data[i][0]).trim() === 'Rok' && _dsPlatnyRok(data[i][1])) {
+          rok = Number(data[i][1]);
+          break;
+        }
+      }
+    }
+    props.setProperty('ROK', rok + '|' + ss.getId());
+    return (_DS_ROK = rok);
+  } catch (e) {
+    return (_DS_ROK = letos);       // např. jednoduchý trigger bez oprávnění
+  }
+}
+
+var ROK = _dsRok();
 
 var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Role', 'Od', 'Do', 'user_id'];
 
