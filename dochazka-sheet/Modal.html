@@ -82,17 +82,11 @@
     @keyframes sp { to { transform: rotate(360deg); } }
     .busy { opacity: .55; pointer-events: none; }
 
-    .perf { margin-top: 12px; border-top: 1px dashed #e2e8f0; padding-top: 6px; cursor: pointer;
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 10px; line-height: 1.5;
-      color: #94a3b8; white-space: pre-wrap; }
-    .perf b { color: #334155; font-weight: 800; }
-    .perf .hot { color: #b91c1c; font-weight: 800; }
   </style>
 </head>
 <body>
   <div class="stav" id="gstav"></div>
   <div id="app"><div class="msg">Načítám…</div></div>
-  <div class="perf" id="perf" onclick="perfToggle()"></div>
 
   <div class="pick" id="pick">
     <div class="pcard" id="pickCard">
@@ -166,43 +160,6 @@
     var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
-    // ── ⏱ profilace: kde se čeká ─────────────────────────────────────────
-    var PERF = { t0: Date.now(), radky: [], open: false, max: null, cekaniMs: 0 };
-
-    function plog(txt, ms) {
-      var cas = (ms === undefined) ? '        ' : ('     ' + ms).slice(-6) + ' ms';
-      PERF.radky.push(cas + '  ' + txt);
-      if (ms !== undefined && (!PERF.max || ms > PERF.max.ms)) PERF.max = { txt: txt.replace(/^\s+·\s*/, ''), ms: ms };
-      if (window.console && console.log) console.log('[⏱ docházka]' + cas + '  ' + txt);
-      perfRender();
-    }
-    function perfToggle() { PERF.open = !PERF.open; perfRender(); }
-    function perfRender() {
-      var el = document.getElementById('perf');
-      if (!el) return;
-      // „od otevření" obsahuje i čas, kdy se přemýšlelo nad kliknutím — proto zvlášť
-      // i skutečné čekání na server, to je jediné, co jde kódem ovlivnit.
-      var hlavicka = '<b>⏱ čekání na server ' + PERF.cekaniMs + ' ms</b>'
-        + '  ·  od otevření ' + (Date.now() - PERF.t0) + ' ms'
-        + (PERF.max ? '  ·  nejpomalejší: <span class="hot">' + esc(PERF.max.txt) + ' (' + PERF.max.ms + ' ms)</span>' : '');
-      el.innerHTML = hlavicka + (PERF.open
-        ? '\n' + PERF.radky.map(esc).join('\n') + '\n<b>(klikni pro sbalení)</b>'
-        : '  ·  klikni pro detail (' + PERF.radky.length + ' řádků)');
-    }
-    /** Rozepíše jedno kolo klient→server→klient i s kroky ze serveru. */
-    function pserver(nazev, res, tSend) {
-      var celkem = Date.now() - tSend;
-      var s = res && res.log ? res.log : null;
-      PERF.cekaniMs += celkem;
-      plog(nazev + ' — celé kolo', celkem);
-      if (!s) return;
-      var boot = s.boot || 0;
-      plog('   · z toho režie google.script.run (síť + sandbox)', celkem - s.celkem - boot);
-      plog('   · z toho načtení skriptu Apps Scriptem', boot);
-      plog('   · z toho práce serveru', s.celkem);
-      s.kroky.forEach(function (k) { plog('      – ' + k.co, k.ms); });
-    }
-
     // ── stavové řádky (místo je pro ně vyhrazené vždycky) ───────────────
     var DLG = {
       grid: { dialog: null, card: 'app', stav: 'gstav' },
@@ -224,13 +181,8 @@
     }
     function zavri(id) { if (id) document.getElementById(id).classList.remove('on'); }
 
-    plog('boot dialogu Google + načtení HTML modalu',
-      Math.round(window.performance && performance.now ? performance.now() : 0));
-
     bezi(DLG.grid, true, 'Načítám docházku…');
-    var tInit = Date.now();
     google.script.run.withSuccessHandler(onInit).withFailureHandler(fatal).dm_init();
-    plog('odeslán dm_init (uživatel, statusy, stoly, mapa, data měsíce)');
 
     function fatal(e) {
       document.getElementById('app').classList.remove('busy');
@@ -241,7 +193,6 @@
 
     // dm_init vrací i data měsíce, takže hned po prvním kole je co vykreslit
     function onInit(d) {
-      pserver('dm_init', d, tInit);
       S.init = d; S.init.userId = String(d.userId); S.mesic = d.mesic; S.rok = d.rok;
       if (!d.dny) { fatal(d.chybaMesic || 'Měsíc se nepodařilo načíst.'); return; }
       bezi(DLG.grid, false, '');
@@ -251,10 +202,8 @@
     function loadMonth() {
       // mřížka zůstane vidět, jen zšedne — ať je poznat, že se něco děje
       bezi(DLG.grid, true, 'Načítám ' + MES[S.mesic - 1] + ' ' + S.rok + '…');
-      var t = Date.now();
       google.script.run
         .withSuccessHandler(function (m) {
-          pserver('dm_mesic (přepnutí měsíce)', m, t);
           bezi(DLG.grid, false, '');
           onMonth(m);
         })
@@ -314,7 +263,6 @@
     function st(ab) { var a = S.init.statusy.filter(function (x) { return x.abbr === ab; }); return a.length ? a[0] : null; }
 
     function render() {
-      var tR = Date.now();
       var h = '';
       h += '<div class="hdr"><div class="who">' + esc(S.init.jmeno) + ' &middot; ' + esc(S.init.usek) + '</div>'
         + '<div class="nav"><button onclick="chgMonth(-1)">&#9664;</button>'
@@ -339,7 +287,6 @@
         + '<div style="display:flex;gap:8px"><button class="btn ghost" onclick="openBulk()">Hromadně</button>'
         + '<button class="btn primary" onclick="google.script.host.close()">Hotovo</button></div></div>';
       document.getElementById('app').innerHTML = h;
-      plog('vykreslení mřížky v prohlížeči', Date.now() - tR);
     }
 
     function chip(ab) { var s = st(ab); return '<div class="chip" style="background:' + (s ? s.color : '#e2e8f0') + ';color:' + (s ? s.fg : '#000') + '">' + esc(ab) + '</div>'; }
@@ -349,7 +296,6 @@
 
     // ── picker ──
     function openPick(den) {
-      var tP = Date.now();
       S.den = den;
       var day = S.dny.filter(function (x) { return x.den === den; })[0];
       S.mode = day.full ? 'FULL' : 'HALF';
@@ -361,7 +307,6 @@
       setMode(S.mode);
       updateDeskRow();
       document.getElementById('pick').classList.add('on');
-      plog('otevření výběru statusu pro den ' + den + ' (jen prohlížeč)', Date.now() - tP);
     }
     function closePick() { document.getElementById('pick').classList.remove('on'); }
 
@@ -416,14 +361,12 @@
       document.getElementById('dtitle').textContent = 'Stůl — ' + den + '. ' + MES[S.mesic - 1] + ' ' + S.rok
         + (S.cekaUloz ? '  ·  status ' + (S.cekaUloz.dop || S.cekaUloz.odp) + ' se uloží spolu s volbou stolu' : '');
       bezi(DLG.desk, false, '');
-      var tD = Date.now();
       var m = S.init.mapa;
       document.getElementById('deskTiles').innerHTML =
         (m && m.desks && m.desks.length) ? deskMapHtml(den)
           : (deskListHtml(den) || '<div class="msg">Žádné stoly.</div>');
       closePick();
       document.getElementById('desk').classList.add('on');
-      plog('vykreslení mapy stolů (jen prohlížeč, bez serveru)', Date.now() - tD);
     }
     /** Zavření dialogu stolů: odložený status se uloží bez stolu, ať se neztratí. */
     function closeDesk() {
@@ -441,10 +384,8 @@
       }
       var d = DLG.desk;
       bezi(d, true, stul ? 'Rezervuji stůl ' + stul + '…' : 'Uvolňuji stůl…');
-      var t = Date.now();
       google.script.run
         .withSuccessHandler(function (res) {
-          pserver('dm_stul (' + (stul || 'bez stolu') + ')', res, t);
           S.rezMesic = res.rezMesic;
           bezi(d, false, '');
           zavri('desk');
@@ -521,11 +462,8 @@
       bezi(d, true, doDesk
         ? (stul ? 'Ukládám status a rezervuji stůl ' + stul + '…' : 'Ukládám status…')
         : (rezim === 'CLEAR' ? 'Mažu den ' + den + '…' : 'Ukládám den ' + den + '…'));
-      var t = Date.now();
       google.script.run
         .withSuccessHandler(function (res) {
-          pserver('dm_uloz (' + rezim + ' ' + (dop || '—') + (odp ? '/' + odp : '')
-            + (doDesk ? ', stůl ' + (stul || 'žádný') : '') + ')', res, t);
           for (var i = 0; i < S.dny.length; i++) if (S.dny[i].den === res.den.den) S.dny[i] = res.den;
           S.souhrn = res.souhrn;
           if (res.row) S.row = res.row;
@@ -591,10 +529,8 @@
       var doo = Number(document.getElementById('bDo').value) || S.dny.length;
       var d = DLG.bulk;
       bezi(d, true, (rezim === 'CLEAR' ? 'Mažu dny ' : 'Ukládám dny ') + od + '–' + doo + '…');
-      var t = Date.now();
       google.script.run
         .withSuccessHandler(function (res) {
-          pserver('dm_hromadne (dny ' + od + '–' + doo + ')', res, t);
           S.dny = res.dny; S.souhrn = res.souhrn;
           if (res.rezMesic) S.rezMesic = res.rezMesic;
           bezi(d, false, '');
