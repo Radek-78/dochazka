@@ -14,8 +14,9 @@
     .top .sub { font-size: 11px; color: #cfe3ff; }
     .toc { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; }
     .toc a { color: #fff; text-decoration: none; font-size: 11px; font-weight: 800;
-      padding: 5px 9px; border-radius: 6px 6px 0 0; background: rgba(255, 255, 255, .14); }
+      padding: 5px 9px; border-radius: 6px 6px 0 0; background: rgba(255, 255, 255, .14); cursor: pointer; }
     .toc a:hover { background: rgba(255, 255, 255, .3); }
+    .toc a.act { background: #fff; color: #004fac; }
 
     .kdo { background: #eff6ff; border-bottom: 1px solid #dbeafe; padding: 10px 18px; }
     .kdo b { font-weight: 900; }
@@ -63,15 +64,17 @@
   <div class="top">
     <h1>Docházka — jak to funguje</h1>
     <div class="sub" id="sub"></div>
-    <div class="toc">
-      <a href="#zadavani">Zadávání</a>
-      <a href="#stoly">Stoly</a>
-      <a href="#citlive">Citlivé statusy</a>
-      <a href="#statusy">Statusy</a>
-      <a href="#listy">Listy</a>
-      <a href="#role">Role</a>
-      <a href="#spravce">Pro správce</a>
-      <a href="#problemy">Když něco nesedí</a>
+    <!-- Kotvy řeší JS: kvůli <base target="_top"> by odkaz #… mířil do
+         nadřazeného okna, ne do tohohle rámu, a nic by se nestalo. -->
+    <div class="toc" id="toc">
+      <a href="#zadavani" onclick="return skoc('zadavani')">Zadávání</a>
+      <a href="#stoly" onclick="return skoc('stoly')">Stoly</a>
+      <a href="#citlive" onclick="return skoc('citlive')">Citlivé statusy</a>
+      <a href="#statusy" onclick="return skoc('statusy')">Statusy</a>
+      <a href="#listy" onclick="return skoc('listy')">Listy</a>
+      <a href="#role" onclick="return skoc('role')">Role</a>
+      <a href="#spravce" onclick="return skoc('spravce')">Pro správce</a>
+      <a href="#problemy" onclick="return skoc('problemy')">Když něco nesedí</a>
     </div>
   </div>
 
@@ -272,6 +275,26 @@
 
   <script>
     var K = <?!= KONTEXT ?>;
+
+    /**
+     * Skok na sekci. Nadpis se odsadí o výšku lepivé hlavičky, aby pod ní
+     * nezmizel. Vrací false, ať prohlížeč nezkouší navigovat na kotvu.
+     */
+    function skoc(id) {
+      var el = document.getElementById(id);
+      if (!el) return false;
+      var bar = document.querySelector('.top');
+      var odsazeni = (bar ? bar.getBoundingClientRect().height : 0) + 10;
+      var y = Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - odsazeni);
+      try { window.scrollTo({ top: y, behavior: 'smooth' }); }
+      catch (e) { window.scrollTo(0, y); }
+
+      var odkazy = document.getElementById('toc').getElementsByTagName('a');
+      for (var i = 0; i < odkazy.length; i++) {
+        odkazy[i].className = (odkazy[i].getAttribute('href') === '#' + id) ? 'act' : '';
+      }
+      return false;
+    }
 
     function esc(s) {
       return String(s == null ? '' : s)
