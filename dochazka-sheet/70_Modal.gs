@@ -47,20 +47,15 @@ function _dmJaZListu(ss, email) {
   return me;
 }
 
-/** Smí `ja` zadávat docházku za `cil`? */
-function _dmSmiZa(ja, cil) {
-  if (String(ja.user_id) === String(cil.user_id)) return true;      // sám za sebe vždycky
-  if (ja.role === R_SPRAVCE || ja.role === R_WGL) return true;      // kdokoli
-  if (ja.role === R_AL) return !!ja.oddNazev && ja.oddNazev === cil.oddNazev;
-  return false;
-}
-
 /**
- * Rozsah, ve kterém člověk vidí SKUTEČNÉ citlivé statusy: 'vse' | 'oddeleni' | 'ja'.
- * U role správce nerozhoduje role, ale pozice — technický správce se tím sám
- * o sobě k údajům o zdraví nedostane.
+ * Rozsah, ve kterém člověk smí zadávat docházku a vidět skutečné citlivé
+ * statusy: 'vse' | 'oddeleni' | 'ja'. Jedno pravidlo pro obojí.
+ *
+ * U role správce nerozhoduje role, ale POZICE — role správce je o tom, co smí
+ * v menu (přestavět listy, importovat), ne o přístupu k cizí docházce.
+ * Technický správce, který je řadový zaměstnanec, tak zůstává u své vlastní.
  */
-function _dmRozsahVideni(ja) {
+function _dmRozsah(ja) {
   if (ja.role === R_WGL) return 'vse';
   if (ja.role === R_AL) return 'oddeleni';
   if (ja.role === R_SPRAVCE) {
@@ -70,10 +65,10 @@ function _dmRozsahVideni(ja) {
   return 'ja';
 }
 
-/** Uvidí `ja` skutečné citlivé statusy člověka `cil`? Sám sebe vidí vždycky. */
-function _dmVidiSkutecne(ja, cil) {
-  if (String(ja.user_id) === String(cil.user_id)) return true;
-  var r = _dmRozsahVideni(ja);
+/** Je `cil` v kompetenci `ja`? Platí pro zadávání i pro vidění citlivých statusů. */
+function _dmVKompetenci(ja, cil) {
+  if (String(ja.user_id) === String(cil.user_id)) return true;      // sám za sebe vždycky
+  var r = _dmRozsah(ja);
   if (r === 'vse') return true;
   if (r === 'oddeleni') return !!ja.oddNazev && ja.oddNazev === cil.oddNazev;
   return false;
@@ -85,8 +80,10 @@ function _dmCil(ss, userId) {
   if (!userId || String(userId) === String(ja.user_id)) return ja;
   var cil = _dsCtiUzivatele(ss).filter(function (u) { return String(u.user_id) === String(userId); })[0];
   if (!cil) throw new Error('Uživatel ' + userId + ' není v listu ' + L_UZIV + '.');
-  if (!_dmSmiZa(ja, cil)) {
-    throw new Error('Nemáš oprávnění zadávat docházku za: ' + cil.jmeno + '.\n\nTvoje role: ' + ja.role + '.');
+  if (!_dmVKompetenci(ja, cil)) {
+    throw new Error('Nemáš oprávnění zadávat docházku za: ' + cil.jmeno + '.' +
+      '\n\nTvoje role: ' + ja.role + ', pozice: ' + (ja.pozice || '—') +
+      '  →  rozsah: ' + _dmRozsah(ja) + '.');
   }
   return cil;
 }
@@ -126,7 +123,7 @@ function dm_init() {
 
   // za koho smí zadávat; jen sám za sebe = výběr osoby se v modalu nezobrazí
   var lide = _dsCtiUzivatele(ss)
-    .filter(function (u) { return u.user_id && _dmSmiZa(me, u); })
+    .filter(function (u) { return u.user_id && _dmVKompetenci(me, u); })
     .sort(function (a, b) { return String(a.jmeno).localeCompare(String(b.jmeno), 'cs'); })
     .map(function (u) { return { userId: u.user_id, jmeno: u.jmeno, odd: u.oddNazev }; });
 
@@ -147,7 +144,7 @@ function dm_init() {
 
   var out = {
     rok: ROK, mesic: mesic, userId: me.user_id, jmeno: me.jmeno, usek: USEK_NAZEV,
-    role: me.role, rozsahVideni: _dmRozsahVideni(me), lide: lide,
+    role: me.role, lide: lide,
     statusy: statusy,
     vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
     deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; }),
@@ -173,7 +170,7 @@ function dm_mesic(payload) {
   var cil = _dmCil(ss, payload.userId);
   var b = _dmMujBlok(_dmListMesice(payload.mesic), cil, payload.mesic);
   // v mřížce jsou náhrady; skutečné citlivé statusy dostane jen oprávněný
-  if (_dmVidiSkutecne(_dmJa(ss), cil)) {
+  if (_dmVKompetenci(_dmJa(ss), cil)) {
     _dmDosadCitlive(b.dny, _dmCitliveMesic(ss, cil.user_id, payload.mesic), _dsNahrady(ss));
   }
   return {
@@ -455,7 +452,7 @@ function dm_hromadne(payload) {
     } catch (e) {}
     try { sheet.getRange(mr.row, 1).activate(); } catch (e) {}
     var dnyZpet = _dmDenData(sheet, mr.row, payload.mesic);
-    if (_dmVidiSkutecne(_dmJa(ssH), cil)) {          // v mřížce jsou náhrady
+    if (_dmVKompetenci(_dmJa(ssH), cil)) {          // v mřížce jsou náhrady
       _dmDosadCitlive(dnyZpet, _dmCitliveMesic(ssH, cil.user_id, payload.mesic), nahrady);
     }
     var vysl = { dny: dnyZpet, souhrn: souhrn };

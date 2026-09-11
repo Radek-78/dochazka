@@ -57,12 +57,27 @@ nekreslí, ale rezervovat se dá. Rozměry mapy se dopočtou z nejvyšší pozic
 
 Sloupec `Role` v listu `Uživatelé` (prázdné = `uživatel`):
 
-| role | co smí |
+Role rozhoduje o **dvou nezávislých věcech**:
+
+**1. Co je vidět v menu** (`Role` samotná):
+
+| role | menu |
 |---|---|
-| `uživatel` | jen svoji docházku; v menu má jen „📝 Zadat docházku" |
-| `AL` | + docházku lidí ze **svého oddělení** (výběr osoby v modalu) |
-| `WGL` | + docházku **kohokoli** |
-| `správce` | bez omezení, vidí celé menu (přestavba listů, import z aplikace) |
+| `uživatel`, `AL`, `WGL` | jen „📝 Zadat docházku" |
+| `správce` | + přestavba listů, pomocné listy, import z aplikace |
+
+**2. Čí docházku smí zadávat a u koho vidí skutečné citlivé statusy**
+(`_dmRozsah` → `_dmVKompetenci`) — jedno pravidlo pro zadávání i pro vidění:
+
+| role | rozsah |
+|---|---|
+| `uživatel` | jen sebe |
+| `AL` | své oddělení |
+| `WGL` | všechny |
+| `správce` | **podle sloupce `Pozice`**: `Vedoucí úseku` → všechny, `Vedoucí oddělení` → své oddělení, jinak jen sebe |
+
+Role `správce` je tedy čistě technická — dává přístup k menu, ne k cizí docházce.
+Správce, který je řadový zaměstnanec, zůstává u své vlastní.
 
 Sloupec `Vedoucí` je něco jiného — řídí jen pořadí řádků a oranžové podbarvení.
 
@@ -71,7 +86,7 @@ Sloupec `Vedoucí` je něco jiného — řídí jen pořadí řádků a oranžov
 > pro pohodlí a proti omylům, ne jako zámek.
 
 Identita se **vždy** odvozuje ze `Session.getActiveUser()`, nikdy z toho, co
-pošle klient (`_dmJa` → `_dmCil`). Kdo smí zadávat za koho, řeší `_dmSmiZa`.
+pošle klient (`_dmJa` → `_dmCil`). Kdo smí zadávat za koho, řeší `_dmVKompetenci`.
 Zjištěná identita se ukládá do `UserProperties`, aby každé uložení dne nemuselo
 kvůli kontrole číst list; obnoví se při každém otevření modalu — **změna role se
 tedy projeví až po dalším otevření**.
@@ -98,12 +113,9 @@ do skrytého listu `Citlivé`. Modal ji dosadí jen tomu, kdo na ni má právo.
 Důvod: buňka v Sheetu má jednu hodnotu pro všechny. Vykreslit ji každému jinak
 nejde, takže jediná možnost je nedat ji do sdílené mřížky vůbec.
 
-| kdo | vidí skutečné statusy |
-|---|---|
-| kdokoli | své vlastní |
-| `AL` | + své oddělení |
-| `WGL` | + všechny |
-| `správce` | podle sloupce `Pozice`: `Vedoucí úseku` → jako WGL, `Vedoucí oddělení` → jako AL, jinak jen své |
+Skutečné statusy vidí každý u lidí ve **svém rozsahu** — je to stejné pravidlo
+jako pro zadávání docházky (viz tabulka výše). Kdo je mimo rozsah, není v modalu
+vůbec dosažitelný a v mřížce má jen náhradu.
 
 Pozice se porovnávají s `DS_POZICE_USEK` / `DS_POZICE_ODDELENI` v `00_Konfig.gs` —
 **musí přesně sedět s hodnotami ve sloupci `Pozice`.**
