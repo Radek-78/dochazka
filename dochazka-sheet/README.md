@@ -42,7 +42,7 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 
 | list | co v něm je |
 |---|---|
-| `Uživatelé` | lidé: `Jméno · Oddělení · Tým · Pozice · E-mail · Vedoucí · Od · Do · user_id` |
+| `Uživatelé` | lidé: `Jméno · Oddělení · Tým · Pozice · E-mail · Vedoucí · Role · Od · Do · user_id` |
 | `Pořadí` | řazení: jména nahoru, pořadí oddělení, pořadí týmů |
 | `Statusy` | `Zkratka · Název · Barva · Barva textu · Dovolená · Vyžaduje stůl · Aktivní` |
 | `Stoly` | `Stůl · Trvale (jméno) · Aktivní · Řádek · Sloupec · cell_id · trvale_uid` |
@@ -51,6 +51,33 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 
 `Řádek`/`Sloupec` jsou 0-based pozice v mapě; stůl s prázdnou pozicí se v mapě
 nekreslí, ale rezervovat se dá. Rozměry mapy se dopočtou z nejvyšší pozice.
+
+## Role
+
+Sloupec `Role` v listu `Uživatelé` (prázdné = `uživatel`):
+
+| role | co smí |
+|---|---|
+| `uživatel` | jen svoji docházku; v menu má jen „📝 Zadat docházku" |
+| `AL` | + docházku lidí ze **svého oddělení** (výběr osoby v modalu) |
+| `WGL` | + docházku **kohokoli** |
+| `správce` | bez omezení, vidí celé menu (přestavba listů, import z aplikace) |
+
+Sloupec `Vedoucí` je něco jiného — řídí jen pořadí řádků a oranžové podbarvení.
+
+> ⚠ **Není to bezpečnostní hranice.** Kdo smí sešit editovat, může psát přímo do
+> buněk, otevřít Apps Script nebo si v listu `Uživatelé` přepsat roli. Role jsou
+> pro pohodlí a proti omylům, ne jako zámek.
+
+Identita se **vždy** odvozuje ze `Session.getActiveUser()`, nikdy z toho, co
+pošle klient (`_dmJa` → `_dmCil`). Kdo smí zadávat za koho, řeší `_dmSmiZa`.
+Zjištěná identita se ukládá do `UserProperties`, aby každé uložení dne nemuselo
+kvůli kontrole číst list; obnoví se při každém otevření modalu — **změna role se
+tedy projeví až po dalším otevření**.
+
+Dvě pojistky proti zamčení sešitu (`_dmVyzadujSpravce`): prázdný list `Uživatelé`
+a stav, kdy roli `správce` nemá vůbec nikdo — v obou případech se položky menu
+nezamykají.
 
 ## Jednorázové nastavení
 

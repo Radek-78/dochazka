@@ -39,6 +39,15 @@ function _dsBunka(val, tz) {
   return (val === null || val === undefined) ? '' : String(val).replace(/^'/, '').trim();
 }
 
+/** Hodnota sloupce Role → jedna ze čtyř rolí (co nesedí, je běžný uživatel). */
+function _dsRole(v) {
+  var s = String(v || '').trim().toLowerCase();
+  if (s === 'al') return R_AL;
+  if (s === 'wgl') return R_WGL;
+  if (s === 'správce' || s === 'spravce' || s === 'admin') return R_SPRAVCE;
+  return R_UZIV;
+}
+
 function _dsJmeno(u) {
   return ((u.last_name || '') + ' ' + (u.first_name || '')).trim();
 }

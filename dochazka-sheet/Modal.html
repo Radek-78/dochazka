@@ -9,7 +9,9 @@
     .err { color: #dc2626; font-weight: 700; }
 
     .hdr { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-    .who { font-weight: 800; }
+    .who { font-weight: 800; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .who select { font: inherit; font-weight: 800; max-width: 340px; padding: 3px 6px;
+      border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
     .nav { display: flex; align-items: center; gap: 8px; }
     .nav button { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-weight: 800; }
     .period { font-weight: 900; min-width: 140px; text-align: center; }
@@ -155,7 +157,7 @@
   </div>
 
   <script>
-    var S = { init: null, mesic: null, rok: null, row: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
+    var S = { init: null, cil: null, mesic: null, rok: null, row: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
       bMode: 'FULL', bDop: '', bOdp: '', rezMesic: [], deskDen: null, cekaUloz: null };
     var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
@@ -194,6 +196,7 @@
     // dm_init vrací i data měsíce, takže hned po prvním kole je co vykreslit
     function onInit(d) {
       S.init = d; S.init.userId = String(d.userId); S.mesic = d.mesic; S.rok = d.rok;
+      S.cil = { userId: S.init.userId, jmeno: S.init.jmeno };
       if (!d.dny) { fatal(d.chybaMesic || 'Měsíc se nepodařilo načíst.'); return; }
       bezi(DLG.grid, false, '');
       onMonth(d);
@@ -207,12 +210,19 @@
           bezi(DLG.grid, false, '');
           onMonth(m);
         })
-        .withFailureHandler(fatal)
-        .dm_mesic({ userId: S.init.userId, mesic: S.mesic });
+        .withFailureHandler(function (e) {
+          // chybu ukaž, ale nech hlavičku s výběrem osoby a měsíce funkční
+          bezi(DLG.grid, false, '');
+          S.dny = []; S.rezMesic = []; S.souhrn = 0; S.row = null;
+          S.chyba = e && e.message ? e.message : String(e);
+          render();
+        })
+        .dm_mesic({ userId: S.cil.userId, mesic: S.mesic });
     }
     function onMonth(m) {
       S.dny = m.dny; S.souhrn = m.souhrn; S.row = m.row;
       S.rezMesic = m.rezMesic || [];
+      S.chyba = '';
       render();
     }
 
@@ -237,20 +247,20 @@
     }
 
     function mojeRez(den) {
-      var r = S.rezMesic.filter(function (x) { return x.uid === S.init.userId && x.den === den; })[0];
+      var r = S.rezMesic.filter(function (x) { return x.uid === S.cil.userId && x.den === den; })[0];
       return r ? r.stul : '';
     }
     /** Dny, kdy mám rezervovaný stůl — server tím nemusí číst list Rezervace. */
     function mojeRezDny() {
       return S.rezMesic
-        .filter(function (x) { return x.uid === S.init.userId && x.stul; })
+        .filter(function (x) { return x.uid === S.cil.userId && x.stul; })
         .map(function (x) { return x.den; });
     }
     // Trvalý stůl se páruje přes user_id; jméno je jen záloha pro starší list Stoly.
     function stulJeMuj(d) {
       if (!d) return false;
-      if (d.trvaleUid) return String(d.trvaleUid) === S.init.userId;
-      return !!d.trvale && d.trvale === S.init.jmeno;
+      if (d.trvaleUid) return String(d.trvaleUid) === S.cil.userId;
+      return !!d.trvale && d.trvale === S.cil.jmeno;
     }
     function maTrvalyStul() { return (S.init.stoly || []).some(stulJeMuj); }
     function needsDesk(day) {
@@ -262,12 +272,37 @@
 
     function st(ab) { var a = S.init.statusy.filter(function (x) { return x.abbr === ab; }); return a.length ? a[0] : null; }
 
+    /** Hlavička: jen jméno, nebo výběr osoby, když má člověk právo zadávat i za jiné. */
+    function kdoHtml() {
+      var lide = S.init.lide || [];
+      if (lide.length < 2) return esc(S.cil.jmeno);
+      return '<select id="kdo" onchange="zmenOsobu(this.value)">'
+        + lide.map(function (u) {
+          var popis = u.jmeno + (u.odd ? '  (' + u.odd + ')' : '')
+            + (String(u.userId) === S.init.userId ? '  — já' : '');
+          return '<option value="' + esc(u.userId) + '"'
+            + (String(u.userId) === S.cil.userId ? ' selected' : '') + '>' + esc(popis) + '</option>';
+        }).join('')
+        + '</select>';
+    }
+    function zmenOsobu(uid) {
+      var o = (S.init.lide || []).filter(function (x) { return String(x.userId) === String(uid); })[0];
+      if (!o) return;
+      S.cil = { userId: String(o.userId), jmeno: o.jmeno };
+      loadMonth();
+    }
+
     function render() {
       var h = '';
-      h += '<div class="hdr"><div class="who">' + esc(S.init.jmeno) + ' &middot; ' + esc(S.init.usek) + '</div>'
+      h += '<div class="hdr"><div class="who">' + kdoHtml() + ' &middot; ' + esc(S.init.usek) + '</div>'
         + '<div class="nav"><button onclick="chgMonth(-1)">&#9664;</button>'
         + '<span class="period">' + MES[S.mesic - 1].toUpperCase() + ' ' + S.rok + '</span>'
         + '<button onclick="chgMonth(1)">&#9654;</button></div></div>';
+      if (!S.dny.length) {                     // např. vybraný člověk v tomhle měsíci není
+        h += '<div class="err">' + esc(S.chyba || 'Pro tenhle měsíc nejsou data.') + '</div>';
+        document.getElementById('app').innerHTML = h;
+        return;
+      }
       h += '<div class="grid">';
       DOW.forEach(function (x) { h += '<div class="dow">' + x + '</div>'; });
       var lead = (S.dny[0].dow + 6) % 7;
@@ -321,7 +356,7 @@
     // ── výběr stolu ──
     function deskState(d, den) {
       var b = S.rezMesic.filter(function (r) { return r.den === den && r.stul === d.label; })[0];
-      if (b) return b.uid === S.init.userId ? { s: 'mine', kdo: '' } : { s: 'taken', kdo: b.jmeno };
+      if (b) return b.uid === S.cil.userId ? { s: 'mine', kdo: '' } : { s: 'taken', kdo: b.jmeno };
       if (stulJeMuj(d)) return { s: 'mineperm', kdo: 'tvůj natrvalo' };
       if (d.trvale || d.trvaleUid) return { s: 'perm', kdo: d.trvale || 'natrvalo obsazený' };
       return { s: 'free', kdo: '' };
@@ -393,7 +428,7 @@
         })
         .withFailureHandler(function (e) { chyba(d, e); })
         .dm_stul({
-          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen,
+          userId: S.cil.userId, mesic: S.mesic, den: S.deskDen,
           stul: stul, row: S.row, maTrvalyStul: maTrvalyStul(), deskAbbr: S.init.deskAbbr
         });
     }
@@ -475,7 +510,7 @@
         })
         .withFailureHandler(function (e) { chyba(d, e); })
         .dm_uloz({
-          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: den,
+          userId: S.cil.userId, mesic: S.mesic, den: den,
           rezim: rezim, dop: dop, odp: odp, stul: stul,
           row: S.row, souhrn: souhrnPo(den, rezim, dop, odp),
           maTrvalyStul: maTrvalyStul(), maRezervaci: !!mojeRez(den),
@@ -539,7 +574,7 @@
         })
         .withFailureHandler(function (e) { chyba(d, e); })
         .dm_hromadne({
-          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, odDen: od, doDen: doo,
+          userId: S.cil.userId, mesic: S.mesic, odDen: od, doDen: doo,
           jenVsedni: document.getElementById('bVsedni').checked,
           rezim: rezim, dop: dop, odp: odp, row: S.row,
           maTrvalyStul: maTrvalyStul(), rezDny: mojeRezDny(),

@@ -47,6 +47,19 @@ function _dsLideZAplikace(usek) {
     });
 }
 
+/**
+ * Odhad role podle rolí v aplikaci — jen první nástřel pro list Uživatelé,
+ * dál se role spravuje ručně ve sloupci Role.
+ */
+function _dsRoleZAplikace(u) {
+  var sr = String(u.system_role || '').toUpperCase();
+  var or_ = String(u.org_role || '').toUpperCase();
+  if (sr === 'ADMIN' || sr === 'SUPERADMIN') return R_SPRAVCE;
+  if (or_ === 'SECTION_LEADER' || or_ === 'SECTION_DEPUTY') return R_WGL;
+  if (or_ === 'DEPT_LEADER' || or_ === 'DEPT_DEPUTY') return R_AL;
+  return '';
+}
+
 /** ATTENDANCE_STATUSES → řádky pro lokální list Statusy (bez duplicitních zkratek). */
 function _dsStatusyZAplikace() {
   var videno = {}, out = [];

@@ -81,7 +81,16 @@ var L_MAPA = 'Mapa';
 var L_STATUSY = 'Statusy';
 var L_CACHE_PREFIX = 'Z_';
 
-var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
+var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Role', 'Od', 'Do', 'user_id'];
+
+// ── role (sloupec Role v listu Uživatelé) ───────────────────────────────
+//  uživatel — jen svoje docházka (prázdná buňka = tohle)
+//  AL       — + docházka členů svého oddělení
+//  WGL      — + docházka kohokoli
+//  správce  — bez omezení, vidí celé menu
+//  ⚠ Není to bezpečnostní hranice: kdo smí sešit editovat, dostane se i do
+//    kódu a do listu Uživatelé. Role jsou pro pohodlí a proti omylům.
+var R_UZIV = 'uživatel', R_AL = 'AL', R_WGL = 'WGL', R_SPRAVCE = 'správce';
 // „Trvale (jméno)" je pro člověka, „trvale_uid" je to, podle čeho se opravdu páruje
 // (jména se mohou shodovat). Řádek/Sloupec jsou pozice stolu v mapě (0-based).
 // Oba skryté sloupce (cell_id, trvale_uid) jsou na konci.

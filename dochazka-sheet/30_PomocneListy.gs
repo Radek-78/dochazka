@@ -48,6 +48,9 @@ function _dsNactiZdroj() {
   _dsListStatusy(ss);                      // vytvoří list Statusy jen pokud chybí
   _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
 
+  var shU = ss.getSheetByName(L_UZIV);
+  if (shU) _dsUpgradeUzivHlavicku(shU);    // doplní chybějící sloupce (Pozice, Role)
+
   var lide = _dsCtiUzivatele(ss);          // ZDROJ pravdy o lidech
   if (lide.length === 0) {
     throw new Error('List ' + L_UZIV + ' je prázdný.\n\nDoplň lidi ručně, nebo je jednorázově natáhni: ' +
@@ -137,7 +140,8 @@ function _dsListUzivatele(ss, liveLide) {
   function radekZLive(u) {
     return [
       _dsJmeno(u), u._oddNazev || '', u._tymNazev || '', u._pozice || '', u.email || '',
-      _dsJeVedouci(u) ? 'ano' : '', _dsFmtDatum(u.date_start), _dsFmtDatum(u.date_end), u.user_id || ''
+      _dsJeVedouci(u) ? 'ano' : '', _dsRoleZAplikace(u),
+      _dsFmtDatum(u.date_start), _dsFmtDatum(u.date_end), u.user_id || ''
     ];
   }
   function cs(a, b) { return _dsJmeno(a).localeCompare(_dsJmeno(b), 'cs'); }
@@ -165,35 +169,60 @@ function _dsListUzivatele(ss, liveLide) {
   }
 
   _dsCacheZrus('UZIVATELE');
-  var uidIdx = DS_UZIV_HLAVICKA.indexOf('user_id') + 1;
-  sh.setColumnWidth(1, 180);
-  sh.setColumnWidth(2, 150);
-  sh.setColumnWidth(3, 140);
-  sh.setColumnWidth(4, 170);
-  sh.setColumnWidth(5, 210);
-  sh.setColumnWidth(6, 70);
-  sh.setColumnWidth(7, 95);
-  sh.setColumnWidth(8, 95);
-  sh.hideColumns(uidIdx);
+  // šířky v pořadí DS_UZIV_HLAVICKA: Jméno, Oddělení, Tým, Pozice, E-mail, Vedoucí, Role, Od, Do
+  [180, 150, 140, 170, 210, 70, 90, 95, 95].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
+  sh.hideColumns(DS_UZIV_HLAVICKA.indexOf('user_id') + 1);
+  // Role z nabídky — ať nevznikají překlepy typu „spravce"
+  var roleCol = DS_UZIV_HLAVICKA.indexOf('Role') + 1;
+  sh.getRange(2, roleCol, Math.max(1, sh.getMaxRows() - 1), 1).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList([R_UZIV, R_AL, R_WGL, R_SPRAVCE], true)
+      .setAllowInvalid(true)
+      .setHelpText('Prázdné = ' + R_UZIV)
+      .build());
   sh.setFrozenRows(1);
   _dsFont(sh);
 }
 
-/** Doplní do staršího listu Uživatelé chybějící sloupec Pozice (zachová data). */
+/**
+ * Doplní do staršího listu Uživatelé chybějící sloupce (Pozice, Role) na správné
+ * místo a zachová data. Hodnoty se dopočtou z `liveLide`, když jsou k dispozici
+ * (tj. při jednorázovém naplnění z aplikace); jinak zůstanou prázdné.
+ */
 function _dsUpgradeUzivHlavicku(sh, liveLide) {
   var hlav = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(function (x) { return String(x).trim(); });
-  if (hlav.indexOf('Pozice') !== -1) return;
-  var tymIdx = hlav.indexOf('Tým');
-  if (tymIdx === -1) return;   // neznámý formát, nech být
-  sh.insertColumnAfter(tymIdx + 1);
-  sh.getRange(1, tymIdx + 2).setValue('Pozice').setFontWeight('bold').setBackground('#f1f5f9');
-  var pozByUid = {};
-  liveLide.forEach(function (u) { pozByUid[String(u.user_id)] = u._pozice || ''; });
-  var t = _dsTabulka(sh);
-  var vals = t.radky.map(function (x) {
-    return [pozByUid[String(t.v(x.r, 'user_id') || '').trim()] || ''];
-  });
-  if (vals.length) sh.getRange(2, tymIdx + 2, vals.length, 1).setValues(vals);
+
+  /** Vloží sloupec `nazev` hned za `poNazvu` a vrátí jeho 1-based index (0 = nic nedělal). */
+  function pridej(nazev, poNazvu) {
+    if (hlav.indexOf(nazev) !== -1) return 0;
+    var po = hlav.indexOf(poNazvu);
+    if (po === -1) return 0;                 // neznámý formát, nech být
+    sh.insertColumnAfter(po + 1);
+    sh.getRange(1, po + 2).setValue(nazev).setFontWeight('bold').setBackground('#f1f5f9');
+    hlav.splice(po + 1, 0, nazev);
+    return po + 2;
+  }
+
+  /** Doplní hodnoty do nově vzniklého sloupce podle user_id. */
+  function naplnit(col, hodnota) {
+    if (!col) return;
+    var t = _dsTabulka(sh);
+    var vals = t.radky.map(function (x) {
+      return [hodnota(String(t.v(x.r, 'user_id') || '').trim())];
+    });
+    if (vals.length) sh.getRange(2, col, vals.length, 1).setValues(vals);
+  }
+
+  var podleUid = {};
+  (liveLide || []).forEach(function (u) { podleUid[String(u.user_id)] = u; });
+
+  var colPozice = pridej('Pozice', 'Tým');
+  naplnit(colPozice, function (uid) { return podleUid[uid] ? (podleUid[uid]._pozice || '') : ''; });
+
+  var colRole = pridej('Role', 'Vedoucí');
+  naplnit(colRole, function (uid) { return podleUid[uid] ? _dsRoleZAplikace(podleUid[uid]) : ''; });
+
+  if (colPozice || colRole) _dsCacheZrus('UZIVATELE');
 }
 
 /** Přečte list Uživatelé jako zdroj pravdy (cache na jeden běh, podle názvů sloupců). */
@@ -213,6 +242,7 @@ function _dsCtiUzivatele(ss) {
         pozice: String(t.v(x.r, 'Pozice') || '').trim(),
         email: String(t.v(x.r, 'E-mail') || '').trim(),
         vedouci: /^ano$/i.test(String(t.v(x.r, 'Vedoucí') || '').trim()),
+        role: _dsRole(t.v(x.r, 'Role')),
         od: _dsParseDatum(t.v(x.r, 'Od')),
         do: _dsParseDatum(t.v(x.r, 'Do'))
       });

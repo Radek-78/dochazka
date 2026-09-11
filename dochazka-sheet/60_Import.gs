@@ -8,6 +8,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 function nactiDochazku() {
+  _dmVyzadujSpravce();
   if (ZDROJ_TRANSACTION_ID.indexOf('VLOZ') !== -1) {
     throw new Error('Nastav ZDROJ_TRANSACTION_ID nahoře ve skriptu (Vlastnosti skriptu živé appky → SPREADSHEET_TRANSACTION_ID).');
   }
@@ -97,6 +98,7 @@ function nactiDochazku() {
 
 /** Načte jen rezervace stolů z živé aplikace (bez docházky). */
 function nactiRezervace() {
+  _dmVyzadujSpravce();
   if (ZDROJ_TRANSACTION_ID.indexOf('VLOZ') !== -1) {
     throw new Error('Nastav ZDROJ_TRANSACTION_ID nahoře ve skriptu (Vlastnosti skriptu živé appky → SPREADSHEET_TRANSACTION_ID).');
   }

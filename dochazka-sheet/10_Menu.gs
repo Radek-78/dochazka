@@ -3,28 +3,38 @@
 // ════════════════════════════════════════════════════════════════════
 
 
+/**
+ * Menu podle role. onOpen je jednoduchý trigger a Session.getActiveUser() v něm
+ * není spolehlivý, takže se role bere z UserProperties — tam ji uloží modal při
+ * každém otevření. Kdo modal ještě nespustil, uvidí plné menu; skutečné
+ * omezení dělají stráže uvnitř funkcí, ne skrytí položky.
+ */
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
-  ui.createMenu('📋 Docházka')
-    .addItem('📝 Zadat můj měsíc', 'otevriModal')
-    .addSeparator()
-    .addItem('🔄 Postavit / obnovit všechny měsíce', 'setup')
-    .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
-    .addSeparator()
-    .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
-    .addSeparator()
-    // Jediná část menu, která sahá do sešitů živé aplikace. Až aplikace skončí,
-    // smaže se tohle podmenu spolu s 20_Zdroje.gs a 60_Import.gs.
-    .addSubMenu(ui.createMenu('🧳 Z aplikace (jednorázově)')
-      .addItem('🧳 Naplnit listy z aplikace (odpojení)', 'odpojOdAplikace')
+  var menu = ui.createMenu('📋 Docházka').addItem('📝 Zadat docházku', 'otevriModal');
+
+  var role = '';
+  try { role = PropertiesService.getUserProperties().getProperty('ROLE') || ''; } catch (e) {}
+  if (!role || role === R_SPRAVCE) {
+    menu.addSeparator()
+      .addItem('🔄 Postavit / obnovit všechny měsíce', 'setup')
+      .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
       .addSeparator()
-      .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
-      .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
-      .addItem('🪑 Přegenerovat list Stoly z aplikace', 'aktualizujStoly')
+      .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
       .addSeparator()
-      .addItem('💾 Cachovat zdroje z aplikace (vývoj)', 'cachujZdroje')
-      .addItem('🗑 Smazat cache zdrojů (zpět na živá data)', 'smazCacheZdroju'))
-    .addToUi();
+      // Jediná část menu, která sahá do sešitů živé aplikace. Až aplikace skončí,
+      // smaže se tohle podmenu spolu s 20_Zdroje.gs a 60_Import.gs.
+      .addSubMenu(ui.createMenu('🧳 Z aplikace (jednorázově)')
+        .addItem('🧳 Naplnit listy z aplikace (odpojení)', 'odpojOdAplikace')
+        .addSeparator()
+        .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
+        .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
+        .addItem('🪑 Přegenerovat list Stoly z aplikace', 'aktualizujStoly')
+        .addSeparator()
+        .addItem('💾 Cachovat zdroje z aplikace (vývoj)', 'cachujZdroje')
+        .addItem('🗑 Smazat cache zdrojů (zpět na živá data)', 'smazCacheZdroju'));
+  }
+  menu.addToUi();
   _dsOznacDnes();
 }
 
@@ -72,7 +82,7 @@ function _dsBarvaHlavicky(sheet, mesic, dopCol, dnes) {
 
 function otevriModal() {
   var html = HtmlService.createHtmlOutputFromFile('Modal').setWidth(760).setHeight(660);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Moje docházka');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Docházka');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -80,6 +90,7 @@ function otevriModal() {
 // ════════════════════════════════════════════════════════════════════════════
 
 function setup() {
+  _dmVyzadujSpravce();
   var z = _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -97,6 +108,7 @@ function setup() {
 }
 
 function setupMesic() {
+  _dmVyzadujSpravce();
   var z = _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var m = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
@@ -109,6 +121,7 @@ function setupMesic() {
 
 /** Vývoj: stáhne konfigurační tabulky z CORE do skrytých listů „Z_*". Pak setup / modal čtou z nich (rychlé). */
 function cachujZdroje() {
+  _dmVyzadujSpravce();
   var ui = SpreadsheetApp.getUi();
   var core = SpreadsheetApp.openById(ZDROJ_CORE_ID);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -130,6 +143,7 @@ function cachujZdroje() {
 
 /** Smaže skryté listy Z_* → čtení jde zase živě z CORE. */
 function smazCacheZdroju() {
+  _dmVyzadujSpravce();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var n = 0;
   DS_ZDROJ_TABULKY.forEach(function (t) {
@@ -150,6 +164,7 @@ function _dsHlaskaNejasneStoly(nejasne) {
 
 /** Jen zajistí pomocné listy a přegeneruje Mapu — bez měsíčních listů. */
 function vytvorPomocneListy() {
+  _dmVyzadujSpravce();
   _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var stav = [L_UZIV, L_PORADI, L_STATUSY, L_STOLY, L_REZERVACE, L_MAPA].map(function (n) {
@@ -164,6 +179,7 @@ function vytvorPomocneListy() {
 
 /** Přegeneruje list Stoly z OFFICE_MAPS živé aplikace (zachová ruční Aktivní/Trvale podle cell_id). */
 function aktualizujStoly() {
+  _dmVyzadujSpravce();
   if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
   var ui = SpreadsheetApp.getUi();
   if (ui.alert('Přegenerovat list Stoly z aplikace?\n\nStoly se natáhnou znovu z OFFICE_MAPS včetně pozic Řádek/Sloupec. Ruční úpravy sloupců Aktivní a Trvale se zachovají podle cell_id, nové stoly se doplní.',
@@ -191,6 +207,7 @@ function aktualizujStoly() {
  * Docházku a rezervace natáhni potom zvlášť (📥 a 🪑).
  */
 function odpojOdAplikace() {
+  _dmVyzadujSpravce();
   if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
   var ui = SpreadsheetApp.getUi();
   if (ui.alert('Naplnit lokální listy z aplikace?\n\n' +
