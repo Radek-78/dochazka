@@ -11,10 +11,13 @@ function _dmRezHash(rez) {
 /**
  * Označí kancelářské dny bez rezervace. Vrací počet.
  * rezim: 'plne' (default) = červená zkratka + červený rámeček + úklid starých rámečků;
- *        'jen_pismo' = jen červená zkratka (rychlé, pro čerstvě postavený list).
+ *        'nove'      = čerstvě postavený list — kreslí jen červené rámečky,
+ *                      staré není co mazat, takže je dávka mnohem menší;
+ *        'jen_pismo' = jen červená zkratka, rámečky vůbec.
  */
 function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
   var jenPismo = rezim === 'jen_pismo';
+  var jenNove = rezim === 'nove';
   var da = deskAbbr || [];
   if (!da.length) return 0;
   var deskSet = {};
@@ -69,7 +72,7 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
         if (!full && deskSet[vOdp]) fc[i][idx + 1] = DS_BARVA_BEZ_STOLU;
         zvyrazneno++;
       }
-      if (!jenPismo) {
+      if (!jenPismo && (chybi || !jenNove)) {
         ramecky.push({ row: absRow, col: _gDop(d), rows: 1, cols: 2, barva: chybi ? DS_BARVA_BEZ_STOLU : null });
       }
     }

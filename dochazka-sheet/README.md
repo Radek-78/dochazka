@@ -85,6 +85,12 @@ stejným výpočtem, takže se to nemůže rozejít).
 - Mapa `{ zkratka: {bg, fg} }` je v `_dsStatusMapa` vedle náhrad citlivých
   statusů, drží se v `DocumentProperties` → uložení dne kvůli barvám nečte list.
 
+**Kancelářský den bez rezervace** dostane červenou zkratku i červený rámeček.
+Rámečky kreslí `_dmObnovStulyList`, a to ve třech režimech: `'nove'` (čerstvý
+list — jen červené, není co mazat), `'plne'` (i úklid starých) a `'jen_pismo'`.
+Stavba listu používá `'nove'` — dřív běžela s `'jen_pismo'` a rámečky doplňoval
+až import, takže po přestavbě chyběly.
+
 `DS_CHIP_TON` v `00_Konfig.gs` přepíná vzhled: `0` = plná barva (výchozí),
 `0.5–0.85` = jemný tón na bílé s tmavým textem. Je součástí podpisu listu,
 takže změna vynutí přestavbu měsíců.

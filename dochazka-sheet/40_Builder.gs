@@ -344,9 +344,10 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   });
   sheet.setConditionalFormatRules(pravidla);
 
-  // ── indikace stolů: při stavbě jen červené písmo (rychlé); rámečky doplní import ──
+  // ── indikace stolů: červené písmo i rámeček. Na čerstvém listu není co mazat,
+  //    takže se kreslí jen ty červené a dávka zůstane malá.
   var rezM = _dmRezMesic(ss, mesic);
-  _dmObnovStulyList(sheet, mesic, deskAbbr, rezM, 'jen_pismo');
+  _dmObnovStulyList(sheet, mesic, deskAbbr, rezM, 'nove');
 
   // ── ohraničení: vnější rámeček (hrany v mezerových řádcích) + rámy bloků; vnitřní dělení dělají 1px mezery ──
   sheet.getRange(mezR, 1, dataR + 1, souhrnCol)
