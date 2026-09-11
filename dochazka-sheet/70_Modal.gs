@@ -314,14 +314,21 @@ function dm_hromadne(payload) {
     var doo = Math.max(od, Math.min(N, Number(payload.doDen) || N));
     var ssH = SpreadsheetApp.getActiveSpreadsheet();
     var potrebaStul = _dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr);
+    // dny, kdy mám rezervaci, zná klient → list Rezervace se nemusí číst vůbec
+    var rezDny = {};
+    (payload.rezDny || []).forEach(function (x) { rezDny[Number(x)] = 1; });
+    var rezZmena = false;
+
     for (var d = od; d <= doo; d++) {
       if (payload.jenVsedni) {
         var dow = new Date(ROK, payload.mesic - 1, d).getDay();
         if (dow === 0 || dow === 6) continue;
       }
       _dmZapisDen(sheet, mr.row, d, payload.rezim, payload.dop, payload.odp);
-      // list Rezervace čti jen když klient ví, že v rozsahu nějaká rezervace je
-      if (!potrebaStul && payload.maRezervaci) _dmZrusRezervaci(ssH, payload.userId, payload.mesic, d);
+      if (!potrebaStul && rezDny[d]) {
+        if (_dmZrusRezervaci(ssH, payload.userId, payload.mesic, d)) rezZmena = true;
+        delete rezDny[d];
+      }
     }
     T.krok('hromadně: zapsat dny ' + od + '–' + doo);
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
@@ -330,10 +337,6 @@ function dm_hromadne(payload) {
       var da = payload.deskAbbr || [];
       if (da.length) {
         var trvaly = !!payload.maTrvalyStul;
-        var rezDny = {};
-        _dmRezMesic(ssH, payload.mesic).forEach(function (r) {
-          if (String(r.uid) === String(payload.userId) && r.stul) rezDny[r.den] = 1;
-        });
         for (var dd = od; dd <= doo; dd++) {
           if (payload.jenVsedni) {
             var w = new Date(ROK, payload.mesic - 1, dd).getDay();
@@ -347,7 +350,10 @@ function dm_hromadne(payload) {
     try { sheet.getRange(mr.row, 1).activate(); } catch (e) {}
     var dnyZpet = _dmDenData(sheet, mr.row, payload.mesic);
     T.krok('hromadně: přečíst měsíc zpět');
-    return { dny: dnyZpet, souhrn: souhrn, rezMesic: _dmRezMesic(ssH, payload.mesic), log: T.hotovo() };
+    var vysl = { dny: dnyZpet, souhrn: souhrn, log: null };
+    if (rezZmena) vysl.rezMesic = _dmRezMesic(ssH, payload.mesic);   // jinak si klient nechá svoje
+    vysl.log = T.hotovo();
+    return vysl;
   } finally {
     lock.releaseLock();
   }
