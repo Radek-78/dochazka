@@ -41,11 +41,12 @@ function _dmObnovStulyList(sheet, mesic, deskAbbr, rezMesicArr, rezim) {
 
   var trvalyUid = _dmTrvaleStolyUid(ss);   // uživatelé s trvalým stolem → nikdy neindikovat
 
-  var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
+  // výchozí barva písma jde podle statusu v buňce, červená ji jen přebije
+  var barvy = _dsBarvyStatusu(ss);
   var fc = [];
   for (var r0 = 0; r0 < nRows; r0++) {
     var rr = [];
-    for (var c0 = 0; c0 < dnyW; c0++) rr.push(vychozi);
+    for (var c0 = 0; c0 < dnyW; c0++) rr.push(_dsFgStatusu(barvy, grid[r0][c0]));
     fc.push(rr);
   }
   var ramecky = [];
@@ -138,13 +139,13 @@ function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci, stav) {
     stav = { dop: vals[0], odp: vals[1], full: pair.isPartOfMerge() };
   }
   var da = deskAbbr || [];
-  var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
+  var barvy = _dsBarvyStatusu(SpreadsheetApp.getActiveSpreadsheet());
   var dopDesk = da.indexOf(String(stav.dop || '').trim()) !== -1;
   var odpDesk = !stav.full && da.indexOf(String(stav.odp || '').trim()) !== -1;
   var chybi = (dopDesk || odpDesk) && !maRezervaci;
   pair.setFontColors([[
-    dopDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi,
-    odpDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi
+    dopDesk && chybi ? DS_BARVA_BEZ_STOLU : _dsFgStatusu(barvy, stav.dop),
+    odpDesk && chybi ? DS_BARVA_BEZ_STOLU : _dsFgStatusu(barvy, stav.odp)
   ]]);
   if (chybi) pair.setBorder(true, true, true, true, false, false, DS_BARVA_BEZ_STOLU, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   else pair.setBorder(false, false, false, false, false, false, null, null);

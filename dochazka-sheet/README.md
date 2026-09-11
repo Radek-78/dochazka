@@ -55,6 +55,22 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 `Řádek`/`Sloupec` jsou 0-based pozice v mapě; stůl s prázdnou pozicí se v mapě
 nekreslí, ale rezervovat se dá. Rozměry mapy se dopočtou z nejvyšší pozice.
 
+## Barvy statusů v mřížce
+
+Buňka dostane **plnou barvu statusu** a jeho **`Barva textu`** — přesně to, co
+je vidět ve sloupci `Zkratka` v listu `Statusy` (`_dsObarviStatusy` ho obarvuje
+stejným výpočtem, takže se to nemůže rozejít).
+
+- **Pozadí** dělá podmíněné formátování (`_dsListMesic`).
+- **Barva písma** se nastavuje **přímo**, ne přes CF. Podmíněné formátování by
+  přebilo červené písmo u kancelářského dne bez rezervace stolu.
+- Mapa `{ zkratka: {bg, fg} }` je v `_dsStatusMapa` vedle náhrad citlivých
+  statusů, drží se v `DocumentProperties` → uložení dne kvůli barvám nečte list.
+
+`DS_CHIP_TON` v `00_Konfig.gs` přepíná vzhled: `0` = plná barva (výchozí),
+`0.5–0.85` = jemný tón na bílé s tmavým textem. Je součástí podpisu listu,
+takže změna vynutí přestavbu měsíců.
+
 ## Rok sešitu a nový rok
 
 `ROK` je **uložená hodnota** (list `Nastavení`, řádek `Rok`), ne

@@ -308,9 +308,15 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   sheet.hideColumns(uidCol);
 
   // hodnoty (mřížka zatím nesloučená) + souhrn
+  // Barva písma se nastavuje PŘÍMO, ne přes podmíněné formátování — to by
+  // přebilo červené písmo u kancelářského dne bez rezervace stolu.
+  var barvy = _dsBarvyStatusu(ss);
+  var fcG = valsG.map(function (radek) {
+    return radek.map(function (v) { return _dsFgStatusu(barvy, v); });
+  });
   sheet.getRange(prvni, den1, dataR, dnyW).setValues(valsG)
     .setNumberFormat('@').setHorizontalAlignment('center').setVerticalAlignment('middle')
-    .setFontWeight('bold').setFontSize(10).setFontColor(DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff');
+    .setFontWeight('bold').setFontSize(10).setFontColors(fcG);
   sheet.getRange(prvni, souhrnCol, dataR, 1).setValues(souhrnV);
 
   // sloučení dvojic dne (všechny data řádky), pak rozbití půldnů a dopsání jejich hodnot
@@ -329,11 +335,12 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   // ── podmíněné formátování: jen pozadí tónem barvy statusu ──
   var mrizka = sheet.getRange(prvni, den1, dataR, dnyW);
   var pravidla = [];
+  // Jen pozadí — barva písma zůstává na přímém formátování (viz výše).
   statusyUnik.forEach(function (s) {
-    if (!s.abbr) return;
-    var pr = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(s.abbr).setBold(true).setRanges([mrizka]);
-    pr.setBackground(DS_CHIP_TON > 0 ? _dsSvetleji(s.color, DS_CHIP_TON) : s.color);
-    pravidla.push(pr.build());
+    if (!s.abbr || !barvy[s.abbr]) return;
+    pravidla.push(SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo(s.abbr).setBold(true).setRanges([mrizka])
+      .setBackground(barvy[s.abbr].bg).build());
   });
   sheet.setConditionalFormatRules(pravidla);
 

@@ -49,9 +49,11 @@ var ZDROJ_TRANSACTION_ID = '1gJsTyi8r0yKaJ1ODOIT9x9XM6Dvdc8rKf1QucYLwBB0';   // 
 var USEK_NAZEV = 'DL Plánování a řízení zásob';
 
 var DS_FONT = 'Lidl Font Cond Pro';
-// Vzhled chipu statusu v mřížce: 0 = plná barva statusu + bílý text,
-// 0.5–0.85 = jen jemný tón barvy na bílé + tmavý čitelný text (ohraničení pak víc vynikne).
-var DS_CHIP_TON = 0.74;
+// Vzhled statusu v mřížce:
+//   0        = plná barva statusu + jeho „Barva textu" — stejně jako v listu Statusy
+//   0.5–0.85 = jen jemný tón barvy na bílé + tmavý text (ohraničení pak víc vynikne)
+// Je součástí podpisu listu, takže změna vynutí přestavbu měsíců.
+var DS_CHIP_TON = 0;
 // Kancelářský den bez rezervace stolu: zkratka statusu se vypíše touto barvou (jinak DS_BARVA_TEXT).
 var DS_BARVA_TEXT = '#1e293b';
 var DS_BARVA_BEZ_STOLU = '#dc2626';

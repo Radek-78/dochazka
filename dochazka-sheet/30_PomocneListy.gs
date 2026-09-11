@@ -189,12 +189,35 @@ function _dsListStatusy(ss, radky) {
   if (radky && radky.length) {
     if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
     sh.getRange(2, 1, radky.length, W).setValues(radky);
-    // sloupec Barva ukazuje sám sebe, ať je vidět, co se v mřížce použije
-    sh.getRange(2, 3, radky.length, 1).setBackgrounds(radky.map(function (r) { return [r[2]]; }));
     _dsFont(sh);
     _dsCacheZrus('STATUSY');
   }
+  _dsObarviStatusy(sh);
   return sh;
+}
+
+/**
+ * Obarví v listu Statusy sloupec Zkratka přesně tak, jak status vypadá
+ * v měsíční mřížce — ať je na první pohled vidět, co se kde použije.
+ */
+function _dsObarviStatusy(sh) {
+  var n = sh.getLastRow() - 1;
+  if (n < 1) return;
+  var zkratkaCol = DS_STATUSY_HLAVICKA.indexOf('Zkratka') + 1;
+  var barvaCol = DS_STATUSY_HLAVICKA.indexOf('Barva') + 1;
+  var data = sh.getRange(2, 1, n, DS_STATUSY_HLAVICKA.length).getValues();
+
+  var bg = [], fg = [], bgBarva = [];
+  data.forEach(function (r) {
+    var b = _dsHex(r[barvaCol - 1], '#94a3b8');
+    var t = _dsHex(r[barvaCol], '#ffffff');                 // sloupec „Barva textu"
+    bg.push([DS_CHIP_TON > 0 ? _dsSvetleji(b, DS_CHIP_TON) : b]);
+    fg.push([DS_CHIP_TON > 0 ? DS_BARVA_TEXT : t]);
+    bgBarva.push([b]);
+  });
+  sh.getRange(2, zkratkaCol, n, 1).setBackgrounds(bg).setFontColors(fg)
+    .setFontWeight('bold').setHorizontalAlignment('center');
+  sh.getRange(2, barvaCol, n, 1).setBackgrounds(bgBarva);
 }
 
 /** Doplní do staršího listu Statusy chybějící sloupce Citlivý a Náhrada. */
@@ -234,34 +257,54 @@ function _dsCtiStatusy(ss) {
 }
 
 /**
- * { zkratka: náhrada } pro statusy označené jako citlivé.
+ * Sdílená mapa odvozená z listu Statusy:
+ *   barvy   — { zkratka: {bg, fg} } pro obarvení buněk v mřížce
+ *   nahrady — { zkratka: náhrada } pro citlivé statusy
+ *
+ * O citlivosti rozhoduje VŽDY server (klient by si mohl říct, že nic citlivé
+ * není). Aby to nestálo čtení listu při každém uložení dne, drží se mapa
+ * v DocumentProperties; obnovuje ji `_dsStatusMapaZListu` při otevření modalu
+ * a při přestavbě listů. Klient do DocumentProperties nevidí.
+ *
  * Citlivý status bez vyplněné náhrady se chová jako necitlivý — radši ať je
  * v mřížce vidět pravda, než aby zmizel do prázdné buňky.
- *
- * Rozhoduje o tom VŽDY server (klient by si mohl říct, že nic citlivé není).
- * Aby to nestálo čtení listu při každém uložení dne, drží se mapa
- * v DocumentProperties; obnovuje ji `_dsNahradyZListu` při otevření modalu
- * a při přestavbě listů. Klient do DocumentProperties nevidí.
  */
-function _dsNahrady(ss) {
-  return _dsCache('NAHRADY', function () {
+function _dsStatusMapa(ss) {
+  return _dsCache('STATUS_MAPA', function () {
     try {
-      var ulozene = PropertiesService.getDocumentProperties().getProperty('NAHRADY');
+      var ulozene = PropertiesService.getDocumentProperties().getProperty('STATUS_MAPA');
       if (ulozene) return JSON.parse(ulozene);
     } catch (e) {}
-    return _dsNahradyZListu(ss);
+    return _dsStatusMapaZListu(ss);
   });
 }
 
-/** Přečte náhrady z listu Statusy a uloží je pro příští běhy. */
-function _dsNahradyZListu(ss) {
-  var m = {};
+/** Přečte mapu z listu Statusy a uloží ji pro příští běhy. */
+function _dsStatusMapaZListu(ss) {
+  var m = { barvy: {}, nahrady: {} };
   _dsCtiStatusy(ss).forEach(function (s) {
-    if (s.citlivy && s.nahrada && s.nahrada !== s.abbr) m[s.abbr] = s.nahrada;
+    if (!s.abbr) return;
+    // DS_CHIP_TON = 0 → plná barva statusu a jeho barva textu, stejně jako v listu Statusy
+    m.barvy[s.abbr] = DS_CHIP_TON > 0
+      ? { bg: _dsSvetleji(s.color, DS_CHIP_TON), fg: DS_BARVA_TEXT }
+      : { bg: s.color, fg: s.fg };
+    if (s.citlivy && s.nahrada && s.nahrada !== s.abbr) m.nahrady[s.abbr] = s.nahrada;
   });
-  try { PropertiesService.getDocumentProperties().setProperty('NAHRADY', JSON.stringify(m)); } catch (e) {}
-  _DS_CACHE['NAHRADY'] = m;
+  try { PropertiesService.getDocumentProperties().setProperty('STATUS_MAPA', JSON.stringify(m)); } catch (e) {}
+  _DS_CACHE['STATUS_MAPA'] = m;
   return m;
+}
+
+function _dsNahrady(ss) { return _dsStatusMapa(ss).nahrady; }
+function _dsNahradyZListu(ss) { return _dsStatusMapaZListu(ss).nahrady; }
+
+/** { zkratka: {bg, fg} } — jak se status obarví v mřížce. */
+function _dsBarvyStatusu(ss) { return _dsStatusMapa(ss).barvy; }
+
+/** Barva písma pro hodnotu buňky (neznámý / prázdný status → výchozí tmavá). */
+function _dsFgStatusu(barvy, hodnota) {
+  var b = barvy[String(hodnota || '').trim()];
+  return b ? b.fg : DS_BARVA_TEXT;
 }
 
 /** Zkratka, jak se má zapsat do sdílené mřížky (citlivá → náhrada). */
