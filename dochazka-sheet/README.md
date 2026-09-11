@@ -79,6 +79,12 @@ Dvě pojistky proti zamčení sešitu (`_dmVyzadujSpravce`): prázdný list `Už
 a stav, kdy roli `správce` nemá vůbec nikdo — v obou případech se položky menu
 nezamykají.
 
+**Menu** staví `_dmRoleProMenu`: nejdřív zapamatovaná role z `UserProperties`
+(zdarma), a když chybí, jednorázově dohledání v listu. `onOpen` je jednoduchý
+trigger, takže identita v něm jde zjistit až potom, co uživatel skriptu povolil
+přístup — dokud se to nepovede, má menu jen „📝 Zadat docházku" a „🔑 Zjistit
+moje oprávnění".
+
 ## Jednorázové nastavení
 
 1. Vytvoř nový prázdný Google Sheet.

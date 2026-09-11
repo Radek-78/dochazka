@@ -4,18 +4,19 @@
 
 
 /**
- * Menu podle role. onOpen je jednoduchý trigger a Session.getActiveUser() v něm
- * není spolehlivý, takže se role bere z UserProperties — tam ji uloží modal při
- * každém otevření. Kdo modal ještě nespustil, uvidí plné menu; skutečné
- * omezení dělají stráže uvnitř funkcí, ne skrytí položky.
+ * Menu podle role. Skutečné omezení dělají stráže uvnitř funkcí — skrytí
+ * položky je jen úklid, ať běžný uživatel nevidí nic, co stejně nespustí.
  */
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   var menu = ui.createMenu('📋 Docházka').addItem('📝 Zadat docházku', 'otevriModal');
 
-  var role = '';
-  try { role = PropertiesService.getUserProperties().getProperty('ROLE') || ''; } catch (e) {}
-  if (!role || role === R_SPRAVCE) {
+  var role = _dmRoleProMenu();
+  if (!role) {
+    // roli nejde zjistit (uživatel ještě skriptu nepovolil přístup) → nabídni to udělat
+    menu.addSeparator().addItem('🔑 Zjistit moje oprávnění', 'zjistiOpravneni');
+  }
+  if (role === R_SPRAVCE) {
     menu.addSeparator()
       .addItem('🔄 Postavit / obnovit všechny měsíce', 'setup')
       .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
@@ -36,6 +37,42 @@ function onOpen() {
   }
   menu.addToUi();
   _dsOznacDnes();
+}
+
+/**
+ * Role pro sestavení menu, nebo '' když ji nejde zjistit.
+ * Pořadí je dané výkonem: zapamatovaná role je zdarma, teprve když chybí, sáhne
+ * se do listu (v jednoduchém triggeru to projde jen uživateli, který už skriptu
+ * povolil přístup — typicky prvním otevřením modalu).
+ */
+function _dmRoleProMenu() {
+  var props = null;
+  try { props = PropertiesService.getUserProperties(); } catch (e) {}
+  if (props) {
+    var ulozena = props.getProperty('ROLE') || '';
+    if (ulozena) return ulozena;
+  }
+  try {
+    var lide = _dsCtiUzivatele(SpreadsheetApp.getActiveSpreadsheet());
+    if (!lide.length) return R_SPRAVCE;          // prázdný sešit musí jít postavit
+    var email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+    if (!email) return '';
+    var me = lide.filter(function (u) { return u.email && u.email.toLowerCase() === email; })[0];
+    if (!me) return '';
+    if (props) props.setProperty('ROLE', me.role);
+    return me.role;
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Dohledá roli a přestaví menu — pro případ, že ji onOpen sám zjistit nemohl. */
+function zjistiOpravneni() {
+  var ja = _dmJaZListu(SpreadsheetApp.getActiveSpreadsheet());
+  try { PropertiesService.getUserProperties().setProperty('ROLE', ja.role); } catch (e) {}
+  onOpen();                                       // stejný název menu ho přepíše
+  SpreadsheetApp.getUi().alert('Tvoje role: ' + ja.role +
+    '\n\nMenu je aktualizované. Role se mění v listu ' + L_UZIV + ', sloupec Role.');
 }
 
 /** Obarví v hlavičce dnů aktuálního měsíce dnešní sloupec (a odbarví včerejší). */
