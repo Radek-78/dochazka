@@ -104,8 +104,11 @@ function nactiDochazku() {
     propsN.setProperty('REZ_' + mb, _dmRezHash(rezMb));
   }
 
+  var dov = _dsPrepocitejDovolenou(ss);
+
   ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
     (klice.length ? 'Citlivých dnů skrytých za náhradu: ' + klice.length + '\n' : '') +
+    'Dovolená přepočítána pro ' + dov.lidi + ' lidí.\n' +
     'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v listu ' + L_STATUSY + ' nemá nikdo „Vyžaduje stůl")') + '\n' +
     'Kancelářských dnů bez rezervace (červený rámeček): ' + zvyrazneno + '\n\n' +
     'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');

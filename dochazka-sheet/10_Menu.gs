@@ -25,6 +25,7 @@ function onOpen() {
       .addSeparator()
       .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
       .addItem('🔒 Skrýt citlivé statusy v listech', 'skryjCitlive')
+      .addItem('🧮 Přepočítat dovolenou', 'prepocitejDovolenou')
       .addSeparator()
       .addItem('📆 Vytvořit sešit pro nový rok', 'vytvorSesitProRok')
       .addSeparator()
@@ -184,9 +185,11 @@ function setup() {
   var akt = ss.getSheetByName(_dsNazevMesice(new Date().getMonth() + 1));
   if (akt) ss.setActiveSheet(akt);
 
+  var dov = _dsPrepocitejDovolenou(ss);
   PropertiesService.getDocumentProperties().deleteProperty('DNES_SLOUPEC');
   _dsOznacDnes();
-  SpreadsheetApp.getUi().alert('Hotovo — 12 měsíčních listů přegenerováno z listu Uživatelé.');
+  SpreadsheetApp.getUi().alert('Hotovo — 12 měsíčních listů přegenerováno z listu Uživatelé.\n\n' +
+    'Dovolená spočítána pro ' + dov.lidi + ' lidí.');
 }
 
 function setupMesic() {
@@ -196,6 +199,7 @@ function setupMesic() {
   var m = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
   _dsListMesic(ss, m, z.radky, z.statusyUnik, z.vacAbbr, z.deskAbbr);
   ss.setActiveSheet(ss.getSheetByName(_dsNazevMesice(m)));
+  _dsPrepocitejDovolenou(ss);          // roční čísla se týkají všech měsíců
   PropertiesService.getDocumentProperties().deleteProperty('DNES_SLOUPEC');
   _dsOznacDnes();
   SpreadsheetApp.getUi().alert('Postaven list ' + _dsNazevMesice(m) + '.');
@@ -318,6 +322,21 @@ function vytvorSesitProRok() {
     '\nOtevři nový sešit a spusť v něm 🔄 Postavit / obnovit všechny měsíce.\n' +
     'Měsíce staví až kopie sama, aby je postavila pro svůj rok.\n\n' +
     kopie.getUrl());
+}
+
+/**
+ * Přepočítá dovolenou ze všech měsíčních listů a zapíše tři čísla do sloupce
+ * Dovolená. Běžné uložení dne si čísla jen dopočítává z toho, co má klient,
+ * takže tohle je způsob, jak je srovnat — po ručním zásahu do mřížky nebo když
+ * se přehoupl den a „k dnešku" už neplatí.
+ */
+function prepocitejDovolenou() {
+  _dmVyzadujSpravce();
+  var v = _dsPrepocitejDovolenou(SpreadsheetApp.getActiveSpreadsheet());
+  SpreadsheetApp.getUi().alert('Dovolená přepočítána.\n\n' +
+    'Měsíčních listů: ' + v.mesicu + '\n' +
+    'Lidí: ' + v.lidi + '\n\n' +
+    'Ve sloupci Dovolená je: za měsíc · od 1. 1. do dneška · za celý rok.');
 }
 
 /** Hláška o stolech, u kterých se jméno trvalého majitele nedá jednoznačně přiřadit. */

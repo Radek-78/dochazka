@@ -55,6 +55,24 @@ v `40_Builder.gs` (je v podpisu pro fast-path, jinak se listy nepřestaví).
 `Řádek`/`Sloupec` jsou 0-based pozice v mapě; stůl s prázdnou pozicí se v mapě
 nekreslí, ale rezervovat se dá. Rozměry mapy se dopočtou z nejvyšší pozice.
 
+## Sloupec Dovolená
+
+Buňka nese **tři čísla**: `za měsíc · od 1. 1. do dneška · za celý rok`
+(`_dsCislaDovolene` / `_dsParsujDovolenou`). Vzorcem to nejde — půlden se od
+celého dne pozná jen podle sloučení buněk, což tabulkové funkce neumí.
+
+- **Zdroj pravdy** je `_dsPrepocitejDovolenou(ss)`: přečte všech 12 listů a
+  přepíše sloupec ve všech měsících. Volá ho `setup`, `setupMesic`, import
+  a menu **🧮 Přepočítat dovolenou**.
+- **Při uložení dne** posílá tři čísla klient — zná celý měsíc i to, co v buňce
+  stálo, takže roční a „k dnešku" jen poposune o rozdíl. Server tedy kvůli
+  souhrnům nečte 12 listů (bylo by to ~11 s).
+- „Dnešek" posílá server v `dm_init` jako `dnes: {mesic, den}`, ať klient
+  nepočítá podle hodin prohlížeče.
+
+> Dopočítávání může zastarat — po ručním zásahu do mřížky nebo po přelomu dne.
+> Srovná to 🧮 Přepočítat dovolenou.
+
 ## Barvy statusů v mřížce
 
 Buňka dostane **plnou barvu statusu** a jeho **`Barva textu`** — přesně to, co

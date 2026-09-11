@@ -834,6 +834,93 @@ function _dsZamaskujListy(ss) {
   return vysl;
 }
 
+// ── souhrny dovolené ─────────────────────────────────────────────────────
+// Buňka ve sloupci Dovolená nese tři čísla: za tenhle měsíc · od 1. 1. do
+// dneška · za celý rok. Vzorcem to nejde — půlden se od celého dne pozná jen
+// podle sloučení buněk, což tabulkové funkce neumí. Počítá to tedy skript.
+
+/** Tři čísla do buňky Dovolená. Půldny jsou po 0,5, tak se píše i desetinná část. */
+function _dsCislaDovolene(mesic, doDnes, rok) {
+  function f(n) {
+    var x = Math.round((Number(n) || 0) * 2) / 2;
+    return String(x).replace('.', ',');
+  }
+  return f(mesic) + ' · ' + f(doDnes) + ' · ' + f(rok);
+}
+
+/** Zpátky z buňky na { mesic, doDnes, rok }. Zvládne i starý formát (jen číslo). */
+function _dsParsujDovolenou(v) {
+  var kusy = String(v === null || v === undefined ? '' : v).split('·');
+  function c(i) {
+    var n = Number(String(kusy[i] || '').trim().replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  }
+  return { mesic: c(0), doDnes: c(1), rok: c(2) };
+}
+
+/**
+ * Přepočítá dovolenou ze VŠECH měsíčních listů a zapíše tři čísla do sloupce
+ * Dovolená ve všech měsících. Tohle je zdroj pravdy — běžné uložení dne si
+ * čísla jen dopočítává, takže po ručních zásazích do mřížky nebo po přelomu
+ * dne je potřeba spustit tohle.
+ * Vrací { mesicu, lidi }.
+ */
+function _dsPrepocitejDovolenou(ss) {
+  var vac = {};
+  _dsCtiStatusy(ss).forEach(function (s) { if (s.vac) vac[s.abbr] = 1; });
+
+  var dnes = new Date();
+  // jiný rok než sešit → „do dneška" znamená celý rok
+  var dnesMesic = dnes.getFullYear() === ROK ? dnes.getMonth() + 1 : 13;
+  var dnesDen = dnes.getDate();
+
+  var listy = [], celkem = {};
+  for (var m = 1; m <= 12; m++) {
+    var sh = ss.getSheetByName(_dsNazevMesice(m));
+    if (!sh) continue;
+    var N = _dmDniVMesici(m), prvni = DS_PRVNI_DATA_RADEK;
+    var n = sh.getLastRow() - prvni + 1;
+    if (n < 1) continue;
+
+    var uidCol = _gUid(N);
+    var blok = sh.getRange(prvni, 1, n, uidCol).getValues();
+    var merged = {};
+    sh.getRange(prvni, DS_DEN1_COL, n, N * DS_DEN_KROK).getMergedRanges()
+      .forEach(function (mr) { merged[mr.getRow() + '_' + mr.getColumn()] = 1; });
+
+    var radky = [];
+    for (var i = 0; i < n; i++) {
+      var uid = String(blok[i][uidCol - 1] || '').trim();
+      if (!uid) { radky.push(null); continue; }        // mezera / nadpis
+      var zaMesic = 0, doDnes = 0;
+      for (var d = 1; d <= N; d++) {
+        var dopCol = _gDop(d);
+        var full = !!merged[(prvni + i) + '_' + dopCol];
+        var a = String(blok[i][dopCol - 1] || '').trim();
+        var b = full ? '' : String(blok[i][dopCol] || '').trim();
+        var x = full ? (vac[a] ? 1 : 0) : ((vac[a] ? 0.5 : 0) + (vac[b] ? 0.5 : 0));
+        zaMesic += x;
+        if (m < dnesMesic || (m === dnesMesic && d <= dnesDen)) doDnes += x;
+      }
+      radky.push({ uid: uid, mesic: zaMesic, doDnes: doDnes });
+      var c = celkem[uid] || (celkem[uid] = { rok: 0, doDnes: 0 });
+      c.rok += zaMesic;
+      c.doDnes += doDnes;
+    }
+    listy.push({ sheet: sh, N: N, prvni: prvni, radky: radky });
+  }
+
+  listy.forEach(function (L) {
+    var out = L.radky.map(function (r) {
+      if (!r) return [''];
+      var c = celkem[r.uid];
+      return [_dsCislaDovolene(r.mesic, c.doDnes, c.rok)];
+    });
+    if (out.length) L.sheet.getRange(L.prvni, _gSouhrn(L.N), out.length, 1).setValues(out);
+  });
+  return { mesicu: listy.length, lidi: Object.keys(celkem).length };
+}
+
 /** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
 function _dsCtiStoly(ss) {
   return _dsCache('STOLY', function () {

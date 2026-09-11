@@ -6,7 +6,7 @@
 // ── měsíční list ─────────────────────────────────────────────────────────
 
 // Bumpuj při JAKÉKOLI změně struktury listu (kvůli fast-path porovnání podpisu).
-var DS_BUILD_VER = 6;
+var DS_BUILD_VER = 7;
 
 /** Podpis struktury listu (hash) — když se nezmění, přestavba se přeskočí. */
 function _dsPodpisListu(mesic, radky, N) {
@@ -183,7 +183,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
     else if (dow === 0 || dow === 6) klas[dop] = 'vikend';
   }
   r2[souhrnCol - 1] = 'Dovolená';
-  r3[souhrnCol - 1] = '(dny)';
+  r3[souhrnCol - 1] = 'měsíc · k dnešku · rok';
   sheet.getRange(2, 1, 1, souhrnCol).setValues([r2])
     .setBackground('#f1f5f9').setFontWeight('bold').setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
@@ -363,7 +363,7 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
     { typ: 'COLUMNS', od: 1, pocet: 1, px: 170 },
     { typ: 'COLUMNS', od: den1 - 1, pocet: 1, px: DS_MEZ_PX },   // mezera mezi jménem a dny
     { typ: 'COLUMNS', od: den1, pocet: dnyW, px: 22 },
-    { typ: 'COLUMNS', od: souhrnCol, pocet: 1, px: 90 },
+    { typ: 'COLUMNS', od: souhrnCol, pocet: 1, px: 130 },
     { typ: 'ROWS', od: 1, pocet: 1, px: 26 },
     { typ: 'ROWS', od: mezR, pocet: 1, px: DS_MEZ_PX },
     { typ: 'ROWS', od: prvni, pocet: dataR, px: 30 }

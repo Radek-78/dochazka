@@ -142,8 +142,13 @@ function dm_init() {
     })
   } : null;
 
+  // „dnes" podle serveru — klient podle toho pozná, co se počítá do „k dnešku"
+  var dnes = new Date();
   var out = {
     rok: ROK, mesic: mesic, userId: me.user_id, jmeno: me.jmeno, usek: USEK_NAZEV,
+    dnes: dnes.getFullYear() === ROK
+      ? { mesic: dnes.getMonth() + 1, den: dnes.getDate() }
+      : { mesic: 13, den: 31 },              // jiný rok → celý rok je „k dnešku"
     role: me.role, lide: lide,
     statusy: statusy,
     vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
@@ -156,7 +161,7 @@ function dm_init() {
   try {
     var d = dm_mesic({ userId: me.user_id, mesic: mesic });
     out.dny = d.dny;
-    out.souhrn = d.souhrn;
+    out.souhrny = d.souhrny;
     out.rezMesic = d.rezMesic;
     out.row = d.row;
   } catch (e) {
@@ -175,7 +180,7 @@ function dm_mesic(payload) {
   }
   return {
     mesic: payload.mesic, rok: ROK, row: b.row,
-    dny: b.dny, souhrn: b.souhrn, rezMesic: _dmRezMesic(ss, payload.mesic)
+    dny: b.dny, souhrny: b.souhrny, rezMesic: _dmRezMesic(ss, payload.mesic)
   };
 }
 
@@ -210,7 +215,7 @@ function _dmMujBlok(sheet, cil, mesic) {
       odp: full ? '' : String(blok[i][dopCol] || '')
     });
   }
-  return { row: row, souhrn: blok[i][souhrnCol - 1], dny: dny };
+  return { row: row, souhrny: _dsParsujDovolenou(blok[i][souhrnCol - 1]), dny: dny };
 }
 
 /**
@@ -241,6 +246,22 @@ function _dmDosadCitlive(dny, skutecne, nahrady) {
     if (x.dop && d.dop === _dsMaska(nahrady, x.dop)) d.dop = x.dop;
     if (x.odp && !d.full && d.odp === _dsMaska(nahrady, x.odp)) d.odp = x.odp;
   });
+}
+
+/**
+ * Zapíše do sloupce Dovolená tři čísla, která spočítal klient (zná celý měsíc
+ * i to, co v buňce stálo). Když je nepošle, spadne to na serverový přepočet
+ * měsíce — roční čísla pak srovná až „Přepočítat dovolenou".
+ */
+function _dmZapisSouhrny(sheet, row, N, souhrny, mesic, vacAbbr) {
+  var s = souhrny || {};
+  if (isNaN(Number(s.mesic))) {
+    var m = _dmPrepocitejSouhrn(sheet, row, mesic, vacAbbr || []);
+    return { mesic: m, doDnes: m, rok: m };
+  }
+  var v = { mesic: Number(s.mesic), doDnes: Number(s.doDnes) || 0, rok: Number(s.rok) || 0 };
+  sheet.getRange(row, _gSouhrn(N)).setValue(_dsCislaDovolene(v.mesic, v.doDnes, v.rok));
+  return v;
 }
 
 /** Stav dne, jak bude v listu vypadat po zápisu — bez nutnosti číst ho zpátky. */
@@ -329,7 +350,7 @@ function dm_stul(payload) {
  * Klient posílá, co už sám ví, aby server nemusel číst listy znovu:
  *   userId        — za koho se zapisuje (server ověří oprávnění přes _dmCil)
  *   row           — řádek z načtení měsíce (server ho jen ověří, 1 buňka)
- *   souhrn        — přepočtená dovolená (server ji jen zapíše)
+ *   souhrny       — {mesic, doDnes, rok} dovolené (server je jen zapíše)
  *   maTrvalyStul  — dotyčný má někde trvale přidělený stůl (list Stoly)
  *   maRezervaci   — dotyčný má ten den rezervaci (list Rezervace)
  *   stul          — chybí = neřešit; '' = uvolnit; 'A16' = rezervovat
@@ -358,13 +379,7 @@ function dm_uloz(payload) {
       _dmZapisCitlive(ss, cil.user_id, payload.mesic, payload.den, skutDop, skutOdp, nahrady);
     }
 
-    var souhrn = payload.souhrn;
-    if (souhrn === undefined || souhrn === null || isNaN(Number(souhrn))) {
-      souhrn = _dmPrepocitejSouhrn(sheet, row, payload.mesic, payload.vacAbbr || []);
-    } else {
-      souhrn = Number(souhrn);
-      sheet.getRange(row, _gSouhrn(N)).setValue(souhrn);
-    }
+    var souhrny = _dmZapisSouhrny(sheet, row, N, payload.souhrny, payload.mesic, payload.vacAbbr);
 
     var potreba = _dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr);
     var maStul = !!payload.maTrvalyStul;
@@ -392,7 +407,7 @@ function dm_uloz(payload) {
     } catch (e) {}
     try { sheet.getRange(row, _gDop(payload.den)).activate(); } catch (e) {}
 
-    var out = { den: den, souhrn: souhrn, row: row };
+    var out = { den: den, souhrny: souhrny, row: row };
     if (rezPo) out.rezMesic = rezPo;        // jinak si klient nechá svoje
     return out;
   } finally {
@@ -436,7 +451,7 @@ function dm_hromadne(payload) {
         delete rezDny[d];
       }
     }
-    var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
+    var souhrny = _dmZapisSouhrny(sheet, mr.row, N, payload.souhrny, payload.mesic, payload.vacAbbr);
     try {
       var da = payload.deskAbbr || [];
       if (da.length) {
@@ -455,7 +470,7 @@ function dm_hromadne(payload) {
     if (_dmVKompetenci(_dmJa(ssH), cil)) {          // v mřížce jsou náhrady
       _dmDosadCitlive(dnyZpet, _dmCitliveMesic(ssH, cil.user_id, payload.mesic), nahrady);
     }
-    var vysl = { dny: dnyZpet, souhrn: souhrn };
+    var vysl = { dny: dnyZpet, souhrny: souhrny };
     if (rezZmena) vysl.rezMesic = _dmRezMesic(ssH, payload.mesic);   // jinak si klient nechá svoje
     return vysl;
   } finally {

@@ -102,6 +102,22 @@
     <p>Tlačítko <b>Hromadně</b> dole: zadáš rozsah dní, volitelně jen všední dny,
       vybereš status a potvrdíš. Hodí se na dovolenou.</p>
 
+    <h3>Sloupec Dovolená</h3>
+    <p>V mřížce jsou v něm <b>tři čísla oddělená tečkou</b>:</p>
+    <table>
+      <tr><th>Číslo</th><th>Znamená</th></tr>
+      <tr><td class="mid"><b>1.</b></td><td>dovolená <b>za tenhle měsíc</b></td></tr>
+      <tr><td class="mid"><b>2.</b></td><td><b>od 1. ledna do dneška</b> — budoucí dny se nepočítají</td></tr>
+      <tr><td class="mid"><b>3.</b></td><td>za <b>celý kalendářní rok</b> včetně naplánovaných dnů dopředu</td></tr>
+    </table>
+    <p class="muted">Půlden se počítá jako 0,5. Stejná tři čísla jsou i dole
+      v okně „Zadat docházku".</p>
+    <div class="box warn">
+      Čísla se dopočítávají při každém uložení. Když někdo zapíše do mřížky ručně
+      nebo se přehoupne den, může „k dnešku" chvíli nesedět — srovná to
+      <b>🧮 Přepočítat dovolenou</b>.
+    </div>
+
     <h3>Jiný měsíc</h3>
     <p>Šipky <b>◀ ▶</b> v záhlaví okna. Mřížka na pozadí zůstane vidět, jen zešedne.</p>
 
@@ -230,6 +246,9 @@
       <tr><td>🧩 Zkontrolovat pomocné listy</td>
         <td>doplní chybějící listy a sloupce, přegeneruje <code>Mapa</code></td>
         <td>po aktualizaci skriptu</td></tr>
+      <tr><td>🧮 Přepočítat dovolenou</td>
+        <td>projde 12 měsíců a srovná tři čísla ve sloupci Dovolená</td>
+        <td>po ručním zásahu do mřížky a průběžně, ať „k dnešku" sedí</td></tr>
       <tr><td>🔒 Skrýt citlivé statusy v listech</td>
         <td>projde 12 měsíců a už zapsané citlivé statusy nahradí</td>
         <td><b>po každém označení dalšího statusu jako citlivého</b></td></tr>
