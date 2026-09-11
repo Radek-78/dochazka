@@ -150,8 +150,8 @@
   </div>
 
   <script>
-    var S = { init: null, mesic: null, rok: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
-      bMode: 'FULL', bDop: '', bOdp: '', rezMesic: [], deskDen: null };
+    var S = { init: null, mesic: null, rok: null, row: null, dny: [], souhrn: 0, den: null, mode: 'FULL', dopSel: '', odpSel: '',
+      bMode: 'FULL', bDop: '', bOdp: '', rezMesic: [], deskDen: null, cekaUloz: null };
     var MES = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
     var DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
@@ -214,7 +214,31 @@
         .withFailureHandler(fatal)
         .dm_mesic({ userId: S.init.userId, mesic: S.mesic });
     }
-    function onMonth(m) { S.dny = m.dny; S.souhrn = m.souhrn; S.rezMesic = m.rezMesic || []; render(); }
+    function onMonth(m) {
+      S.dny = m.dny; S.souhrn = m.souhrn; S.row = m.row;
+      S.rezMesic = m.rezMesic || [];
+      render();
+    }
+
+    /** Souhrn dovolené s už promítnutou změnou dne — server ho pak jen zapíše. */
+    function souhrnPo(den, rezim, dop, odp) {
+      var vac = S.init.vacAbbr || [];
+      var n = 0;
+      S.dny.forEach(function (d) {
+        var full = d.full, a = d.dop, b = d.odp;
+        if (d.den === den) {
+          full = rezim !== 'HALF';
+          a = rezim === 'CLEAR' ? '' : (dop || '');
+          b = full ? '' : (odp || '');
+        }
+        if (full) { if (vac.indexOf(a) !== -1) n += 1; }
+        else {
+          if (vac.indexOf(a) !== -1) n += 0.5;
+          if (vac.indexOf(b) !== -1) n += 0.5;
+        }
+      });
+      return n;
+    }
 
     function mojeRez(den) {
       var r = S.rezMesic.filter(function (x) { return x.uid === S.init.userId && x.den === den; })[0];
@@ -336,7 +360,8 @@
     }
     function openDesk(den) {
       S.deskDen = den;
-      document.getElementById('dtitle').textContent = 'Stůl — ' + den + '. ' + MES[S.mesic - 1] + ' ' + S.rok;
+      document.getElementById('dtitle').textContent = 'Stůl — ' + den + '. ' + MES[S.mesic - 1] + ' ' + S.rok
+        + (S.cekaUloz ? '  ·  status ' + (S.cekaUloz.dop || S.cekaUloz.odp) + ' se uloží spolu s volbou stolu' : '');
       document.getElementById('derr').textContent = '';
       var tD = Date.now();
       var m = S.init.mapa;
@@ -347,19 +372,38 @@
       document.getElementById('desk').classList.add('on');
       plog('vykreslení mapy stolů (jen prohlížeč, bez serveru)', Date.now() - tD);
     }
-    function closeDesk() { document.getElementById('desk').classList.remove('on'); }
+    /** Zavření dialogu stolů: odložený status se uloží bez stolu, ať se neztratí. */
+    function closeDesk() {
+      if (S.cekaUloz) { deskSend(''); return; }
+      document.getElementById('desk').classList.remove('on');
+    }
     function deskSend(stul) {
+      // status čeká na stůl → jedno volání dm_uloz místo dm_uloz + dm_stul
+      if (S.cekaUloz) {
+        var p = S.cekaUloz;
+        S.cekaUloz = null;
+        S.den = S.deskDen;
+        send(p.rezim, p.dop, p.odp, stul, function () {
+          document.getElementById('desk').classList.remove('on');
+        });
+        return;
+      }
       document.getElementById('derr').textContent = 'Ukládám…';
       var t = Date.now();
       google.script.run
         .withSuccessHandler(function (res) {
           pserver('dm_stul (' + (stul || 'bez stolu') + ')', res, t);
-          S.rezMesic = res.rezMesic; closeDesk(); render();
+          S.rezMesic = res.rezMesic;
+          document.getElementById('desk').classList.remove('on');
+          render();
         })
         .withFailureHandler(function (e) {
           document.getElementById('derr').innerHTML = '<span class="err">' + esc(e && e.message ? e.message : e) + '</span>';
         })
-        .dm_stul({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen, stul: stul, deskAbbr: S.init.deskAbbr });
+        .dm_stul({
+          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.deskDen,
+          stul: stul, row: S.row, maTrvalyStul: maTrvalyStul(), deskAbbr: S.init.deskAbbr
+        });
     }
 
     function tileHtml(s, sel, expr) {
@@ -393,39 +437,65 @@
     }
     function selHalf(which, ab) { if (which === 'dop') S.dopSel = ab; else S.odpSel = ab; buildTiles(); updateDeskRow(); }
 
-    function maybeOpenDesk(needD) {
-      if (needD && !mojeRez(S.den) && !maTrvalyStul()) { S.deskDen = S.den; openDesk(S.den); }
-      else closePick();
-    }
+    /** Bude se pro tenhle den vybírat stůl? (pak se uložení odloží a pošle se s ním naráz) */
+    function chceStul(needD) { return needD && !mojeRez(S.den) && !maTrvalyStul(); }
+
     function applyFull(ab) {
-      maybeOpenDesk((S.init.deskAbbr || []).indexOf(ab) !== -1);
+      if (chceStul((S.init.deskAbbr || []).indexOf(ab) !== -1)) return odlozNaStul('FULL', ab, '');
+      closePick();
       send('FULL', ab, '');
     }
     function applyHalf() {
       var da = S.init.deskAbbr || [];
-      maybeOpenDesk(da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1);
+      if (chceStul(da.indexOf(S.dopSel) !== -1 || da.indexOf(S.odpSel) !== -1))
+        return odlozNaStul('HALF', S.dopSel, S.odpSel);
+      closePick();
       send('HALF', S.dopSel, S.odpSel);
     }
     function applyClear() { closePick(); send('CLEAR', '', ''); }
 
-    function send(rezim, dop, odp) {
-      document.getElementById('perr').textContent = 'Ukládám…';
+    /** Status se uloží až spolu s vybraným stolem — jedno volání místo dvou. */
+    function odlozNaStul(rezim, dop, odp) {
+      S.cekaUloz = { rezim: rezim, dop: dop, odp: odp };
+      openDesk(S.den);
+    }
+
+    /**
+     * Uloží den. `stul` (nepovinné): '' = uvolnit, 'A16' = rezervovat,
+     * undefined = rezervaci vůbec neřešit. `hotovo` se zavolá po úspěchu.
+     */
+    function send(rezim, dop, odp, stul, hotovo) {
+      var doDesk = stul !== undefined;
+      var chyba = doDesk ? 'derr' : 'perr';
+      document.getElementById(chyba).textContent = 'Ukládám…';
+      var den = S.den;
       var t = Date.now();
       google.script.run
         .withSuccessHandler(function (res) {
-          pserver('dm_uloz (' + rezim + ' ' + (dop || '—') + (odp ? '/' + odp : '') + ')', res, t);
+          pserver('dm_uloz (' + rezim + ' ' + (dop || '—') + (odp ? '/' + odp : '')
+            + (doDesk ? ', stůl ' + (stul || 'žádný') : '') + ')', res, t);
           for (var i = 0; i < S.dny.length; i++) if (S.dny[i].den === res.den.den) S.dny[i] = res.den;
           S.souhrn = res.souhrn;
+          if (res.row) S.row = res.row;
           if (res.rezMesic) S.rezMesic = res.rezMesic;
+          document.getElementById(chyba).textContent = '';
+          if (hotovo) hotovo();
           render();
         })
         .withFailureHandler(function (e) {
           var msg = e && e.message ? e.message : e;
-          if (document.getElementById('pick').classList.contains('on'))
-            document.getElementById('perr').innerHTML = '<span class="err">' + esc(msg) + '</span>';
+          var el = document.getElementById(chyba);
+          if (el && el.closest('.pick').classList.contains('on'))
+            el.innerHTML = '<span class="err">' + esc(msg) + '</span>';
           else alert('Uložení dne selhalo: ' + msg);
         })
-        .dm_uloz({ userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: S.den, rezim: rezim, dop: dop, odp: odp, vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr });
+        .dm_uloz({
+          userId: S.init.userId, jmeno: S.init.jmeno, mesic: S.mesic, den: den,
+          rezim: rezim, dop: dop, odp: odp, stul: stul,
+          row: S.row, souhrn: souhrnPo(den, rezim, dop, odp),
+          maTrvalyStul: maTrvalyStul(), maRezervaci: !!mojeRez(den),
+          vacAbbr: S.init.vacAbbr, deskAbbr: S.init.deskAbbr
+        });
     }
 
     // ── hromadné zadání ──

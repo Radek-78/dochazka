@@ -99,6 +99,7 @@ function _dsCache(klic, fn) {
   return _DS_CACHE[klic];
 }
 function _dsCacheZrus(klic) {
-  if (klic === undefined) _DS_CACHE = {};
-  else delete _DS_CACHE[klic];
+  if (klic === undefined) { _DS_CACHE = {}; return; }
+  delete _DS_CACHE[klic];
+  delete _DS_CACHE['RAW'];   // syrová dávka pomocných listů je tím taky neplatná
 }

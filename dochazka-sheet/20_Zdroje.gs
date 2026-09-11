@@ -177,36 +177,6 @@ function _dsZdroj(name) {
 }
 
 /**
- * Základ pro všechna čtení listu s hlavičkou v 1. řádku.
- *   data  — 2D pole včetně hlavičky
- *   H     — { názevSloupce: index }
- *   v(r, nazev) — hodnota sloupce z řádku (prázdný řetězec, když sloupec chybí)
- *   radky — [{ radek: číslo řádku v listu, r: pole hodnot }] bez hlavičky
- */
-function _dsTabulka(sh) {
-  var prazdna = { data: [], H: {}, v: function () { return ''; }, radky: [] };
-  if (!sh) return prazdna;
-  var data = sh.getDataRange().getValues();
-  if (!data.length) return prazdna;
-  var H = {};
-  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
-  var radky = [];
-  for (var i = 1; i < data.length; i++) radky.push({ radek: i + 1, r: data[i] });
-  return {
-    data: data, H: H, radky: radky,
-    v: function (r, nazev) { return H[nazev] === undefined ? '' : r[H[nazev]]; }
-  };
-}
-
-/** Hodnota buňky → text (Date na ISO, ořez apostrofu a mezer). */
-function _dsBunka(val, tz) {
-  if (val instanceof Date && !isNaN(val.getTime())) {
-    return Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
-  }
-  return (val === null || val === undefined) ? '' : String(val).replace(/^'/, '').trim();
-}
-
-/**
  * Jako _dsCtiSheet, ale načte jen souvislý úsek sloupců pokrývající požadovaná
  * jména. U širokých tabulek (ATTENDANCE má i note / created_at / work_start_time)
  * tím znatelně klesne objem přenášených dat.

@@ -3,6 +3,41 @@
 // ════════════════════════════════════════════════════════════════════
 
 
+// ── dávkové čtení pomocných listů ────────────────────────────────────────
+// Jedno volání SpreadsheetApp stojí na velkém sešitu ~300 ms a _dsTabulka jich
+// dělá dvě na list. Sheets API umí přečíst všechny čtyři listy jedním HTTP
+// požadavkem. Když služba není zapnutá (nebo list ještě neexistuje), spadne to
+// zpátky na SpreadsheetApp — jen pomaleji.
+
+var DS_LOKALNI_LISTY = [L_UZIV, L_STATUSY, L_STOLY, L_REZERVACE];
+
+/** { názevListu: 2D pole včetně hlavičky } pro všechny pomocné listy najednou. */
+function _dsCtiListyDavkove(ss, nazvy) {
+  var out = {};
+  if (_dsMaSheetsApi()) {
+    try {
+      var odp = Sheets.Spreadsheets.Values.batchGet(ss.getId(), {
+        ranges: nazvy.map(function (n) { return "'" + String(n).replace(/'/g, "''") + "'"; }),
+        valueRenderOption: 'UNFORMATTED_VALUE',
+        dateTimeRenderOption: 'SERIAL_NUMBER'
+      });
+      (odp.valueRanges || []).forEach(function (vr, i) { out[nazvy[i]] = vr.values || []; });
+      return out;
+    } catch (e) { out = {}; }     // chybějící list / vypnutá služba → klasická cesta
+  }
+  nazvy.forEach(function (n) {
+    var sh = ss.getSheetByName(n);
+    out[n] = (sh && sh.getLastRow()) ? sh.getDataRange().getValues() : [];
+  });
+  return out;
+}
+
+/** Tabulka pomocného listu — všechny se načtou jedním dávkovým čtením za běh. */
+function _dsTabulkaLok(ss, nazev) {
+  var vse = _dsCache('RAW', function () { return _dsCtiListyDavkove(ss, DS_LOKALNI_LISTY); });
+  return _dsTabulkaZDat(vse[nazev] || []);
+}
+
 /**
  * Zajistí pomocné listy a připraví uspořádané řádky. Čte JEN z tohoto sešitu:
  * lidi z listu Uživatelé, statusy z listu Statusy, stoly z listu Stoly.
@@ -66,7 +101,7 @@ function _dsListStatusy(ss, radky) {
 /** Statusy z listu Statusy (jen aktivní, bez duplicitních zkratek; cache na jeden běh). */
 function _dsCtiStatusy(ss) {
   return _dsCache('STATUSY', function () {
-    var t = _dsTabulka(ss.getSheetByName(L_STATUSY));
+    var t = _dsTabulkaLok(ss, L_STATUSY);
     var out = [], videno = {};
     function ano(r, nazev) { return /^ano$/i.test(String(t.v(r, nazev) || '').trim()); }
     t.radky.forEach(function (x) {
@@ -164,7 +199,7 @@ function _dsUpgradeUzivHlavicku(sh, liveLide) {
 /** Přečte list Uživatelé jako zdroj pravdy (cache na jeden běh, podle názvů sloupců). */
 function _dsCtiUzivatele(ss) {
   return _dsCache('UZIVATELE', function () {
-    var t = _dsTabulka(ss.getSheetByName(L_UZIV));
+    var t = _dsTabulkaLok(ss, L_UZIV);
     var out = [];
     t.radky.forEach(function (x) {
       var jmeno = String(t.v(x.r, 'Jméno') || '').trim();
@@ -320,7 +355,7 @@ function _dsNactiMapu(ss) {
 function _dsDoplnTrvaleUid(ss) {
   var sh = ss.getSheetByName(L_STOLY);
   if (!sh) return [];
-  var t = _dsTabulka(sh);
+  var t = _dsTabulkaLok(ss, L_STOLY);
   var col = t.H['trvale_uid'];
   if (col === undefined || !t.radky.length) return [];
 
@@ -417,7 +452,7 @@ function _dsListRezervace(ss) {
 /** Přečte stoly (cache na jeden běh — po zápisu do listu volej _dsCacheZrus('STOLY')). */
 function _dsCtiStoly(ss) {
   return _dsCache('STOLY', function () {
-    var t = _dsTabulka(ss.getSheetByName(L_STOLY));
+    var t = _dsTabulkaLok(ss, L_STOLY);
     var out = [];
     t.radky.forEach(function (x) {
       var lbl = String(t.v(x.r, 'Stůl') || '').trim();
@@ -442,7 +477,7 @@ function _dsCtiStoly(ss) {
  */
 function _dmCtiRezervace(ss) {
   return _dsCache('REZERVACE', function () {
-    var t = _dsTabulka(ss.getSheetByName(L_REZERVACE));
+    var t = _dsTabulkaLok(ss, L_REZERVACE);
     var prazdny = { rows: [], volne: [], dalsi: 2 };
     if (!t.radky.length || t.H['Datum'] === undefined || t.H['user_id'] === undefined) return prazdny;
 

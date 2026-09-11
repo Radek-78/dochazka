@@ -77,6 +77,7 @@ function dm_init() {
     out.dny = d.dny;
     out.souhrn = d.souhrn;
     out.rezMesic = d.rezMesic;
+    out.row = d.row;
     T.pridej(d.log.kroky);
   } catch (e) {
     out.chybaMesic = String((e && e.message) || e);
@@ -91,62 +92,121 @@ function dm_mesic(payload) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = _dmListMesice(payload.mesic);
   T.krok('měsíc: najít list');
-  var mr = _dmMojeRadka(sheet, payload.userId);
-  T.krok('měsíc: najít můj řádek (skrytý user_id)');
-  var dny = _dmDenData(sheet, mr.row, payload.mesic);
-  T.krok('měsíc: přečíst dny + sloučené buňky');
-  var souhrn = sheet.getRange(mr.row, _gSouhrn(_dmDniVMesici(payload.mesic))).getValue();
-  T.krok('měsíc: přečíst souhrn dovolené');
+  var b = _dmMujBlok(sheet, payload.userId, payload.mesic);
+  T.krok('měsíc: řádek + dny + souhrn (jedním čtením)');
   var rez = _dmRezMesic(ss, payload.mesic);
   T.krok('měsíc: číst list ' + L_REZERVACE);
   return {
-    mesic: payload.mesic, rok: ROK,
-    dny: dny, souhrn: souhrn, rezMesic: rez, log: T.hotovo()
+    mesic: payload.mesic, rok: ROK, row: b.row,
+    dny: b.dny, souhrn: b.souhrn, rezMesic: rez, log: T.hotovo()
   };
 }
 
-/** Rezervace / uvolnění stolu. payload: {userId, jmeno, mesic, den, stul} (stul='' = uvolnit) */
+/**
+ * Můj řádek měsíčního listu jedním čtením: hodnoty celého bloku (jméno … user_id)
+ * + sloučené buňky mého řádku. Dřív to byla čtyři samostatná volání.
+ */
+function _dmMujBlok(sheet, userId, mesic) {
+  var N = _dmDniVMesici(mesic);
+  var uidCol = _gUid(N), souhrnCol = _gSouhrn(N), prvni = DS_PRVNI_DATA_RADEK;
+  var n = sheet.getLastRow() - prvni + 1;
+  if (n < 1) throw new Error('Prázdný list.');
+  var blok = sheet.getRange(prvni, 1, n, uidCol).getValues();
+
+  var i = -1;
+  for (var k = 0; k < n; k++) if (String(blok[k][uidCol - 1]) === String(userId)) { i = k; break; }
+  if (i === -1) throw new Error('Nejsi v tomhle měsíci (list ' + sheet.getName() + '). Možná máš vyplněné datum Do.');
+
+  var row = prvni + i;
+  var merged = {};
+  sheet.getRange(row, DS_DEN1_COL, 1, N * DS_DEN_KROK).getMergedRanges()
+    .forEach(function (mr) { merged[mr.getColumn()] = true; });
+
+  var dny = [];
+  for (var d = 1; d <= N; d++) {
+    var dopCol = _gDop(d);
+    var dow = new Date(ROK, mesic - 1, d).getDay();
+    var full = !!merged[dopCol];
+    dny.push({
+      den: d, dow: dow, weekend: (dow === 0 || dow === 6), full: full,
+      dop: String(blok[i][dopCol - 1] || ''),
+      odp: full ? '' : String(blok[i][dopCol] || '')
+    });
+  }
+  return { row: row, souhrn: blok[i][souhrnCol - 1], dny: dny };
+}
+
+/**
+ * Ověří řádek, který klient dostal při načtení měsíce (1 čtení buňky).
+ * Kdyby se list mezitím přestavěl, dohledá řádek klasicky.
+ */
+function _dmRadekOveren(sheet, userId, mesic, tip) {
+  var uidCol = _gUid(_dmDniVMesici(mesic));
+  if (tip && String(sheet.getRange(tip, uidCol).getValue() || '') === String(userId)) return tip;
+  return _dmMojeRadka(sheet, userId).row;
+}
+
+/** Stav dne, jak bude v listu vypadat po zápisu — bez nutnosti číst ho zpátky. */
+function _dmDenPoZapisu(mesic, den, rezim, dop, odp) {
+  var dow = new Date(ROK, mesic - 1, den).getDay();
+  var full = rezim !== 'HALF';
+  return {
+    den: den, dow: dow, weekend: (dow === 0 || dow === 6), full: full,
+    dop: rezim === 'CLEAR' ? '' : String(dop || ''),
+    odp: full ? '' : String(odp || '')
+  };
+}
+
+/**
+ * Zapíše / zruší rezervaci stolu v listu Rezervace. Vrací true, když uživatel
+ * ten den stůl má. Kolize a trvalé vlastnictví ověřuje VŽDY server — tohle se
+ * z klienta brát nesmí.
+ */
+function _dmRezervujStul(ss, userId, jmeno, mesic, den, stul) {
+  var sh = _dsListRezervace(ss);
+  var dateStr = ROK + '-' + ('0' + mesic).slice(-2) + '-' + ('0' + den).slice(-2);
+  var rez = _dmCtiRezervace(ss);                          // jediné čtení listu za běh
+  var vDen = _dmRezMesic(ss, mesic).filter(function (r) { return r.den === den; });
+  var moje = vDen.filter(function (r) { return r.uid === String(userId); })[0];
+
+  if (!stul) {
+    if (moje) {
+      sh.getRange(moje.radek, 1, 1, 4).clearContent();
+      _dsCacheZrus('REZERVACE');
+    }
+    return false;
+  }
+
+  var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === stul && s.aktivni; })[0];
+  if (!desk) throw new Error('Stůl "' + stul + '" neexistuje nebo není aktivní.');
+  if ((desk.trvale || desk.trvaleUid) && !_dmStulPatri(desk, userId, jmeno)) {
+    throw new Error('Stůl ' + stul + ' patří natrvalo: ' + (desk.trvale || '—') + '.');
+  }
+  var kolize = vDen.filter(function (r) { return r.stul === stul && r.uid !== String(userId); })[0];
+  if (kolize) throw new Error('Stůl ' + stul + ' je ' + dateStr + ' obsazený: ' + kolize.jmeno + '.');
+
+  var cil = moje ? moje.radek : (rez.volne.length ? rez.volne[0] : rez.dalsi);
+  sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']])
+    .setValues([[dateStr, stul, jmeno, userId]]);
+  _dsCacheZrus('REZERVACE');
+  return true;
+}
+
+/** Rezervace / uvolnění stolu bez změny statusu. payload: {userId, jmeno, mesic, den, stul, row, maTrvalyStul} */
 function dm_stul(payload) {
   var T = _dmCasovac();
   var lock = LockService.getDocumentLock();
   lock.waitLock(15000);
-  T.krok('stůl: čekání na zámek dokumentu');
+  T.krok('stůl: zámek dokumentu');
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sh = _dsListRezervace(ss);
-    var dateStr = ROK + '-' + ('0' + payload.mesic).slice(-2) + '-' + ('0' + payload.den).slice(-2);
-    var rez = _dmCtiRezervace(ss);                        // jediné čtení listu za běh
-    var vDen = _dmRezMesic(ss, payload.mesic).filter(function (r) { return r.den === payload.den; });
-    var moje = vDen.filter(function (r) { return r.uid === String(payload.userId); })[0];
-    T.krok('stůl: číst list ' + L_REZERVACE);
-
-    var maStul = false;
-    if (!payload.stul) {
-      if (moje) sh.getRange(moje.radek, 1, 1, 4).clearContent();
-    } else {
-      maStul = true;
-      var desk = _dsCtiStoly(ss).filter(function (s) { return s.stul === payload.stul && s.aktivni; })[0];
-      if (!desk) throw new Error('Stůl "' + payload.stul + '" neexistuje nebo není aktivní.');
-      if ((desk.trvale || desk.trvaleUid) && !_dmStulPatri(desk, payload.userId, payload.jmeno)) {
-        throw new Error('Stůl ' + payload.stul + ' patří natrvalo: ' + (desk.trvale || '—') + '.');
-      }
-      var kolize = vDen.filter(function (r) {
-        return r.stul === payload.stul && r.uid !== String(payload.userId);
-      })[0];
-      if (kolize) {
-        throw new Error('Stůl ' + payload.stul + ' je ' + dateStr + ' obsazený: ' + kolize.jmeno + '.');
-      }
-      var cil = moje ? moje.radek : (rez.volne.length ? rez.volne[0] : rez.dalsi);
-      sh.getRange(cil, 1, 1, 4).setNumberFormats([['@', '@', '@', '@']])
-        .setValues([[dateStr, payload.stul, payload.jmeno, payload.userId]]);
-    }
-    _dsCacheZrus('REZERVACE');                            // list se změnil
-    T.krok('stůl: zápis do listu ' + L_REZERVACE);
+    var maStul = _dmRezervujStul(ss, payload.userId, payload.jmeno, payload.mesic, payload.den, payload.stul);
+    T.krok('stůl: list ' + L_REZERVACE + ' (čtení + zápis)');
 
     try {
       var msh = _dmListMesice(payload.mesic);
-      var mmr = _dmMojeRadka(msh, payload.userId);
-      _dmObnovStul(msh, mmr.row, payload.den, payload.deskAbbr || [], maStul || _dmMaTrvalyStul(ss, payload.userId, payload.jmeno));
+      var row = _dmRadekOveren(msh, payload.userId, payload.mesic, payload.row);
+      _dmObnovStul(msh, row, payload.den, payload.deskAbbr || [], maStul || !!payload.maTrvalyStul);
       PropertiesService.getDocumentProperties().deleteProperty('REZ_' + payload.mesic);
     } catch (e) {}
     T.krok('stůl: přeznačit buňku v měsíčním listu');
@@ -156,36 +216,68 @@ function dm_stul(payload) {
   }
 }
 
+/**
+ * Uloží jeden den — a rovnou i rezervaci stolu, když je `stul` v payloadu
+ * (jedno kolo místo dvou, a hlavně bez čekání na zámek podruhé).
+ *
+ * Klient posílá, co už sám ví, aby server nemusel číst listy znovu:
+ *   row           — můj řádek z načtení měsíce (server ho jen ověří, 1 buňka)
+ *   souhrn        — přepočtená dovolená (server ji jen zapíše)
+ *   maTrvalyStul  — mám někde trvale přidělený stůl (list Stoly)
+ *   maRezervaci   — mám ten den rezervaci (list Rezervace)
+ *   stul          — chybí = neřešit; '' = uvolnit; 'A16' = rezervovat
+ */
 function dm_uloz(payload) {
   var T = _dmCasovac();
   var lock = LockService.getDocumentLock();
   lock.waitLock(15000);
-  T.krok('uložit: čekání na zámek dokumentu');
+  T.krok('uložit: zámek dokumentu');
   try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = _dmListMesice(payload.mesic);
-    var mr = _dmMojeRadka(sheet, payload.userId);
-    T.krok('uložit: najít list a můj řádek');
-    _dmZapisDen(sheet, mr.row, payload.den, payload.rezim, payload.dop, payload.odp);
+    var N = _dmDniVMesici(payload.mesic);
+    var row = _dmRadekOveren(sheet, payload.userId, payload.mesic, payload.row);
+    T.krok('uložit: ověřit můj řádek');
+
+    _dmZapisDen(sheet, row, payload.den, payload.rezim, payload.dop, payload.odp);
     T.krok('uložit: zapsat den (sloučení buněk)');
-    var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
-    T.krok('uložit: přepočítat souhrn dovolené');
-    var ssU = SpreadsheetApp.getActiveSpreadsheet();
-    // status už nepotřebuje stůl → zruš případnou rezervaci
-    if (!_dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr)) {
-      _dmZrusRezervaci(ssU, payload.userId, payload.mesic, payload.den);
+
+    var souhrn = payload.souhrn;
+    if (souhrn === undefined || souhrn === null || isNaN(Number(souhrn))) {
+      souhrn = _dmPrepocitejSouhrn(sheet, row, payload.mesic, payload.vacAbbr || []);
+    } else {
+      souhrn = Number(souhrn);
+      sheet.getRange(row, _gSouhrn(N)).setValue(souhrn);
     }
-    T.krok('uložit: kontrola rezervace stolu');
+    T.krok('uložit: zapsat souhrn dovolené');
+
+    var potreba = _dmPotrebaStul(payload.rezim, payload.dop, payload.odp, payload.deskAbbr);
+    var maStul = !!payload.maTrvalyStul;
+    var rezZmena = false;
+    if (payload.stul !== undefined && payload.stul !== null) {
+      maStul = _dmRezervujStul(ss, payload.userId, payload.jmeno, payload.mesic,
+        payload.den, potreba ? payload.stul : '') || maStul;
+      rezZmena = true;
+    } else if (!potreba && payload.maRezervaci) {
+      // status už stůl nepotřebuje → zruš rezervaci (jen když klient říká, že nějaká je)
+      rezZmena = _dmZrusRezervaci(ss, payload.userId, payload.mesic, payload.den);
+    } else {
+      maStul = maStul || !!payload.maRezervaci;
+    }
+    T.krok('uložit: rezervace stolu');
+
+    var den = _dmDenPoZapisu(payload.mesic, payload.den, payload.rezim, payload.dop, payload.odp);
     try {
-      var maR = _dmRezMesic(ssU, payload.mesic).some(function (r) {
-        return String(r.uid) === String(payload.userId) && r.den === payload.den && r.stul;
-      });
-      _dmObnovStul(sheet, mr.row, payload.den, payload.deskAbbr || [], maR || _dmMaTrvalyStul(ssU, payload.userId, payload.jmeno));
+      _dmObnovStul(sheet, row, payload.den, payload.deskAbbr || [], maStul, den);
     } catch (e) {}
+    try { sheet.getRange(row, _gDop(payload.den)).activate(); } catch (e) {}
     T.krok('uložit: indikace „bez stolu" v buňce');
-    var den = _dmDenData(sheet, mr.row, payload.mesic).filter(function (x) { return x.den === payload.den; })[0];
-    try { sheet.getRange(mr.row, _gDop(payload.den)).activate(); } catch (e) {}
-    T.krok('uložit: přečíst den zpět');
-    return { den: den, souhrn: souhrn, rezMesic: _dmRezMesic(ssU, payload.mesic), log: T.hotovo() };
+
+    var out = { den: den, souhrn: souhrn, row: row, log: null };
+    if (rezZmena) out.rezMesic = _dmRezMesic(ss, payload.mesic);   // jinak si klient nechá svoje
+    T.krok('uložit: rezervace zpět klientovi');
+    out.log = T.hotovo();
+    return out;
   } finally {
     lock.releaseLock();
   }
@@ -196,10 +288,11 @@ function dm_hromadne(payload) {
   var T = _dmCasovac();
   var lock = LockService.getDocumentLock();
   lock.waitLock(25000);
-  T.krok('hromadně: čekání na zámek dokumentu');
+  T.krok('hromadně: zámek dokumentu');
   try {
     var sheet = _dmListMesice(payload.mesic);
-    var mr = _dmMojeRadka(sheet, payload.userId);
+    var mr = { row: _dmRadekOveren(sheet, payload.userId, payload.mesic, payload.row) };
+    T.krok('hromadně: ověřit můj řádek');
     var N = _dmDniVMesici(payload.mesic);
     var od = Math.max(1, Math.min(N, Number(payload.odDen) || 1));
     var doo = Math.max(od, Math.min(N, Number(payload.doDen) || N));
@@ -211,7 +304,8 @@ function dm_hromadne(payload) {
         if (dow === 0 || dow === 6) continue;
       }
       _dmZapisDen(sheet, mr.row, d, payload.rezim, payload.dop, payload.odp);
-      if (!potrebaStul) _dmZrusRezervaci(ssH, payload.userId, payload.mesic, d);
+      // list Rezervace čti jen když klient ví, že v rozsahu nějaká rezervace je
+      if (!potrebaStul && payload.maRezervaci) _dmZrusRezervaci(ssH, payload.userId, payload.mesic, d);
     }
     T.krok('hromadně: zapsat dny ' + od + '–' + doo);
     var souhrn = _dmPrepocitejSouhrn(sheet, mr.row, payload.mesic, payload.vacAbbr || []);
@@ -219,7 +313,7 @@ function dm_hromadne(payload) {
     try {
       var da = payload.deskAbbr || [];
       if (da.length) {
-        var trvaly = _dmMaTrvalyStul(ssH, payload.userId, payload.jmeno);
+        var trvaly = !!payload.maTrvalyStul;
         var rezDny = {};
         _dmRezMesic(ssH, payload.mesic).forEach(function (r) {
           if (String(r.uid) === String(payload.userId) && r.stul) rezDny[r.den] = 1;

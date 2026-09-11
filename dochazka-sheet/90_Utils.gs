@@ -2,6 +2,43 @@
 //  90_Utils.gs — Drobné sdílené pomocné funkce.
 // ════════════════════════════════════════════════════════════════════
 
+/**
+ * Základ pro všechna čtení listu s hlavičkou v 1. řádku.
+ *   data  — 2D pole včetně hlavičky
+ *   H     — { názevSloupce: index }
+ *   v(r, nazev) — hodnota sloupce z řádku (prázdný řetězec, když sloupec chybí)
+ *   radky — [{ radek: číslo řádku v listu, r: pole hodnot }] bez hlavičky
+ */
+function _dsTabulkaZDat(data) {
+  var prazdna = { data: [], H: {}, v: function () { return ''; }, radky: [] };
+  if (!data || !data.length) return prazdna;
+  var H = {};
+  data[0].forEach(function (h, i) { H[String(h).trim()] = i; });
+  var radky = [];
+  for (var i = 1; i < data.length; i++) radky.push({ radek: i + 1, r: data[i] });
+  return {
+    data: data, H: H, radky: radky,
+    // dávkové čtení vrací zkrácené řádky (chybí koncové prázdné buňky) → '' místo undefined
+    v: function (r, nazev) {
+      if (H[nazev] === undefined) return '';
+      var x = r[H[nazev]];
+      return (x === undefined || x === null) ? '' : x;
+    }
+  };
+}
+
+function _dsTabulka(sh) {
+  return _dsTabulkaZDat(sh ? sh.getDataRange().getValues() : null);
+}
+
+/** Hodnota buňky → text (Date na ISO, ořez apostrofu a mezer). */
+function _dsBunka(val, tz) {
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return Utilities.formatDate(val, tz, "yyyy-MM-dd'T'HH:mm:ss");
+  }
+  return (val === null || val === undefined) ? '' : String(val).replace(/^'/, '').trim();
+}
+
 function _dsJmeno(u) {
   return ((u.last_name || '') + ' ' + (u.first_name || '')).trim();
 }
@@ -57,6 +94,15 @@ function _dsFmtDatum(v) {
 /** Hodnota z buňky/DB → Date nebo null. */
 function _dsParseDatum(v) {
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  // Dávkové čtení přes Sheets API vrací datum jako pořadové číslo (epocha 1899-12-30).
+  // Skládá se po dnech nad lokálním datem, ať vyjde stejná půlnoc jako u SpreadsheetApp
+  // (a ať to nerozhodí přechod na letní čas).
+  if (typeof v === 'number') {
+    if (!isFinite(v) || v < 1) return null;
+    var d0 = new Date(1899, 11, 30);
+    d0.setDate(d0.getDate() + Math.floor(v));
+    return isNaN(d0.getTime()) ? null : d0;
+  }
   var s = String(v || '').trim();
   if (!s) return null;
   s = s.replace(/^'/, '');

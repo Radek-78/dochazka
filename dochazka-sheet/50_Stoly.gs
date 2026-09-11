@@ -104,11 +104,6 @@ function _dmTrvaleStolyUid(ss) {
   return out;
 }
 
-/** Má uživatel natrvalo přiřazený stůl v listu Stoly? */
-function _dmMaTrvalyStul(ss, userId, jmeno) {
-  return _dsCtiStoly(ss).some(function (s) { return _dmStulPatri(s, userId, jmeno); });
-}
-
 /** Smaže rezervaci uživatele pro daný den (list Rezervace). Vrací true, když něco smazal. */
 function _dmZrusRezervaci(ss, userId, mesic, den) {
   var sh = ss.getSheetByName(L_REZERVACE);
@@ -130,19 +125,27 @@ function _dmPotrebaStul(rezim, dop, odp, deskAbbr) {
   return da.indexOf(String(dop || '').trim()) !== -1 || da.indexOf(String(odp || '').trim()) !== -1;
 }
 
-/** Jeden den: kancelář bez stolu → červená zkratka + červený rámeček, jinak výchozí barva bez rámečku. */
-function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci) {
+/**
+ * Jeden den: kancelář bez stolu → červená zkratka + červený rámeček, jinak výchozí
+ * barva bez rámečku. `stav` = { dop, odp, full } — když ho volající zná (právě to
+ * zapsal), ušetří se čtení listu; jinak se dočte.
+ */
+function _dmObnovStul(sheet, row, den, deskAbbr, maRezervaci, stav) {
   var dopCol = _gDop(den);
   var pair = sheet.getRange(row, dopCol, 1, 2);
-  var vals = pair.getValues()[0];
-  var full = pair.isPartOfMerge();
+  if (!stav) {
+    var vals = pair.getValues()[0];
+    stav = { dop: vals[0], odp: vals[1], full: pair.isPartOfMerge() };
+  }
   var da = deskAbbr || [];
   var vychozi = DS_CHIP_TON > 0 ? DS_BARVA_TEXT : '#ffffff';
-  var dopDesk = da.indexOf(String(vals[0] || '').trim()) !== -1;
-  var odpDesk = !full && da.indexOf(String(vals[1] || '').trim()) !== -1;
+  var dopDesk = da.indexOf(String(stav.dop || '').trim()) !== -1;
+  var odpDesk = !stav.full && da.indexOf(String(stav.odp || '').trim()) !== -1;
   var chybi = (dopDesk || odpDesk) && !maRezervaci;
-  sheet.getRange(row, dopCol).setFontColor(dopDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi);
-  sheet.getRange(row, dopCol + 1).setFontColor(odpDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi);
+  pair.setFontColors([[
+    dopDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi,
+    odpDesk && chybi ? DS_BARVA_BEZ_STOLU : vychozi
+  ]]);
   if (chybi) pair.setBorder(true, true, true, true, false, false, DS_BARVA_BEZ_STOLU, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   else pair.setBorder(false, false, false, false, false, false, null, null);
 }
