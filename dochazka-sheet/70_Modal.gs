@@ -7,68 +7,53 @@
 //  MODAL — serverové funkce
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Vstup modalu — čte JEN z listů tohoto sešitu a rovnou vrací i data měsíce,
+ * takže klient vystačí s jedním kolem komunikace se serverem.
+ */
 function dm_init() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mesic = _dmMesicZListu(ss.getActiveSheet()) || (new Date().getMonth() + 1);
 
   var email = String(Session.getActiveUser().getEmail() || '').toLowerCase();
-  var me = _dsZdroj('USERS').filter(function (u) {
-    return String(u.email).toLowerCase() === email;
+  var me = _dsCtiUzivatele(ss).filter(function (u) {
+    return u.email && u.email.toLowerCase() === email;
   })[0];
-  if (!me) throw new Error('Tvůj účet (' + (email || '?') + ') není v USERS živé appky.');
+  if (!me) throw new Error('Tvůj e-mail (' + (email || '?') + ') není v listu ' + L_UZIV + ' ve sloupci E-mail.');
 
-  var seen = {};
-  var statusy = [];
-  _dsZdroj('ATTENDANCE_STATUSES')
-    .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
-    .forEach(function (s) {
-      var ab = String(s.abbreviation).trim();
-      if (!ab || seen[ab]) return;
-      seen[ab] = 1;
-      statusy.push({
-        abbr: ab, name: s.name || '',
-        color: _dsHex(s.color, '#94a3b8'), fg: _dsHex(s.text_color, '#ffffff'),
-        vac: String(s.is_vacation) === 'true',
-        desk: String(s.allows_desk_reservation) === 'true'
-      });
-    });
-
+  var statusy = _dsCtiStatusy(ss);
   var stolyRows = _dsCtiStoly(ss).filter(function (s) { return s.aktivni; });
   var stoly = stolyRows.map(function (s) {
     return { label: s.stul, trvale: s.trvale, trvaleUid: s.trvaleUid };
   });
-  var stulByCell = {};
-  stolyRows.forEach(function (s) { if (s.cell_id) stulByCell[s.cell_id] = s; });
-  var aktivniLabel = {};
-  stolyRows.forEach(function (s) { aktivniLabel[s.stul] = 1; });
 
-  var usek = _dsZdroj('SECTIONS').filter(function (s) {
-    return s.name === USEK_NAZEV && String(s.active) !== 'false';
-  })[0];
-  var mapaRaw = usek ? _dsNactiMapu(usek) : null;
-  var mapa = null;
-  if (mapaRaw) {
-    mapa = {
-      name: mapaRaw.name, rows: mapaRaw.rows, cols: mapaRaw.cols,
-      desks: mapaRaw.desks
-        .filter(function (d) { return aktivniLabel[d.label]; })
-        .map(function (d) {
-          var s = stulByCell[d.id];
-          return {
-            label: d.label, row: d.row, col: d.col,
-            trvale: (s && s.trvale) || '', trvaleUid: (s && s.trvaleUid) || ''
-          };
-        })
-    };
-  }
+  var mapaRaw = _dsNactiMapu(ss);
+  var mapa = mapaRaw ? {
+    name: mapaRaw.name, rows: mapaRaw.rows, cols: mapaRaw.cols,
+    desks: mapaRaw.desks.filter(function (d) { return d.aktivni; }).map(function (d) {
+      return { label: d.label, row: d.row, col: d.col, trvale: d.trvale, trvaleUid: d.trvaleUid };
+    })
+  } : null;
 
-  return {
-    rok: ROK, mesic: mesic, userId: me.user_id, jmeno: _dsJmeno(me), usek: USEK_NAZEV,
+  var out = {
+    rok: ROK, mesic: mesic, userId: me.user_id, jmeno: me.jmeno, usek: USEK_NAZEV,
     statusy: statusy,
     vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
     deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; }),
     stoly: stoly, mapa: mapa
   };
+
+  // data měsíce rovnou s initem; když list chybí nebo v něm uživatel není,
+  // pošle se jen text chyby a klient ji zobrazí stejně jako dřív
+  try {
+    var d = dm_mesic({ userId: me.user_id, mesic: mesic });
+    out.dny = d.dny;
+    out.souhrn = d.souhrn;
+    out.rezMesic = d.rezMesic;
+  } catch (e) {
+    out.chybaMesic = String((e && e.message) || e);
+  }
+  return out;
 }
 
 function dm_mesic(payload) {

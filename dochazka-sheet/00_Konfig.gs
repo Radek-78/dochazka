@@ -9,29 +9,33 @@
  *  Patří DOVNITŘ vygenerovaného docházkového spreadsheetu (Rozšíření → Apps
  *  Script), NE do projektu živé aplikace.
  *
- *  NASTAVENÍ (3 konstanty níže):
- *    ZDROJ_CORE_ID  — ID CORE DB živé appky.
- *    USEK_NAZEV     — přesný název úseku (řádek v SECTIONS) pro prvotní naplnění.
- *    ROK           — rok pro měsíční listy.
+ *  ⚠ BĚŽNÝ PROVOZ NESAHÁ NIKAM VEN. Všechno se čte z vlastních listů tohoto
+ *  sešitu. Do sešitů živé aplikace sahá JEN podmenu „🧳 Z aplikace" —
+ *  jednorázové naplnění listů a import historie. Až se aplikace smaže,
+ *  stačí to podmenu (a soubor 60_Import.gs) odstranit a nic se nerozbije.
+ *
+ *  NASTAVENÍ (konstanty níže):
+ *    USEK_NAZEV     — přesný název úseku (titulek listů; v SECTIONS při migraci).
+ *    ROK            — rok pro měsíční listy.
+ *    ZDROJ_CORE_ID / ZDROJ_TRANSACTION_ID — jen pro podmenu „🧳 Z aplikace".
  *
  *  MENU 📋 Docházka:
  *    "Zadat můj měsíc"                    → modal s měsíčním pohledem přihlášeného
  *    "Postavit / obnovit všechny měsíce"  → přegeneruje 12 měsíčních listů
  *    "Postavit / obnovit jen tento měsíc" → přegeneruje jen list otevřeného měsíce
- *    "Načíst docházku z aplikace"         → import jen ATTENDANCE (bez rezervací)
- *    "Načíst rezervace stolů z aplikace"  → import jen MAP_RESERVATIONS
- *    "Pomocné listy"                      → vytvořit chybějící / aktualizovat Stoly + Mapa;
- *                                           💾 Cachovat zdroje (vývoj) = snapshot CORE do
- *                                           skrytých listů Z_*, pak se čte z nich (rychlé)
+ *    "Pomocné listy"                      → vytvořit chybějící / obnovit Mapu
+ *    "🧳 Z aplikace" (jednorázově)        → naplnit listy, import docházky a rezervací
  *
- *  LIST "Stoly"     = stoly z OFFICE_MAPS (Stůl | Trvale | Aktivní | cell_id).
- *  LIST "Mapa"      = jen náhled rozložení stolů + trvalí majitelé (odvozený).
- *  LIST "Rezervace" = Datum | Stůl | Jméno | user_id (import z MAP_RESERVATIONS).
+ *  LIST "Statusy"   = ZDROJ pravdy o statusech.
+ *                     Zkratka | Název | Barva | Barva textu | Dovolená | Vyžaduje stůl | Aktivní.
+ *  LIST "Stoly"     = ZDROJ pravdy o stolech i o rozložení mapy.
+ *                     Stůl | Trvale (jméno) | Aktivní | Řádek | Sloupec | cell_id | trvale_uid.
+ *  LIST "Mapa"      = jen náhled rozložení stolů + trvalí majitelé (odvozený ze Stolů).
+ *  LIST "Rezervace" = Datum | Stůl | Jméno | user_id.
  *
- *  LIST "Uživatelé" = ZDROJ pravdy o lidech. Při prvním běhu se naplní z živé
- *  DB, pak už se jen ČTE a jen se DOPLŇUJÍ noví lidé (existující řádky se
- *  nepřepisují). Sloupce: Jméno | Oddělení | Tým | E-mail | Vedoucí | Od | Do
- *  | user_id (skrytý). Po datu "Do" se člověk v dalších měsících negeneruje.
+ *  LIST "Uživatelé" = ZDROJ pravdy o lidech. Sloupce: Jméno | Oddělení | Tým |
+ *  Pozice | E-mail | Vedoucí | Od | Do | user_id (skrytý). Po datu "Do" se
+ *  člověk v dalších měsících negeneruje. Nové lidi dopisuj rovnou sem.
  *
  *  LIST "Pořadí" = řídí uspořádání. Také se generuje jednou a dál jen čte.
  *  Sloupce: NAHOŘE (jména připnutá nahoru) | POŘADÍ ODDĚLENÍ | POŘADÍ TÝMŮ
@@ -74,12 +78,15 @@ var L_PORADI = 'Pořadí';
 var L_STOLY = 'Stoly';
 var L_REZERVACE = 'Rezervace';
 var L_MAPA = 'Mapa';
+var L_STATUSY = 'Statusy';
 var L_CACHE_PREFIX = 'Z_';
 
 var DS_UZIV_HLAVICKA = ['Jméno', 'Oddělení', 'Tým', 'Pozice', 'E-mail', 'Vedoucí', 'Od', 'Do', 'user_id'];
 // „Trvale (jméno)" je pro člověka, „trvale_uid" je to, podle čeho se opravdu páruje
-// (jména se mohou shodovat). Oba skryté sloupce jsou na konci.
-var DS_STOLY_HLAVICKA = ['Stůl', 'Trvale (jméno)', 'Aktivní', 'cell_id', 'trvale_uid'];
+// (jména se mohou shodovat). Řádek/Sloupec jsou pozice stolu v mapě (0-based).
+// Oba skryté sloupce (cell_id, trvale_uid) jsou na konci.
+var DS_STOLY_HLAVICKA = ['Stůl', 'Trvale (jméno)', 'Aktivní', 'Řádek', 'Sloupec', 'cell_id', 'trvale_uid'];
+var DS_STATUSY_HLAVICKA = ['Zkratka', 'Název', 'Barva', 'Barva textu', 'Dovolená', 'Vyžaduje stůl', 'Aktivní'];
 var DS_ZDROJ_TABULKY = ['SECTIONS', 'DEPARTMENTS', 'GROUPS', 'POSITIONS', 'ATTENDANCE_STATUSES', 'OFFICE_MAPS', 'USERS'];
 
 // ── cache čtení na jeden běh skriptu ────────────────────────────────────

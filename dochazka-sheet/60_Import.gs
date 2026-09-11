@@ -17,17 +17,18 @@ function nactiDochazku() {
 
   var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
 
+  // Překlad status_id → zkratka jde jen z aplikace (lokální list Statusy id nenese).
+  // Co je dovolená a co vyžaduje stůl, se ale už bere z lokálního listu Statusy.
   var abbr = {};
-  var vacAbbr = [];
   _dsZdroj('ATTENDANCE_STATUSES').forEach(function (s) {
     var a = String(s.abbreviation || '').trim();
-    if (!a) return;
-    abbr[String(s.status_id).trim()] = a;
-    if (String(s.is_vacation) === 'true' && vacAbbr.indexOf(a) === -1) vacAbbr.push(a);
+    if (a) abbr[String(s.status_id).trim()] = a;
   });
-  var deskAbbr = _dsDeskAbbr();
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var vacAbbr = _dsCtiStatusy(ss).filter(function (s) { return s.vac; })
+    .map(function (s) { return s.abbr; });
+  var deskAbbr = _dsDeskAbbr(ss);
+
   var radkaVMesici = {};   // user_id -> { mesic -> row }
   for (var m = 1; m <= 12; m++) {
     var sh = ss.getSheetByName(_dsNazevMesice(m));
@@ -89,7 +90,7 @@ function nactiDochazku() {
   }
 
   ui.alert('Načteno ' + pocet + ' dní docházky.\n\n' +
-    'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v ATTENDANCE_STATUSES není allows_desk_reservation)') + '\n' +
+    'Statusy vyžadující stůl: ' + (deskAbbr.join(', ') || '— žádný (v listu ' + L_STATUSY + ' nemá nikdo „Vyžaduje stůl")') + '\n' +
     'Kancelářských dnů bez rezervace (červený rámeček): ' + zvyrazneno + '\n\n' +
     'Rezervace stolů načteš zvlášť: 🪑 Načíst rezervace stolů z aplikace.');
 }
@@ -107,7 +108,7 @@ function nactiRezervace() {
   var trans = SpreadsheetApp.openById(ZDROJ_TRANSACTION_ID);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var deskAbbr = _dsDeskAbbr();
+  var deskAbbr = _dsDeskAbbr(ss);
 
   var d = _dmImportRezervace(ss, core, trans);
 
@@ -122,7 +123,7 @@ function nactiRezervace() {
   }
 
   if (d.stoly === 0) {
-    ui.alert('List "Stoly" je prázdný nebo chybí.\n\nNejdřív spusť 🔄 Postavit / obnovit listy — ten vytvoří list Stoly z OFFICE_MAPS živé aplikace. Bez stolů se rezervace nedají spárovat.');
+    ui.alert('List "' + L_STOLY + '" je prázdný nebo chybí.\n\nNejdřív spusť 🧳 Z aplikace → Naplnit listy z aplikace. Bez stolů se rezervace nedají spárovat.');
     return;
   }
   ui.alert('Načteno ' + d.count + ' rezervací stolů.\n\n' +
@@ -136,7 +137,7 @@ function nactiRezervace() {
     (!d.zdroj ? '\n⚠ Tabulka rezervací nikde nenalezena.' + d.listy() +
       '\n\nPošli mi, jak se list s rezervacemi jmenuje.' : '') +
     (d.zdroj && d.celkem > 0 && d.letos === 0 ? '\n⚠ Žádná rezervace pro rok ' + ROK + '.' : '') +
-    (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — spusť Pomocné listy → Aktualizovat list Stoly.' : ''));
+    (d.letos > 0 && d.count === 0 ? '\n⚠ Rezervace existují, ale cell_id nesedí s listem Stoly — spusť 🧳 Z aplikace → Přegenerovat list Stoly.' : ''));
 }
 
 /**
@@ -161,7 +162,7 @@ function _dmImportRezervace(ss, core, trans) {
   stoly.forEach(function (s) { if (s.cell_id) labelByCell[s.cell_id] = s.stul; });
 
   var jmenoByUid = {};
-  _dsZdroj('USERS').forEach(function (u) { jmenoByUid[u.user_id] = _dsJmeno(u); });
+  _dsCtiUzivatele(ss).forEach(function (u) { jmenoByUid[u.user_id] = u.jmeno; });
 
   // rezervace stolů bývají v CORE (v TRANSACTION je list často prázdný) → CORE první
   var nalez = _dsCtiKdekoliv(

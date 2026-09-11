@@ -18,6 +18,14 @@ function _dsNazevMesice(mesic) {
   return (mesic < 10 ? '0' : '') + mesic + ' ' + DS_MESICE[mesic - 1];
 }
 
+/** Hodnota buňky → nezáporné celé číslo, nebo -1 když je prázdná / nečíselná. */
+function _dsCislo(v) {
+  var s = String(v === null || v === undefined ? '' : v).trim();
+  if (s === '') return -1;
+  var n = Number(s);
+  return isNaN(n) ? -1 : Math.max(0, Math.round(n));
+}
+
 function _dsHex(val, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(String(val || '')) ? String(val) : fallback;
 }

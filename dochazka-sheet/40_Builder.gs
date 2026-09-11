@@ -330,11 +330,9 @@ function _dsListMesic(ss, mesic, radkyFull, statusyUnik, vacAbbr, deskAbbr) {
   var mrizka = sheet.getRange(prvni, den1, dataR, dnyW);
   var pravidla = [];
   statusyUnik.forEach(function (s) {
-    var zk = String(s.abbreviation).trim();
-    if (!zk) return;
-    var barva = _dsHex(s.color, '#94a3b8');
-    var pr = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(zk).setBold(true).setRanges([mrizka]);
-    pr.setBackground(DS_CHIP_TON > 0 ? _dsSvetleji(barva, DS_CHIP_TON) : barva);
+    if (!s.abbr) return;
+    var pr = SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(s.abbr).setBold(true).setRanges([mrizka]);
+    pr.setBackground(DS_CHIP_TON > 0 ? _dsSvetleji(s.color, DS_CHIP_TON) : s.color);
     pravidla.push(pr.build());
   });
   sheet.setConditionalFormatRules(pravidla);

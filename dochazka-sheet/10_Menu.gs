@@ -11,12 +11,16 @@ function onOpen() {
     .addItem('🔄 Postavit / obnovit všechny měsíce', 'setup')
     .addItem('📅 Postavit / obnovit jen tento měsíc', 'setupMesic')
     .addSeparator()
-    .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
-    .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
+    .addItem('🧩 Zkontrolovat pomocné listy', 'vytvorPomocneListy')
     .addSeparator()
-    .addSubMenu(ui.createMenu('🧩 Pomocné listy')
-      .addItem('Vytvořit chybějící (Uživatelé, Pořadí, Stoly, Rezervace)', 'vytvorPomocneListy')
-      .addItem('Aktualizovat list Stoly z aplikace', 'aktualizujStoly')
+    // Jediná část menu, která sahá do sešitů živé aplikace. Až aplikace skončí,
+    // smaže se tohle podmenu spolu s 20_Zdroje.gs a 60_Import.gs.
+    .addSubMenu(ui.createMenu('🧳 Z aplikace (jednorázově)')
+      .addItem('🧳 Naplnit listy z aplikace (odpojení)', 'odpojOdAplikace')
+      .addSeparator()
+      .addItem('📥 Načíst docházku z aplikace', 'nactiDochazku')
+      .addItem('🪑 Načíst rezervace stolů z aplikace', 'nactiRezervace')
+      .addItem('🪑 Přegenerovat list Stoly z aplikace', 'aktualizujStoly')
       .addSeparator()
       .addItem('💾 Cachovat zdroje z aplikace (vývoj)', 'cachujZdroje')
       .addItem('🗑 Smazat cache zdrojů (zpět na živá data)', 'smazCacheZdroju'))
@@ -144,11 +148,11 @@ function _dsHlaskaNejasneStoly(nejasne) {
     '\nVypiš k nim ručně user_id do skrytého sloupce trvale_uid v listu Stoly.';
 }
 
-/** Jen zajistí pomocné listy (Uživatelé, Pořadí, Stoly, Rezervace) — bez měsíců. */
+/** Jen zajistí pomocné listy a přegeneruje Mapu — bez měsíčních listů. */
 function vytvorPomocneListy() {
   _dsNactiZdroj();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var stav = [L_UZIV, L_PORADI, L_STOLY, L_REZERVACE, L_MAPA].map(function (n) {
+  var stav = [L_UZIV, L_PORADI, L_STATUSY, L_STOLY, L_REZERVACE, L_MAPA].map(function (n) {
     var sh = ss.getSheetByName(n);
     var radku = sh ? Math.max(0, sh.getLastRow() - 1) : 0;
     return (sh ? '✓ ' : '– ') + n + (sh ? '  (' + radku + ' řádků)' : '  chybí');
@@ -162,20 +166,63 @@ function vytvorPomocneListy() {
 function aktualizujStoly() {
   if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
   var ui = SpreadsheetApp.getUi();
-  if (ui.alert('Přegenerovat list Stoly z aplikace?\n\nStoly se natáhnou znovu z OFFICE_MAPS. Ruční úpravy sloupců Aktivní a Trvale se zachovají podle cell_id, nové stoly se doplní.',
+  if (ui.alert('Přegenerovat list Stoly z aplikace?\n\nStoly se natáhnou znovu z OFFICE_MAPS včetně pozic Řádek/Sloupec. Ruční úpravy sloupců Aktivní a Trvale se zachovají podle cell_id, nové stoly se doplní.',
     ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
 
-  var usek = _dsZdroj('SECTIONS').filter(function (s) {
-    return s.name === USEK_NAZEV && String(s.active) !== 'false';
-  })[0];
-  if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var usek = _dsUsekZAplikace();
   var usersById = {};
   _dsZdroj('USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var pocet = _dsSeedStoly(ss, usek, usersById, true);
-  _dsListMapa(ss, usek, usersById);
+  var pocet = _dsStolyZAplikace(ss, usek, usersById);
+  _dsListMapa(ss);
   ui.alert('List Stoly přegenerován — ' + (pocet || 0) + ' stolů. List Mapa aktualizován.' +
     _dsHlaskaNejasneStoly(_dsDoplnTrvaleUid(ss)) +
     (ss.getSheetByName('Z_OFFICE_MAPS') ? '\n\n(Čteno z cache Z_*. Pro živá data „Smazat cache zdrojů".)' : ''));
+}
+
+/**
+ * JEDNORÁZOVĚ: naplní lokální listy vším, co se dosud četlo z živé aplikace,
+ * takže sešit dál funguje sám. Konkrétně:
+ *   Uživatelé — doplní chybějící lidi úseku z USERS (existující řádky nechá),
+ *   Statusy   — přepíše z ATTENDANCE_STATUSES (od téhle chvíle je to zdroj pravdy),
+ *   Stoly     — přepíše z OFFICE_MAPS včetně pozic Řádek/Sloupec,
+ *   Mapa      — přegeneruje z listu Stoly.
+ * Docházku a rezervace natáhni potom zvlášť (📥 a 🪑).
+ */
+function odpojOdAplikace() {
+  if (ZDROJ_CORE_ID.indexOf('VLOZ') !== -1) throw new Error('Nastav ZDROJ_CORE_ID nahoře ve skriptu.');
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('Naplnit lokální listy z aplikace?\n\n' +
+    '• Uživatelé — doplní chybějící lidi úseku (existující řádky zůstanou)\n' +
+    '• Statusy — PŘEPÍŠE z ATTENDANCE_STATUSES\n' +
+    '• Stoly — PŘEPÍŠE z OFFICE_MAPS včetně pozic v mapě\n' +
+    '• Mapa — přegeneruje\n\n' +
+    'Potom už sešit čte všechno jen ze sebe.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var usek = _dsUsekZAplikace();
+  var usersById = {};
+  _dsZdroj('USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
+
+  _dsListUzivatele(ss, _dsLideZAplikace(usek));
+  var lide = _dsCtiUzivatele(ss);
+  var statusy = _dsStatusyZAplikace();
+  _dsListStatusy(ss, statusy);
+  var stolu = _dsStolyZAplikace(ss, usek, usersById);
+  _dsListPoradi(ss, lide);
+  _dsListRezervace(ss);
+  _dsListMapa(ss);
+
+  var bezPozice = _dsCtiStoly(ss).filter(function (s) { return s.radek < 0 || s.sloupec < 0; }).length;
+  var desk = _dsDeskAbbr(ss);
+  ui.alert('Listy naplněny:\n\n' +
+    '✓ ' + L_UZIV + '  (' + lide.length + ' lidí)\n' +
+    '✓ ' + L_STATUSY + '  (' + statusy.length + ' statusů' +
+    (desk.length ? ', stůl vyžadují: ' + desk.join(', ') : ', žádný nevyžaduje stůl') + ')\n' +
+    '✓ ' + L_STOLY + '  (' + stolu + ' stolů' + (bezPozice ? ', z toho ' + bezPozice + ' bez pozice v mapě' : '') + ')\n' +
+    '✓ ' + L_MAPA + '\n' +
+    _dsHlaskaNejasneStoly(_dsDoplnTrvaleUid(ss)) +
+    '\n\nTeď ještě jednou natáhni historii: 📥 Načíst docházku a 🪑 Načíst rezervace stolů.\n' +
+    'Pak už aplikaci nepotřebuješ — ověř provoz a dej vědět, ať se podmenu „🧳 Z aplikace" smaže.');
 }

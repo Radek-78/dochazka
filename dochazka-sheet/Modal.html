@@ -155,7 +155,12 @@
     }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-    function onInit(d) { S.init = d; S.init.userId = String(d.userId); S.mesic = d.mesic; S.rok = d.rok; loadMonth(); }
+    // dm_init vrací i data měsíce, takže hned po prvním kole je co vykreslit
+    function onInit(d) {
+      S.init = d; S.init.userId = String(d.userId); S.mesic = d.mesic; S.rok = d.rok;
+      if (!d.dny) { fatal(d.chybaMesic || 'Měsíc se nepodařilo načíst.'); return; }
+      onMonth(d);
+    }
 
     function loadMonth() {
       document.getElementById('app').innerHTML = '<div class="msg">Načítám měsíc…</div>';

@@ -4,76 +4,93 @@
 
 
 /**
- * Zajistí listy Uživatelé a Pořadí (vytvoří / doplní nováčky) a připraví
- * uspořádané řádky. Zdrojem pravdy o lidech je list Uživatelé.
+ * Zajistí pomocné listy a připraví uspořádané řádky. Čte JEN z tohoto sešitu:
+ * lidi z listu Uživatelé, statusy z listu Statusy, stoly z listu Stoly.
  */
 function _dsNactiZdroj() {
-  if (USEK_NAZEV.indexOf('VLOZ') !== -1) throw new Error('Nastav USEK_NAZEV nahoře ve skriptu.');
-
-  var usek = _dsZdroj('SECTIONS').filter(function (s) {
-    return s.name === USEK_NAZEV && String(s.active) !== 'false';
-  })[0];
-  if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
-
-  var oddMap = {};
-  _dsZdroj('DEPARTMENTS').forEach(function (d) { oddMap[d.department_id] = d.name || ''; });
-  var tymMap = {};
-  _dsZdroj('GROUPS').forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
-  var pozMap = {};
-  _dsZdroj('POSITIONS').forEach(function (p) { pozMap[p.position_id] = p.name || ''; });
-
-  var dnes = new Date();
-  dnes.setHours(0, 0, 0, 0);
-  var liveLide = _dsZdroj('USERS')
-    .filter(function (u) {
-      if (u.section_id !== usek.section_id) return false;
-      if (String(u.active) !== 'true') return false;
-      if (u.date_end) {
-        var k = new Date(u.date_end);
-        if (!isNaN(k.getTime()) && k < dnes) return false;
-      }
-      return true;
-    })
-    .map(function (u) {
-      u._oddNazev = oddMap[u.department_id] || '';
-      u._tymNazev = tymMap[u.group_id] || '';
-      u._pozice = pozMap[u.position_id] || '';
-      return u;
-    });
-
-  var videno = {};
-  var statusyUnik = [];
-  var vacAbbr = [];
-  var deskAbbr = [];
-  _dsZdroj('ATTENDANCE_STATUSES')
-    .filter(function (s) { return String(s.active) !== 'false' && s.abbreviation; })
-    .forEach(function (s) {
-      var z = String(s.abbreviation).trim();
-      if (!z || videno[z]) return;
-      videno[z] = true;
-      statusyUnik.push(s);
-      if (String(s.is_vacation) === 'true') vacAbbr.push(z);
-      if (String(s.allows_desk_reservation) === 'true') deskAbbr.push(z);
-    });
-
-  var usersById = {};
-  _dsZdroj('USERS').forEach(function (u) { usersById[u.user_id] = _dsJmeno(u); });
-
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  _dsListUzivatele(ss, liveLide);          // vytvoří nebo doplní nováčky
-  var lide = _dsCtiUzivatele(ss);          // ZDROJ pravdy
-  if (lide.length === 0) throw new Error('List Uživatelé je prázdný.');
+  _dsSeedStoly(ss);                        // vytvoří list Stoly jen pokud chybí
+  _dsListStatusy(ss);                      // vytvoří list Statusy jen pokud chybí
+  _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
+
+  var lide = _dsCtiUzivatele(ss);          // ZDROJ pravdy o lidech
+  if (lide.length === 0) {
+    throw new Error('List ' + L_UZIV + ' je prázdný.\n\nDoplň lidi ručně, nebo je jednorázově natáhni: ' +
+      '📋 Docházka → 🧳 Z aplikace → Naplnit listy z aplikace.');
+  }
   _dsListPoradi(ss, lide);                 // vytvoří jen pokud chybí
   var poradi = _dsCtiPoradi(ss);
-  _dsSeedStoly(ss, usek, usersById);       // vytvoří list Stoly jen pokud chybí
   _dsDoplnTrvaleUid(ss);                   // dohledá user_id k ručně zapsaným jménům
-  _dsListRezervace(ss);                    // vytvoří list Rezervace jen pokud chybí
-  _dsListMapa(ss, usek, usersById);        // náhledová mapa stolů (vždy přegeneruje)
+  _dsListMapa(ss);                         // náhledová mapa stolů (vždy přegeneruje)
 
+  var statusy = _dsCtiStatusy(ss);
+  if (statusy.length === 0) {
+    throw new Error('List ' + L_STATUSY + ' je prázdný.\n\nDoplň statusy ručně, nebo je jednorázově natáhni: ' +
+      '📋 Docházka → 🧳 Z aplikace → Naplnit listy z aplikace.');
+  }
   return {
-    radky: _dsSerazeni(lide, poradi), statusyUnik: statusyUnik,
-    vacAbbr: vacAbbr, deskAbbr: deskAbbr
+    radky: _dsSerazeni(lide, poradi), statusyUnik: statusy,
+    vacAbbr: statusy.filter(function (s) { return s.vac; }).map(function (s) { return s.abbr; }),
+    deskAbbr: statusy.filter(function (s) { return s.desk; }).map(function (s) { return s.abbr; })
   };
+}
+
+// ── list Statusy ─────────────────────────────────────────────────────────
+
+/**
+ * Zajistí list Statusy. S `radky` (z migrace) ho přepíše, bez nich ho jen
+ * vytvoří prázdný s hlavičkou. Vrací list.
+ */
+function _dsListStatusy(ss, radky) {
+  var W = DS_STATUSY_HLAVICKA.length;
+  var sh = ss.getSheetByName(L_STATUSY);
+  if (!sh) {
+    sh = ss.insertSheet(L_STATUSY, Math.min(3, ss.getSheets().length));
+    sh.getRange(1, 1, 1, W).setValues([DS_STATUSY_HLAVICKA])
+      .setFontWeight('bold').setBackground('#f1f5f9');
+    [80, 220, 90, 100, 80, 110, 70].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
+    sh.setFrozenRows(1);
+    _dsFont(sh);
+  }
+  if (radky && radky.length) {
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
+    sh.getRange(2, 1, radky.length, W).setValues(radky);
+    // sloupec Barva ukazuje sám sebe, ať je vidět, co se v mřížce použije
+    sh.getRange(2, 3, radky.length, 1).setBackgrounds(radky.map(function (r) { return [r[2]]; }));
+    _dsFont(sh);
+    _dsCacheZrus('STATUSY');
+  }
+  return sh;
+}
+
+/** Statusy z listu Statusy (jen aktivní, bez duplicitních zkratek; cache na jeden běh). */
+function _dsCtiStatusy(ss) {
+  return _dsCache('STATUSY', function () {
+    var t = _dsTabulka(ss.getSheetByName(L_STATUSY));
+    var out = [], videno = {};
+    function ano(r, nazev) { return /^ano$/i.test(String(t.v(r, nazev) || '').trim()); }
+    t.radky.forEach(function (x) {
+      var ab = String(t.v(x.r, 'Zkratka') || '').trim();
+      if (!ab || videno[ab] || !ano(x.r, 'Aktivní')) return;
+      videno[ab] = 1;
+      out.push({
+        abbr: ab,
+        name: String(t.v(x.r, 'Název') || '').trim(),
+        color: _dsHex(t.v(x.r, 'Barva'), '#94a3b8'),
+        fg: _dsHex(t.v(x.r, 'Barva textu'), '#ffffff'),
+        vac: ano(x.r, 'Dovolená'),
+        desk: ano(x.r, 'Vyžaduje stůl')
+      });
+    });
+    return out;
+  });
+}
+
+/** Zkratky statusů, které vyžadují rezervaci stolu. */
+function _dsDeskAbbr(ss) {
+  return _dsCtiStatusy(ss)
+    .filter(function (s) { return s.desk; })
+    .map(function (s) { return s.abbr; });
 }
 
 // ── list Uživatelé ───────────────────────────────────────────────────────
@@ -228,60 +245,70 @@ function _dsCtiPoradi(ss) {
   return { nahore: nahore, oddPoradi: oddPoradi, tymPoradi: tymPoradi };
 }
 
-/**
- * List Stoly z živé OFFICE_MAPS. Bez `force` jen pokud list chybí.
- * S `force` přegeneruje a zachová ruční Aktivní/Trvale podle cell_id. Vrací počet stolů.
- */
-function _dsSeedStoly(ss, usek, usersById, force) {
-  var existuje = ss.getSheetByName(L_STOLY);
-  if (existuje) _dsUpgradeStolyHlavicku(existuje);
-  if (existuje && !force) return;
+/** Zajistí list Stoly s hlavičkou (obsah nesahá — ten plní člověk nebo migrace). Vrací list. */
+function _dsSeedStoly(ss) {
+  var sh = ss.getSheetByName(L_STOLY);
+  if (sh) { _dsUpgradeStolyHlavicku(sh); return sh; }
 
-  var mapa = _dsNactiMapu(usek);
-  var W = DS_STOLY_HLAVICKA.length;
-
-  var stare = {};
-  if (existuje) _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) stare[s.cell_id] = s; });
-
-  var radky = [];
-  (mapa ? mapa.desks : []).forEach(function (c) {
-    var id = c.id || '';
-    var st = stare[id];
-    radky.push([
-      c.label || id || '',
-      st ? st.trvale : (c.permUid ? (usersById[c.permUid] || '') : ''),
-      st ? (st.aktivni ? 'ano' : '') : 'ano',
-      id,
-      st ? st.trvaleUid : (c.permUid || '')
-    ]);
-  });
-
-  var sh = existuje || ss.insertSheet(L_STOLY, 2);
-  if (!existuje) {
-    sh.getRange(1, 1, 1, W).setValues([DS_STOLY_HLAVICKA])
-      .setFontWeight('bold').setBackground('#f1f5f9');
-    sh.setColumnWidth(1, 120);
-    sh.setColumnWidth(2, 180);
-    sh.setColumnWidth(3, 70);
-    sh.hideColumns(4, 2);          // cell_id + trvale_uid
-    sh.setFrozenRows(1);
-  }
-  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
-  if (radky.length) sh.getRange(2, 1, radky.length, W).setValues(radky);
+  sh = ss.insertSheet(L_STOLY, Math.min(2, ss.getSheets().length));
+  sh.getRange(1, 1, 1, DS_STOLY_HLAVICKA.length).setValues([DS_STOLY_HLAVICKA])
+    .setFontWeight('bold').setBackground('#f1f5f9');
+  [120, 180, 70, 70, 70].forEach(function (px, i) { sh.setColumnWidth(i + 1, px); });
+  sh.hideColumns(6, 2);            // cell_id + trvale_uid
+  sh.setFrozenRows(1);
   _dsFont(sh);
   _dsCacheZrus('STOLY');
-  _dsDoplnTrvaleUid(ss);
-  return radky.length;
+  return sh;
 }
 
-/** Doplní do staršího listu Stoly chybějící skrytý sloupec trvale_uid. */
+/** Doplní do staršího listu Stoly chybějící sloupce trvale_uid a Řádek/Sloupec. */
 function _dsUpgradeStolyHlavicku(sh) {
-  var lastC = sh.getLastColumn();
-  var hlav = sh.getRange(1, 1, 1, lastC).getValues()[0].map(function (x) { return String(x).trim(); });
-  if (hlav.indexOf('trvale_uid') !== -1) return;
-  sh.getRange(1, lastC + 1).setValue('trvale_uid').setFontWeight('bold').setBackground('#f1f5f9');
-  sh.hideColumns(lastC + 1);
-  _dsCacheZrus('STOLY');
+  var hlav = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+    .map(function (x) { return String(x).trim(); });
+  var zmena = false;
+
+  if (hlav.indexOf('trvale_uid') === -1) {
+    var novy = sh.getLastColumn() + 1;
+    sh.getRange(1, novy).setValue('trvale_uid').setFontWeight('bold').setBackground('#f1f5f9');
+    sh.hideColumns(novy);
+    hlav.push('trvale_uid');
+    zmena = true;
+  }
+  if (hlav.indexOf('Řádek') === -1) {
+    // vloží se hned za „Aktivní", ať sedí pořadí v DS_STOLY_HLAVICKA
+    var po = hlav.indexOf('Aktivní');
+    if (po === -1) po = hlav.length - 1;
+    sh.insertColumnsAfter(po + 1, 2);
+    sh.getRange(1, po + 2, 1, 2).setValues([['Řádek', 'Sloupec']])
+      .setFontWeight('bold').setBackground('#f1f5f9');
+    sh.setColumnWidth(po + 2, 70);
+    sh.setColumnWidth(po + 3, 70);
+    zmena = true;
+  }
+  if (zmena) _dsCacheZrus('STOLY');
+}
+
+/**
+ * Rozložení kanceláře z listu Stoly → { name, rows, cols, desks:[…] } nebo null.
+ * Rozměry mřížky se odvodí z nejvyšší vyplněné pozice, název mapy si pamatuje
+ * DocumentProperties (uloží ho migrace z aplikace).
+ */
+function _dsNactiMapu(ss) {
+  var desks = [], rows = 0, cols = 0;
+  _dsCtiStoly(ss).forEach(function (s) {
+    if (s.radek < 0 || s.sloupec < 0) return;       // stůl bez pozice se do mapy nekreslí
+    desks.push({
+      id: s.cell_id, label: s.stul, row: s.radek, col: s.sloupec,
+      trvale: s.trvale, trvaleUid: s.trvaleUid, aktivni: s.aktivni
+    });
+    rows = Math.max(rows, s.radek + 1);
+    cols = Math.max(cols, s.sloupec + 1);
+  });
+  if (!desks.length) return null;
+  return {
+    name: PropertiesService.getDocumentProperties().getProperty('MAPA_NAZEV') || 'Kancelář',
+    rows: rows, cols: cols, desks: desks
+  };
 }
 
 /**
@@ -323,21 +350,18 @@ function _dsDoplnTrvaleUid(ss) {
 
 /**
  * List Mapa — vizuální rozložení stolů (jen rozvržení + trvalí majitelé, bez rezervací).
- * Přegeneruje se pokaždé, je to čistě odvozený list.
+ * Přegeneruje se pokaždé, je to čistě odvozený list z listu Stoly.
  */
-function _dsListMapa(ss, usek, usersById) {
-  var sh = ss.getSheetByName(L_MAPA) || ss.insertSheet(L_MAPA, 3);
+function _dsListMapa(ss) {
+  var sh = ss.getSheetByName(L_MAPA) || ss.insertSheet(L_MAPA, Math.min(4, ss.getSheets().length));
   sh.clear();
 
-  var mapa = _dsNactiMapu(usek);
-  if (!mapa || !mapa.desks.length) {
-    sh.getRange(1, 1).setValue('Pro úsek "' + USEK_NAZEV + '" není v OFFICE_MAPS žádná aktivní mapa se stoly.');
+  var mapa = _dsNactiMapu(ss);
+  if (!mapa) {
+    sh.getRange(1, 1).setValue('V listu ' + L_STOLY + ' nemá žádný stůl vyplněný Řádek a Sloupec — mapa se nedá vykreslit.');
     _dsFont(sh);
     return;
   }
-
-  var trvaleByCell = {};
-  _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) trvaleByCell[s.cell_id] = s.trvale; });
 
   var R = mapa.rows, C = mapa.cols, r0 = 3;
   var grid = [], bg = [];
@@ -347,11 +371,8 @@ function _dsListMapa(ss, usek, usersById) {
   }
   mapa.desks.forEach(function (d) {
     if (d.row >= R || d.col >= C) return;
-    var owner = (trvaleByCell[d.id] !== undefined && trvaleByCell[d.id] !== '')
-      ? trvaleByCell[d.id]
-      : (d.permUid ? (usersById[d.permUid] || '') : '');
-    grid[d.row][d.col] = d.label + (owner ? '\n' + owner : '');
-    bg[d.row][d.col] = owner ? '#ffedd5' : '#dbeafe';
+    grid[d.row][d.col] = d.label + (d.trvale ? '\n' + d.trvale : '');
+    bg[d.row][d.col] = !d.aktivni ? '#f1f5f9' : (d.trvale ? '#ffedd5' : '#dbeafe');
   });
 
   sh.getRange(1, 1, 1, C).merge().setValue('Mapa stolů — ' + mapa.name)
@@ -368,7 +389,7 @@ function _dsListMapa(ss, usek, usersById) {
   for (var r2 = r0; r2 < r0 + R; r2++) sh.setRowHeight(r2, 44);
   _dsFont(sh);
   sh.getRange(r0, 1, R, C).protect().setWarningOnly(true)
-    .setDescription('Mapa je jen náhled — generuje se z OFFICE_MAPS.');
+    .setDescription('Mapa je jen náhled — generuje se z listu ' + L_STOLY + ' (sloupce Řádek/Sloupec).');
 }
 
 /**
@@ -406,6 +427,8 @@ function _dsCtiStoly(ss) {
         trvale: String(t.v(x.r, 'Trvale (jméno)') || '').trim(),
         trvaleUid: String(t.v(x.r, 'trvale_uid') || '').trim(),
         aktivni: /^ano$/i.test(String(t.v(x.r, 'Aktivní') || '').trim()),
+        radek: _dsCislo(t.v(x.r, 'Řádek')),        // pozice v mapě, -1 = nemá
+        sloupec: _dsCislo(t.v(x.r, 'Sloupec')),
         cell_id: String(t.v(x.r, 'cell_id') || '').trim()
       });
     });

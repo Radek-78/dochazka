@@ -1,42 +1,121 @@
 // ════════════════════════════════════════════════════════════════════
-//  20_Zdroje.gs — Čtení tabulek z CORE / TRANSACTION (+ lokální cache Z_*).
+//  20_Zdroje.gs — JEDINÉ místo, které sahá do sešitů živé aplikace.
+//
+//  Používá se výhradně z podmenu „🧳 Z aplikace" (jednorázové naplnění
+//  lokálních listů + import historie). Běžný provoz sem nechodí — až se
+//  aplikace smaže, zmizí tenhle soubor spolu s 60_Import.gs.
 // ════════════════════════════════════════════════════════════════════
 
 
-// ── listy Stoly a Rezervace ─────────────────────────────────────────────
+// ── jednorázové čtení konfigurace z aplikace ────────────────────────────
 
-/** Aktivní kancelářská mapa úseku z OFFICE_MAPS → { name, rows, cols, desks:[{id,label,row,col,permUid}] } nebo null. */
-function _dsNactiMapu(usek) {
+/** Řádek úseku USEK_NAZEV ze SECTIONS (jinak vyhodí chybu). */
+function _dsUsekZAplikace() {
+  var usek = _dsZdroj('SECTIONS').filter(function (s) {
+    return s.name === USEK_NAZEV && String(s.active) !== 'false';
+  })[0];
+  if (!usek) throw new Error('Úsek "' + USEK_NAZEV + '" nenalezen v SECTIONS.');
+  return usek;
+}
+
+/** Aktivní lidé úseku z USERS, s dopočtenými názvy oddělení / týmu / pozice. */
+function _dsLideZAplikace(usek) {
+  var oddMap = {};
+  _dsZdroj('DEPARTMENTS').forEach(function (d) { oddMap[d.department_id] = d.name || ''; });
+  var tymMap = {};
+  _dsZdroj('GROUPS').forEach(function (g) { tymMap[g.group_id] = g.name || ''; });
+  var pozMap = {};
+  _dsZdroj('POSITIONS').forEach(function (p) { pozMap[p.position_id] = p.name || ''; });
+
+  var dnes = new Date();
+  dnes.setHours(0, 0, 0, 0);
+  return _dsZdroj('USERS')
+    .filter(function (u) {
+      if (u.section_id !== usek.section_id) return false;
+      if (String(u.active) !== 'true') return false;
+      if (u.date_end) {
+        var k = new Date(u.date_end);
+        if (!isNaN(k.getTime()) && k < dnes) return false;
+      }
+      return true;
+    })
+    .map(function (u) {
+      u._oddNazev = oddMap[u.department_id] || '';
+      u._tymNazev = tymMap[u.group_id] || '';
+      u._pozice = pozMap[u.position_id] || '';
+      return u;
+    });
+}
+
+/** ATTENDANCE_STATUSES → řádky pro lokální list Statusy (bez duplicitních zkratek). */
+function _dsStatusyZAplikace() {
+  var videno = {}, out = [];
+  _dsZdroj('ATTENDANCE_STATUSES').forEach(function (s) {
+    var ab = String(s.abbreviation || '').trim();
+    if (!ab || videno[ab]) return;
+    videno[ab] = 1;
+    out.push([
+      ab, s.name || '', _dsHex(s.color, '#94a3b8'), _dsHex(s.text_color, '#ffffff'),
+      String(s.is_vacation) === 'true' ? 'ano' : '',
+      String(s.allows_desk_reservation) === 'true' ? 'ano' : '',
+      String(s.active) === 'false' ? '' : 'ano'
+    ]);
+  });
+  return out;
+}
+
+/** Aktivní kancelářská mapa úseku z OFFICE_MAPS → { name, desks:[{id,label,row,col,permUid}] } nebo null. */
+function _dsMapaZAplikace(usek) {
   var m = _dsZdroj('OFFICE_MAPS').filter(function (x) {
     return x.section_id === usek.section_id && String(x.active) !== 'false';
   })[0];
   if (!m) return null;
   var cells = [];
   try { cells = JSON.parse(m.cells_json || '[]'); } catch (e) { cells = []; }
-  var desks = cells.filter(function (c) { return String(c.type) === 'desk'; }).map(function (c) {
-    return {
-      id: c.id || '', label: c.label || c.id || '',
-      row: Math.max(0, Number(c.row) || 0), col: Math.max(0, Number(c.col) || 0),
-      permUid: c.permanent_user_id || ''
-    };
-  });
-  function maxPlus1(f) { return desks.reduce(function (a, d) { return Math.max(a, f(d)); }, -1) + 1; }
   return {
     name: m.name || 'Kancelář',
-    rows: Number(m.rows) || maxPlus1(function (d) { return d.row; }) || 1,
-    cols: Number(m.cols) || maxPlus1(function (d) { return d.col; }) || 1,
-    desks: desks
+    desks: cells.filter(function (c) { return String(c.type) === 'desk'; }).map(function (c) {
+      return {
+        id: c.id || '', label: c.label || c.id || '',
+        row: Math.max(0, Number(c.row) || 0), col: Math.max(0, Number(c.col) || 0),
+        permUid: c.permanent_user_id || ''
+      };
+    })
   };
 }
 
-/** Zkratky statusů, které vyžadují rezervaci stolu (allows_desk_reservation). */
-function _dsDeskAbbr() {
-  var out = [];
-  _dsZdroj('ATTENDANCE_STATUSES').forEach(function (s) {
-    var a = String(s.abbreviation || '').trim();
-    if (a && String(s.allows_desk_reservation) === 'true' && out.indexOf(a) === -1) out.push(a);
+/**
+ * Přegeneruje lokální list Stoly z OFFICE_MAPS — včetně pozic Řádek/Sloupec,
+ * díky kterým pak mapa funguje bez aplikace. Ruční Aktivní / Trvale se
+ * zachovají podle cell_id. Vrací počet stolů.
+ */
+function _dsStolyZAplikace(ss, usek, usersById) {
+  var sh = _dsSeedStoly(ss);
+  var mapa = _dsMapaZAplikace(usek);
+  var W = DS_STOLY_HLAVICKA.length;
+
+  var stare = {};
+  _dsCtiStoly(ss).forEach(function (s) { if (s.cell_id) stare[s.cell_id] = s; });
+
+  var radky = (mapa ? mapa.desks : []).map(function (c) {
+    var id = c.id || '';
+    var st = stare[id];
+    return [
+      c.label || id || '',
+      st ? st.trvale : (c.permUid ? (usersById[c.permUid] || '') : ''),
+      st ? (st.aktivni ? 'ano' : '') : 'ano',
+      c.row, c.col, id,
+      st ? st.trvaleUid : (c.permUid || '')
+    ];
   });
-  return out;
+
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W).clearContent();
+  if (radky.length) sh.getRange(2, 1, radky.length, W).setValues(radky);
+  _dsFont(sh);
+  _dsCacheZrus('STOLY');
+  _dsDoplnTrvaleUid(ss);
+  if (mapa && mapa.name) PropertiesService.getDocumentProperties().setProperty('MAPA_NAZEV', mapa.name);
+  return radky.length;
 }
 
 /**
