@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.19.0";
+const APP_VERSION = "2.19.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.19.1",
+    "date": "2026-09-17",
+    "changes": [
+      "Úklid kódu: funkce pro výpočet ISO týdne byla v aplikaci definovaná dvakrát, zůstala jedna",
+      "Kontrolní nasazení - ověření, že se nová verze propisuje až k uživatelům (verze 2.18.0 se kvůli chybějícímu kroku v nasazení nikdy nedostala ven, její změny přicházejí až teď spolu s 2.19.x)"
+    ]
+  },
   {
     "version": "2.19.0",
     "date": "2026-09-17",
