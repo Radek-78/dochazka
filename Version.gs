@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.16.1";
+const APP_VERSION = "2.17.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.17.0",
+    "date": "2026-09-17",
+    "changes": [
+      "Rychlejší ukládání docházky: zámek zápisu se uvolňuje ještě před synchronizací kalendáře, takže hláška \"Zápis právě probíhá\" by se měla objevovat výrazně méně často",
+      "Oprava: interní mezipaměť dat se po zápisu opravdu vyprázdní - dřív mohla v rámci jednoho požadavku vrátit ještě stará data",
+      "Úklid kódu: odstraněno přes 1 000 řádků nepoužívaných a ladicích funkcí; ladicí nástroj pro mazání databáze se už do produkce nenasazuje"
+    ]
+  },
   {
     "version": "2.16.1",
     "date": "2026-09-09",

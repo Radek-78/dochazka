@@ -806,240 +806,20 @@ function getSectionViewConfigForSection(sectionId) {
 }
 
 /**
- * Diagnostika párování status_id mezi ATTENDANCE a číselníkem statusů.
- * Volatelné ručně z Apps Scriptu nebo přes google.script.run pro administrátora.
- */
-function debugPrivacyStatusMapping(year, month) {
-  try {
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser || !Auth.hasAdminAccess(currentUser)) {
-      const denied = { success: false, error: "Neautorizováno.", active_user: Session.getActiveUser().getEmail() };
-      Logger.log(JSON.stringify(denied, null, 2));
-      return denied;
-    }
-
-    const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
-    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
-    const positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
-    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
-    const privacyCtx = Privacy.createContext({
-      viewer: currentUser,
-      positions: positions,
-      statuses: statuses,
-      rbacConfig: rbacConfig
-    });
-
-    const statusMap = {};
-    statuses.forEach(function(s) {
-      statusMap[Privacy.normalizeStatusId(s.status_id)] = {
-        status_id: s.status_id,
-        name: s.name || "",
-        status_kind: s.status_kind || "NORMAL",
-        masked_status_id: s.masked_status_id || "",
-        active: s.active
-      };
-    });
-
-    const now = new Date();
-    const targetYear = year || now.getFullYear();
-    const targetMonth = month !== undefined && month !== null ? Number(month) : now.getMonth();
-    const prefix = String(targetYear) + "-" + String(targetMonth + 1).padStart(2, "0");
-    const allAttendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE)
-      .filter(function(a) {
-        return a.date && String(a.date).startsWith(prefix);
-      });
-
-    const rawCounts = {};
-    let unmatchedCount = 0;
-    let maskStatusAttendanceCount = 0;
-    const unmatched = [];
-    const maskStatusSample = [];
-    allAttendance.forEach(function(a) {
-      const rawStatusId = a.status_id;
-      const normalizedStatusId = Privacy.normalizeStatusId(rawStatusId);
-      const statusInfo = statusMap[normalizedStatusId] || null;
-      rawCounts[normalizedStatusId] = (rawCounts[normalizedStatusId] || 0) + 1;
-      if (statusInfo && String(statusInfo.status_kind || "NORMAL").toUpperCase() === "MASK") {
-        maskStatusAttendanceCount++;
-        if (maskStatusSample.length < 100) {
-          maskStatusSample.push({
-            user_id: a.user_id,
-            date: String(a.date),
-            slot: a.slot || "ALL_DAY",
-            raw_status_id: rawStatusId,
-            status_name: statusInfo.name
-          });
-        }
-      }
-      if (!statusInfo) {
-        unmatchedCount++;
-        if (unmatched.length < 100) {
-          unmatched.push({
-            user_id: a.user_id,
-            date: String(a.date),
-            slot: a.slot || "ALL_DAY",
-            raw_status_id: rawStatusId,
-            normalized_status_id: normalizedStatusId
-          });
-        }
-      }
-    });
-
-    const result = {
-      success: true,
-      data: {
-        prefix: prefix,
-        masking_enabled: privacyCtx.enabled,
-        status_count: statuses.length,
-        attendance_count: allAttendance.length,
-        mask_status_attendance_count: maskStatusAttendanceCount,
-        unmatched_count: unmatchedCount,
-        raw_status_counts: rawCounts,
-        mask_status_sample: maskStatusSample,
-        unmatched_sample: unmatched
-      }
-    };
-    Logger.log(JSON.stringify(result, null, 2));
-    return result;
-  } catch (e) {
-    const errorResult = { success: false, error: e.toString(), stack: e.stack || "" };
-    Logger.log(JSON.stringify(errorResult, null, 2));
-    return errorResult;
-  }
-}
-
-/**
- * Diagnostika kolizí slotů v ATTENDANCE.
- * Hledá dny, kde pro stejného uživatele a datum existuje současně ALL_DAY a AM/PM.
- * Funkce nic nemaže ani neopravuje; výsledek vrací a zapisuje do Logger.log.
- */
-function debugAttendanceSlotCollisions(year, month) {
-  try {
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser || !Auth.hasAdminAccess(currentUser)) {
-      const denied = { success: false, error: "Neautorizováno.", active_user: Session.getActiveUser().getEmail() };
-      Logger.log(JSON.stringify(denied, null, 2));
-      return denied;
-    }
-
-    const targetYear = year ? Number(year) : null;
-    const targetMonth = month !== undefined && month !== null && month !== "" ? Number(month) : null;
-    const prefix = targetYear
-      ? String(targetYear) + (targetMonth !== null ? "-" + String(targetMonth + 1).padStart(2, "0") : "")
-      : "";
-
-    const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
-    const users = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
-    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
-    const attendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE).filter(function(entry) {
-      if (!prefix) return true;
-      return String(entry.date || "").startsWith(prefix);
-    });
-
-    const userMap = {};
-    users.forEach(function(u) {
-      userMap[String(u.user_id)] = u;
-    });
-
-    const statusMap = {};
-    statuses.forEach(function(s) {
-      statusMap[Privacy.normalizeStatusId(s.status_id)] = s;
-    });
-
-    const grouped = {};
-    attendance.forEach(function(entry) {
-      const userId = String(entry.user_id || "");
-      const datePfx = String(entry.date || "").substring(0, 10);
-      if (!userId || !datePfx) return;
-      const slot = entry.slot || "ALL_DAY";
-      const key = userId + "_" + datePfx;
-      if (!grouped[key]) {
-        grouped[key] = { user_id: userId, date: datePfx, entries: [] };
-      }
-      grouped[key].entries.push(Object.assign({}, entry, { slot: slot, date: datePfx }));
-    });
-
-    const items = [];
-    Object.keys(grouped).forEach(function(key) {
-      const group = grouped[key];
-      const hasAllDay = group.entries.some(function(e) { return (e.slot || "ALL_DAY") === "ALL_DAY"; });
-      const hasHalfDay = group.entries.some(function(e) { return e.slot === "AM" || e.slot === "PM"; });
-      if (!hasAllDay || !hasHalfDay) return;
-
-      const user = userMap[String(group.user_id)] || {};
-      const sortedEntries = group.entries.slice().sort(function(a, b) {
-        return String(a.created_at || "").localeCompare(String(b.created_at || ""));
-      });
-      const allDayEntries = sortedEntries.filter(function(e) { return (e.slot || "ALL_DAY") === "ALL_DAY"; });
-      const halfDayEntries = sortedEntries.filter(function(e) { return e.slot === "AM" || e.slot === "PM"; });
-      const latestAllDay = allDayEntries.length ? allDayEntries[allDayEntries.length - 1] : null;
-      const latestHalfDay = halfDayEntries.length ? halfDayEntries[halfDayEntries.length - 1] : null;
-
-      let suggestedResolution = "manual_review";
-      if (latestAllDay && latestHalfDay && latestAllDay.created_at && latestHalfDay.created_at) {
-        const allDayTime = new Date(latestAllDay.created_at).getTime();
-        const halfDayTime = new Date(latestHalfDay.created_at).getTime();
-        if (!isNaN(allDayTime) && !isNaN(halfDayTime)) {
-          if (allDayTime > halfDayTime) suggestedResolution = "latest_wins_all_day";
-          else if (halfDayTime > allDayTime) suggestedResolution = "latest_wins_half_day";
-        }
-      }
-
-      items.push({
-        user_id: group.user_id,
-        user_name: ((user.first_name || "") + " " + (user.last_name || "")).trim() || group.user_id,
-        date: group.date,
-        suggested_resolution: suggestedResolution,
-        entries: sortedEntries.map(function(e) {
-          const status = statusMap[Privacy.normalizeStatusId(e.status_id)] || {};
-          return {
-            attendance_id: e.attendance_id || "",
-            slot: e.slot || "ALL_DAY",
-            status_id: e.status_id || "",
-            status_name: status.name || "",
-            approved: e.approved || "",
-            created_at: e.created_at || "",
-            note: e.note || ""
-          };
-        })
-      });
-    });
-
-    const affectedUsers = {};
-    items.forEach(function(item) {
-      affectedUsers[item.user_id] = true;
-    });
-
-    const result = {
-      success: true,
-      scope: {
-        year: targetYear,
-        month: targetMonth,
-        prefix: prefix || "ALL"
-      },
-      checked_attendance_rows: attendance.length,
-      collision_days: items.length,
-      affected_users: Object.keys(affectedUsers).length,
-      items: items
-    };
-    Logger.log(JSON.stringify(result, null, 2));
-    return result;
-  } catch (e) {
-    const errorResult = { success: false, error: e.toString(), stack: e.stack || "" };
-    Logger.log(JSON.stringify(errorResult, null, 2));
-    return errorResult;
-  }
-}
-
-/**
  * Uloží dávku docházkových záznamů (upsert dle user_id + date + slot).
  * Celý batch se zpracuje v jednom volání — žádné race conditions.
  */
 function saveAttendanceEntries(entries) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
+  // Zámek chrání jen zápis do sheetu. Navazující synchronizace kalendáře volá
+  // Calendar API a trvá řádově vteřiny, proto se zámek uvolňuje ještě před ní.
+  var lockReleased = false;
+  function releaseLockOnce() {
+    if (lockReleased) return;
+    lockReleased = true;
+    lock.releaseLock();
+  }
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
@@ -1370,6 +1150,8 @@ function saveAttendanceEntries(entries) {
     }
     // -------------------------------------------------
 
+    releaseLockOnce();
+
     // --- CALENDAR SYNC ---
     try {
       if (typeof CalendarSync !== 'undefined' && (calSyncEntries.length > 0 || calSyncDeletes.length > 0)) {
@@ -1402,128 +1184,7 @@ function saveAttendanceEntries(entries) {
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * Schválí docházkové záznamy dovolené (batch). Volá vedoucí/admin.
- * entryIds = pole attendance_id řetězců
- */
-function approveVacationEntries(entryIds) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
-  try {
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser) return { success: false, error: "Neautorizováno." };
-    if (!Auth.canApproveVacation(currentUser)) return { success: false, error: "Nedostatečná oprávnění." };
-    if (!Array.isArray(entryIds) || entryIds.length === 0) return { success: false, error: "Žádné záznamy." };
-
-    const transSS = DB.getTransaction();
-    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
-    if (!sheet) return { success: false, error: "ATTENDANCE sheet nenalezen." };
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const aidIdx  = headers.indexOf('attendance_id');
-    const apprIdx = headers.indexOf('approved');
-    const uidIdx  = headers.indexOf('user_id');
-    const statIdx = headers.indexOf('status_id');
-    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-    const userMap = {};
-    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
-    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
-    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-    const statusMap = {};
-    statuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
-    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
-
-    // Sbíráme user_id požadatelů pro notifikace
-    const requesterSet = new Set();
-
-    for (let i = 1; i < data.length; i++) {
-      if (entryIds.indexOf(data[i][aidIdx]) !== -1) {
-        if (!_canManageTargetAttendance(currentUser, userMap[data[i][uidIdx]], positions, rbacConfig)) continue;
-        if (!_isVacationStatusId(data[i][statIdx], statusMap)) continue;
-        sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.APPROVED);
-        requesterSet.add(data[i][uidIdx]);
-      }
-    }
-
-    // Notifikace zaměstnancům — schválení
-    let ids = Array.from(requesterSet);
-    ids.forEach(function(uid) {
-      _createUserNotification(uid, NOTIFICATION_TYPES.VACATION_APPROVED, 'Dovolená schválena',
-        'Vaše žádost o dovolenou byla schválena.');
-    });
-
-    // Označit schvalovací notifikace jako přečtené
-    _markVacationNotifsProcessed(ids);
-
-    _auditLog("VACATION_APPROVED", { count: ids.length, entry_ids: entryIds }, currentUser);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * Zamítne docházkové záznamy dovolené (batch). Volá vedoucí/admin.
- * entryIds = pole attendance_id řetězců
- */
-function rejectVacationEntries(entryIds) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
-  try {
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser) return { success: false, error: "Neautorizováno." };
-    if (!Auth.canApproveVacation(currentUser)) return { success: false, error: "Nedostatečná oprávnění." };
-    if (!Array.isArray(entryIds) || entryIds.length === 0) return { success: false, error: "Žádné záznamy." };
-
-    const transSS = DB.getTransaction();
-    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
-    if (!sheet) return { success: false, error: "ATTENDANCE sheet nenalezen." };
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const aidIdx = headers.indexOf('attendance_id');
-    const uidIdx = headers.indexOf('user_id');
-    const apprIdx = headers.indexOf('approved');
-    const statIdx = headers.indexOf('status_id');
-    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-    const userMap = {};
-    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
-    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
-    const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-    const statusMap = {};
-    statuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
-    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
-
-    let requesterIds = [];
-    for (let i = 1; i < data.length; i++) {
-      if (entryIds.indexOf(data[i][aidIdx]) !== -1) {
-        if (!_canManageTargetAttendance(currentUser, userMap[data[i][uidIdx]], positions, rbacConfig)) continue;
-        if (!_isVacationStatusId(data[i][statIdx], statusMap)) continue;
-        sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.REJECTED);
-        let uid = data[i][uidIdx];
-        if (requesterIds.indexOf(uid) === -1) requesterIds.push(uid);
-      }
-    }
-
-    // Notifikace zaměstnancům — zamítnutí
-    requesterIds.forEach(function(uid) {
-      _createUserNotification(uid, NOTIFICATION_TYPES.VACATION_REJECTED, 'Dovolená zamítnuta',
-        'Vaše žádost o dovolenou byla zamítnuta.');
-    });
-
-    _markVacationNotifsProcessed(requesterIds);
-
-    _auditLog("VACATION_REJECTED", { count: requesterIds.length, entry_ids: entryIds }, currentUser);
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
+    releaseLockOnce();
   }
 }
 
@@ -1575,6 +1236,14 @@ function _createUserNotification(userId, type, title, message) {
 function processVacationDecisions(approvedIds, rejectedIds) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
+  // Zámek chrání jen zápis do sheetu. Navazující synchronizace kalendáře volá
+  // Calendar API a trvá řádově vteřiny, proto se zámek uvolňuje ještě před ní.
+  var lockReleased = false;
+  function releaseLockOnce() {
+    if (lockReleased) return;
+    lockReleased = true;
+    lock.releaseLock();
+  }
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: 'Neautorizováno.' };
@@ -1700,6 +1369,9 @@ function processVacationDecisions(approvedIds, rejectedIds) {
     // Označit schvalovací notifikace jako zpracované
     _markVacationNotifsProcessed(allUids);
 
+    SpreadsheetApp.flush();
+    releaseLockOnce();
+
     try {
       if (typeof CalendarSync !== 'undefined') {
         rejectedCalendarDeletes.forEach(function(e) {
@@ -1735,7 +1407,7 @@ function processVacationDecisions(approvedIds, rejectedIds) {
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
-    lock.releaseLock();
+    releaseLockOnce();
   }
 }
 
@@ -1766,112 +1438,19 @@ function _markVacationNotifsProcessed(requesterIds) {
 }
 
 /**
- * Smaže docházkový záznam pro daný user_id, datum a slot.
- */
-function clearAttendanceEntry(userId, date, slot) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
-  try {
-    const currentUser = Auth.getCurrentUser();
-    if (!currentUser) return { success: false, error: "Neautorizováno." };
-
-    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-    const targetUser = allUsers.find(function(u) { return u.user_id === userId; });
-    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
-    const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
-    let canEdit = _canManageTargetAttendance(currentUser, targetUser, positions, rbacConfig);
-    if (!canEdit) return { success: false, error: "Nedostatečná oprávnění." };
-
-    const slotVal = slot || 'ALL_DAY';
-    const transSS = DB.getTransaction();
-    const datePfx = _toPfx(date, transSS);
-    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
-    if (!sheet) return { success: true };
-
-    const data = sheet.getDataRange().getValues();
-    const h = data[0];
-    const uidIdx  = h.indexOf('user_id');
-    const dateIdx = h.indexOf('date');
-    const slotIdx = h.indexOf('slot');
-
-    // Můžeme smazat buď jeden konkrétní slot, nebo vše pro daný den ('*')
-    for (let i = data.length - 1; i >= 1; i--) {
-      let match = (data[i][uidIdx] === userId && _toPfx(data[i][dateIdx], transSS) === datePfx);
-      if (match) {
-        if (slotVal === '*' || data[i][slotIdx] === slotVal) {
-          sheet.deleteRow(i + 1);
-          if (slotVal !== '*') break; // Pokud mažeme vše, pokračujeme, jinak konec
-        }
-      }
-    }
-    _auditLog("ATTENDANCE_DELETE_SINGLE", { user_id: userId, date: datePfx, slot: slotVal }, currentUser);
-
-    // Pokud mažeme celý den nebo konkrétní slot, prověříme zda nezmizel nárok na stůl
-    try {
-      SpreadsheetApp.flush(); 
-      const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-      const deskStatusIds = statuses
-        .filter(function(s) { return String(s.allows_desk_reservation).toLowerCase() === 'true'; })
-        .map(function(s) { return s.status_id; });
-
-      const remainingRows = sheet.getDataRange().getValues();
-      const h = remainingRows[0];
-      const dbUidIdx = h.indexOf('user_id');
-      const dbDateIdx = h.indexOf('date');
-      const dbStatIdx = h.indexOf('status_id');
-
-      const stillNeedsDesk = remainingRows.some(function(r, idx) {
-        if (idx === 0) return false;
-        const rDate = _toPfx(r[dbDateIdx], transSS);
-        return r[dbUidIdx] === userId && rDate === datePfx && deskStatusIds.indexOf(r[dbStatIdx]) !== -1;
-      });
-
-      if (!stillNeedsDesk) {
-        Admin.clearUserReservations(userId, datePfx);
-        DB.insertRow(DB.getSystem(), DB_SHEETS.SYSTEM.AUDIT_LOG, {
-          timestamp: new Date().toISOString(),
-          user_email: userId,
-          action: "AUTO_CLEAR_RESERVATION_ON_DELETE",
-          details: "Datum: " + datePfx
-        });
-      }
-    } catch (resErr) {
-      console.error("SYNC DELETE ERROR: " + resErr.toString());
-    }
-    // -------------------------------------------------
-
-    // --- CALENDAR SYNC ---
-    try {
-      if (typeof CalendarSync !== 'undefined') {
-        if (slotVal === '*') {
-          ['ALL_DAY', 'AM', 'PM'].forEach(function(s) {
-            CalendarSync.deletePersonalEvent(userId, datePfx, s);
-            CalendarSync.deleteTeamEvent(userId, datePfx, s);
-          });
-        } else {
-          CalendarSync.deletePersonalEvent(userId, datePfx, slotVal);
-          CalendarSync.deleteTeamEvent(userId, datePfx, slotVal);
-        }
-      }
-    } catch (calErr) {
-      console.error('CALENDAR DELETE SYNC ERROR: ' + calErr.toString());
-    }
-    // -------------------------------------------------
-
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
  * Hromadně smaže docházkové záznamy.
  */
 function clearAttendanceEntries(entries) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
+  // Zámek chrání jen zápis do sheetu. Navazující synchronizace kalendáře volá
+  // Calendar API a trvá řádově vteřiny, proto se zámek uvolňuje ještě před ní.
+  var lockReleased = false;
+  function releaseLockOnce() {
+    if (lockReleased) return;
+    lockReleased = true;
+    lock.releaseLock();
+  }
   try {
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: "Neautorizováno." };
@@ -1984,6 +1563,8 @@ function clearAttendanceEntries(entries) {
           console.error("SYNC DELETE ERROR: " + resErr.toString());
         }
 
+        releaseLockOnce();
+
         // CalendarSync
         try {
           if (typeof CalendarSync !== 'undefined') {
@@ -2008,22 +1589,8 @@ function clearAttendanceEntries(entries) {
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
-    lock.releaseLock();
+    releaseLockOnce();
   }
-}
-
-/**
- * POMOCNÁ FUNKCE: Resetuje aplikaci do továrního nastavení.
- * Smaže Script Properties, čímž vynutí znovu spuštění Wizardu.
- * Spouštějte pouze ručně z editoru pro účely testování.
- */
-function RESET_APP_FOR_WIZARD() {
-  if (!Auth.hasSystemRole(ROLES.SYSTEM.SUPERADMIN)) {
-    throw new Error("Nedostatečná oprávnění. Pouze SUPERADMIN může resetovat aplikaci.");
-  }
-  const props = PropertiesService.getScriptProperties();
-  props.deleteAllProperties();
-  console.log("Aplikace byla resetována. Při příštím otevření se spustí Wizard.");
 }
 /**
  * Aktualizuje aktivitu uživatele (heartbeat).

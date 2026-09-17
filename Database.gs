@@ -34,7 +34,15 @@ const DB = {
    */
   clearCache: function(sheetName) {
     if (sheetName) {
-      delete this._tableCache[sheetName];
+      // Klíče v _tableCache mají tvar "<spreadsheetId>_<sheetName>", proto se
+      // nemaže podle holého názvu listu, ale podle přípony klíče.
+      var suffix = "_" + sheetName;
+      var cache = this._tableCache;
+      Object.keys(cache).forEach(function(key) {
+        if (key.length >= suffix.length && key.substring(key.length - suffix.length) === suffix) {
+          delete cache[key];
+        }
+      });
     } else {
       this._tableCache = {};
     }
