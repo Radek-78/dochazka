@@ -6,6 +6,57 @@ const DB = {
   _instances: {},
   _tableCache: {},
 
+  // Listy, které se mění řádově jednou za týdny – drží se ve sdílené mezipaměti
+  // mezi requesty, takže je nemusí číst každé volání každého uživatele znovu.
+  // USERS ani transakční listy tu záměrně nejsou: USERS přepisuje heartbeat
+  // každých 5 minut a ATTENDANCE by se do limitu CacheService stejně nevešla.
+  // Názvy listů jsou napříč všemi třemi sešity unikátní, takže stačí jako klíč.
+  _SHARED_CACHE_SHEETS: {
+    LOCATIONS: true, SECTIONS: true, DEPARTMENTS: true, GROUPS: true, POSITIONS: true,
+    ATTENDANCE_STATUSES: true, VACATION_CONFIG: true, SECTION_VIEW_CONFIG: true,
+    NAMED_DAYS: true, RBAC_CONFIG: true, MARKETING_WEEKS: true
+  },
+  // Krátká platnost je pojistka: kdyby některá zapisující cesta zapomněla na
+  // invalidaci, data se sama srovnají do dvou minut.
+  _SHARED_CACHE_SECONDS: 120,
+  // CacheService má limit 100 kB na klíč – co je větší, se prostě necachuje.
+  _SHARED_CACHE_MAX_BYTES: 90000,
+
+  _sharedCacheKey: function(sheetName) { return 'tbl_' + sheetName; },
+
+  _sharedCacheGet: function(sheetName) {
+    if (!this._SHARED_CACHE_SHEETS[sheetName]) return null;
+    try {
+      const raw = CacheService.getScriptCache().get(this._sharedCacheKey(sheetName));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null; // mezipaměť je jen zrychlení, její výpadek nesmí shodit čtení
+    }
+  },
+
+  _sharedCachePut: function(sheetName, rows) {
+    if (!this._SHARED_CACHE_SHEETS[sheetName]) return;
+    try {
+      const payload = JSON.stringify(rows);
+      if (payload.length > this._SHARED_CACHE_MAX_BYTES) return;
+      CacheService.getScriptCache().put(this._sharedCacheKey(sheetName), payload, this._SHARED_CACHE_SECONDS);
+    } catch (e) { /* viz výše */ }
+  },
+
+  _sharedCacheRemove: function(sheetName) {
+    try {
+      const cache = CacheService.getScriptCache();
+      if (sheetName) {
+        cache.remove(this._sharedCacheKey(sheetName));
+      } else {
+        const self = this;
+        cache.removeAll(Object.keys(this._SHARED_CACHE_SHEETS).map(function(n) {
+          return self._sharedCacheKey(n);
+        }));
+      }
+    } catch (e) { /* viz výše */ }
+  },
+
   /**
    * Pomocná metoda pro získání/cachování spreadsheetu.
    */
@@ -43,8 +94,10 @@ const DB = {
           delete cache[key];
         }
       });
+      this._sharedCacheRemove(sheetName);
     } else {
       this._tableCache = {};
+      this._sharedCacheRemove(null);
     }
   },
 
@@ -54,6 +107,12 @@ const DB = {
   getTable: function(ss, sheetName) {
     const cacheKey = ss.getId() + "_" + sheetName;
     if (this._tableCache[cacheKey]) return this._tableCache[cacheKey];
+
+    const shared = this._sharedCacheGet(sheetName);
+    if (shared) {
+      this._tableCache[cacheKey] = shared;
+      return shared;
+    }
 
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) return [];
@@ -79,6 +138,7 @@ const DB = {
     });
 
     this._tableCache[cacheKey] = result;
+    this._sharedCachePut(sheetName, result);
     return result;
   },
 

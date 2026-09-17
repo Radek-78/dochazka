@@ -710,6 +710,29 @@ function getMonthAttendance(year, month) {
  * @param {string} [mapId] - mapa kanceláře; bez ní se rezervace nevracejí
  * @return {Object} { success, months: { "YYYY-MM": { attendance: [], reservations: [] } } }
  */
+/**
+ * Startovní dávka pro první vykreslení kalendáře: docházka měsíce, rezervace stolů,
+ * bilance dovolené a denní statistika v jednom volání.
+ *
+ * Je to záměrně jen tenký obal nad existujícími funkcemi – DB.getTable cachuje
+ * v rámci jedné exekuce, takže ATTENDANCE, USERS i číselníky se přečtou jednou
+ * místo třikrát, aniž by se kdekoli duplikovala logika.
+ */
+function getInitialViewData(year, month, mapId, statsDate) {
+  try {
+    const yearMonth = String(year) + '-' + String(Number(month) + 1).padStart(2, '0');
+    return {
+      success: true,
+      attendance: getMonthAttendance(year, month),
+      reservations: mapId ? getMapReservationsForMonth(mapId, yearMonth) : null,
+      vacationBalances: getVacationBalances(year),
+      dailyStats: getDailyStats(statsDate)
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 function getCalendarRange(yearMonths, mapId) {
   try {
     const currentUser = Auth.getCurrentUser();
@@ -1664,9 +1687,12 @@ function clearAttendanceEntries(entries) {
  * Aktualizuje aktivitu uživatele (heartbeat).
  */
 function updateUserActivity() {
+  // Verze se vrací s každým heartbeatem, aby prohlížeč poznal, že běží na starém
+  // kódu (načtené HTML se samo neaktualizuje) – nestojí to žádný request navíc.
+  const deployedVersion = typeof APP_VERSION !== 'undefined' ? APP_VERSION : '';
   try {
     const user = Auth.getCurrentUser();
-    if (!user) return { success: false };
+    if (!user) return { success: false, version: deployedVersion };
     
     const coreSS = DB.getCore();
     const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.USERS);
@@ -1675,18 +1701,18 @@ function updateUserActivity() {
     const uidIdx = headers.indexOf('user_id');
     const actIdx = headers.indexOf('last_active');
     
-    if (uidIdx === -1 || actIdx === -1) return { success: false };
+    if (uidIdx === -1 || actIdx === -1) return { success: false, version: deployedVersion };
     
     const now = new Date().toISOString();
     for (let i = 1; i < data.length; i++) {
         if (data[i][uidIdx] === user.user_id) {
             sheet.getRange(i + 1, actIdx + 1).setValue(now);
-            return { success: true };
+            return { success: true, version: deployedVersion };
         }
     }
-    return { success: false };
+    return { success: false, version: deployedVersion };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return { success: false, error: e.toString(), version: deployedVersion };
   }
 }
 

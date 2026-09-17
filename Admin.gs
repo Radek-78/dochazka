@@ -319,6 +319,8 @@ var Admin = {
           sheet.getRange(rowNum, i + 1).setValue(data[header]);
         }
       });
+      // Zápis jde mimo DB.insertRow, takže mezipaměť je nutné zneplatnit ručně
+      DB.clearCache(sheetName);
       return { success: true, id: entityId };
     }
   },

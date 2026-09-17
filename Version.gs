@@ -3,9 +3,19 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.18.0";
+const APP_VERSION = "2.19.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.19.0",
+    "date": "2026-09-17",
+    "changes": [
+      "Patička nově upozorní, že je k dispozici nová verze a stačí kliknout pro obnovení - prohlížeč si jinak drží jednou stažený kód klidně několik dní, takže uživatel mohl pracovat se starou verzí a nevědět o tom",
+      "Načtení aplikace posílá 5 dotazů místo 8: docházka měsíce, rezervace stolů, konta dovolené a denní statistika přijdou jedním dotazem",
+      "Číselníky (statusy, pozice, úseky, oddělení, týmy, práva) se drží ve sdílené mezipaměti, takže je nemusí číst každý dotaz každého uživatele znovu",
+      "Kalendář se nově opravdu obnovuje na pozadí - každých 15 minut si stáhne čerstvá data, takže se objeví i změny zadané kolegy (dřív ukazoval data z okamžiku načtení stránky až do ručního obnovení)"
+    ]
+  },
   {
     "version": "2.18.0",
     "date": "2026-09-17",

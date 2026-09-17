@@ -87,6 +87,10 @@
     // --- BACKGROUND PREFETCH CACHE ---
     // key: `year_month` (např. '2026_0')
     let _attendanceCache = {};
+    // Odpovědi ze startovního getInitialViewData – spotřebují se jednou a zahodí,
+    // aby statistiky ani bilance dovolené neposílaly při startu vlastní request.
+    let _initialExtras = null;
+    let _initialViewLoaded = false;
     let _vacationBalanceCache = {}; // key: year -> { userId: balance }
     let _vacationBalancePromises = {}; // key: year -> Promise
 
@@ -386,6 +390,28 @@
         if (spinner && !isAlreadyCached) spinner.style.display = 'flex';
 
         try {
+            // První načtení jde jedním voláním: docházka, rezervace, bilance i statistika.
+            // Server tak přečte ATTENDANCE jednou místo třikrát.
+            if (!_initialViewLoaded) {
+                _initialViewLoaded = true;
+                const officeMap = plannerData.officeMap;
+                const mapId = (officeMap && officeMap.map_id) ? officeMap.map_id : null;
+                try {
+                    const initRes = await callServer('getInitialViewData', currYear, currMonth, mapId,
+                        new Date().toISOString().split('T')[0]);
+                    if (initRes && initRes.success) {
+                        _attendanceCache[cacheKey] = Promise.resolve([initRes.attendance, initRes.reservations]);
+                        _initialExtras = {
+                            vacationBalances: initRes.vacationBalances,
+                            vacationYear: String(currYear),
+                            dailyStats: initRes.dailyStats
+                        };
+                    }
+                } catch (e) {
+                    console.warn('getInitialViewData selhalo, pokračuji jednotlivými voláními:', e);
+                }
+            }
+
             // Použití nacachovaného Promise, ev. jeho vytvoření a fetch  
             const [attRes, resRes] = await _fetchMonthDataCached(currYear, currMonth);
 
@@ -438,7 +464,16 @@
         if (!force && _vacationBalanceCache[key]) return _vacationBalanceCache[key];
         if (!force && _vacationBalancePromises[key]) return _vacationBalancePromises[key];
 
-        _vacationBalancePromises[key] = callServer('getVacationBalances', Number(key)).then(function (res) {
+        // Bilance pro aktuální rok přišly už ve startovní dávce
+        let preloadedBalances = null;
+        if (_initialExtras && _initialExtras.vacationBalances && _initialExtras.vacationYear === key) {
+            preloadedBalances = _initialExtras.vacationBalances;
+            _initialExtras.vacationBalances = null;
+        }
+
+        _vacationBalancePromises[key] = (preloadedBalances
+            ? Promise.resolve(preloadedBalances)
+            : callServer('getVacationBalances', Number(key))).then(function (res) {
             if (res && res.success) {
                 _vacationBalanceCache[key] = res.data || {};
                 if (plannerData && plannerData.employees) {
@@ -530,8 +565,11 @@
             // Ale nebudeme na to čekat (await), aby se UI nezaseknulo
             try {
                 const todayStr = new Date().toISOString().split('T')[0];
-                // Voláme server jen pro online data
-                callServer('getDailyStats', todayStr).then(res => {
+                // Voláme server jen pro online data – při startu je ale už máme
+                // ze startovní dávky, takže se request přeskočí.
+                const preloadedStats = _initialExtras && _initialExtras.dailyStats;
+                if (preloadedStats) _initialExtras.dailyStats = null;
+                (preloadedStats ? Promise.resolve(preloadedStats) : callServer('getDailyStats', todayStr)).then(res => {
                     if (myUpdateId !== _statsUpdateId) return;
                     if (res && res.success) {
                         const onlineSectionId = getActiveSectionId();
@@ -3746,14 +3784,41 @@
     /**
      * Pravidelná synchronizace docházky na pozadí (každých 5 minut)
      */
+    /**
+     * Porovná verzi načteného HTML s verzí nasazenou na serveru. Prohlížeč si drží
+     * jednou stažený skript klidně několik dní, takže bez tohohle jede uživatel
+     * na starém kódu a ani o tom neví.
+     */
+    function _checkAppVersion(res) {
+        if (!res || !res.version) return;
+        const el = document.getElementById('app-version-display');
+        const loaded = el ? String(el.textContent).replace(/^v/, '').trim() : '';
+        if (!loaded || loaded === res.version) return;
+
+        const notice = document.getElementById('app-update-notice');
+        if (notice) notice.hidden = false;
+        console.warn('[Verze] Načteno ' + loaded + ', na serveru je ' + res.version + ' – obnovte stránku.');
+    }
+
+    function _sendHeartbeat() {
+        return callServer('updateUserActivity')
+            .then(_checkAppVersion)
+            .catch(e => console.warn('Heartbeat failed:', e));
+    }
+
+    let _heartbeatTick = 0;
+    /** Po kolika heartbeatech se stáhnou čerstvá data ze serveru (3 × 5 min = 15 min). */
+    const SYNC_EVERY_N_HEARTBEATS = 3;
+
     function startHeartbeat() {
         if (_heartbeatTimer) clearInterval(_heartbeatTimer);
 
         // Označit uživatele jako aktivního hned po startu
-        callServer('updateUserActivity').catch(e => console.warn('Heartbeat failed:', e));
+        _sendHeartbeat();
 
         _heartbeatTimer = setInterval(() => {
-            callServer('updateUserActivity').catch(e => console.warn('Heartbeat failed:', e));
+            _sendHeartbeat();
+            _heartbeatTick++;
 
             // Přeskočit obnovu kalendáře, pokud uživatel právě pracuje v modálu
             // nebo v hromadném režimu – statistiky ale obnovit i tak.
@@ -3762,6 +3827,12 @@
             if (isModalOpen || _batchMode.active) {
                 updateDailyStats();
                 return;
+            }
+
+            // Bez zneplatnění cache by loadAttendance jen překreslila už načtená data
+            // a změny ostatních uživatelů by se neobjevily.
+            if (_heartbeatTick % SYNC_EVERY_N_HEARTBEATS === 0) {
+                _invalidateCache(new Date(currYear, currMonth, 1));
             }
 
             // loadAttendance na konci volá initStatsAndHeartbeat, který statistiky obnoví
