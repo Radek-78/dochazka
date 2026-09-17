@@ -3,9 +3,16 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.17.0";
+const APP_VERSION = "2.17.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.17.1",
+    "date": "2026-09-17",
+    "changes": [
+      "Snížena zátěž serveru: načítání kalendáře do zásoby posílalo dotaz na denní statistiku třináctkrát po sobě (pro každý přednačtený měsíc), přestože se ptal pořád na dnešek - nově odejde jediný dotaz"
+    ]
+  },
   {
     "version": "2.17.0",
     "date": "2026-09-17",

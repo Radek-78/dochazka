@@ -325,6 +325,11 @@
 
         const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
 
+        // Statistiky se překreslují až po dokončení celé smyčky. Volání uvnitř cyklu
+        // posílalo getDailyStats na každý z 13 měsíců, přestože se ptá pořád na dnešek
+        // a všechny odpovědi kromě poslední zahodí strážce _statsUpdateId.
+        let statsNeedRefresh = false;
+
         for (let i = 0; i < monthsToFetch.length; i++) {
             let req = monthsToFetch[i];
             let mName = monthNames[req.m] + " " + req.y;
@@ -344,13 +349,14 @@
                         var slot = entry.slot || 'ALL_DAY';
                         _globalAttendanceData[entry.user_id + '_' + dk + '_' + slot] = entry;
                     });
-                    // Refresh stats if prefetch finishes for a month that might affect current view
-                    updateDailyStats();
+                    statsNeedRefresh = true;
                 }
             } catch (err) {
                 console.warn('[Prefetch] Error fetching background data:', req, err);
             }
         }
+
+        if (statsNeedRefresh) updateDailyStats();
 
         if (toastText) toastText.innerText = "Všechna data jsou připravena.";
         const toastTitle = document.getElementById('prefetch-toast-title');
