@@ -634,6 +634,26 @@ var Admin = {
     });
   },
 
+  /**
+   * Vrátí rezervace pro několik měsíců najednou, seskupené podle "YYYY-MM".
+   * List se čte jednou pro celý rozsah místo jednou za každý měsíc.
+   */
+  getMapReservationsForRange: function(mapId, yearMonths) {
+    const result = {};
+    (yearMonths || []).forEach(function(ym) { result[String(ym).substring(0, 7)] = []; });
+    if (!mapId || Object.keys(result).length === 0) return result;
+
+    const storage = this._getMapReservationStorage();
+    const table = DB.getTable(storage.ss, DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+
+    table.forEach(function(r) {
+      if (r.map_id !== mapId || String(r.active) === 'false' || !r.date) return;
+      const ym = String(r.date).substring(0, 7);
+      if (result[ym]) result[ym].push(r);
+    });
+    return result;
+  },
+
   _getMapReservationStorage: function() {
     const coreSS = DB.getCore();
     const transSS = DB.getTransaction();
@@ -1415,6 +1435,31 @@ function saveNamedDay(dateKey, name) {
 function saveMapReservation(data) {
   try {
     return Admin.saveMapReservation(data);
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Dávkové uložení rezervací stolů. Hromadná rezervace posílala jeden request na každý
+ * den; takto proběhne jediné volání a mapa i docházka se čtou jen jednou pro celou dávku.
+ * @param {Object[]} list - položky ve tvaru { map_id, cell_id, user_id, date }
+ * @return {Object} { success, results: [{ date, success, id, error }] }
+ */
+function saveMapReservations(list) {
+  try {
+    if (!Array.isArray(list) || list.length === 0) {
+      return { success: false, error: "Nebyly zadány žádné rezervace." };
+    }
+    const results = list.map(function(item) {
+      try {
+        const res = Admin.saveMapReservation(item) || {};
+        return { date: item.date, success: !!res.success, id: res.id || '', error: res.error || '' };
+      } catch (e) {
+        return { date: item.date, success: false, id: '', error: e.toString() };
+      }
+    });
+    return { success: true, results: results };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

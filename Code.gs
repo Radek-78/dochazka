@@ -702,6 +702,74 @@ function getMonthAttendance(year, month) {
 }
 
 /**
+ * Vrátí docházku a rezervace stolů pro několik měsíců v jediném volání.
+ * Používá se pro přednačtení okolních měsíců — oproti opakovanému getMonthAttendance
+ * přečte ATTENDANCE, USERS a číselníky jen jednou pro celý rozsah.
+ *
+ * @param {string[]} yearMonths - měsíce ve tvaru "YYYY-MM"
+ * @param {string} [mapId] - mapa kanceláře; bez ní se rezervace nevracejí
+ * @return {Object} { success, months: { "YYYY-MM": { attendance: [], reservations: [] } } }
+ */
+function getCalendarRange(yearMonths, mapId) {
+  try {
+    const currentUser = Auth.getCurrentUser();
+    if (!currentUser) return { success: false, error: "Neautorizováno." };
+    if (!Array.isArray(yearMonths) || yearMonths.length === 0) {
+      return { success: false, error: "Nebyl zadán žádný měsíc." };
+    }
+
+    // Reset mezipaměti RBAC pro tento požadavek (prevence zastaralých dat)
+    if (Auth._rbacCache !== undefined) Auth._rbacCache = null;
+    const rbacConfig = Admin.getRbacConfig();
+
+    const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
+    const userMap = {};
+    allUsers.forEach(function(u) { userMap[u.user_id] = u; });
+
+    // Předpřipravené přihrádky podle měsíce – zároveň slouží jako filtr rozsahu
+    const byMonth = {};
+    yearMonths.forEach(function(ym) { byMonth[String(ym).substring(0, 7)] = []; });
+
+    const allAttendance = DB.getTable(DB.getTransaction(), DB_SHEETS.TRANSACTION.ATTENDANCE);
+    allAttendance.forEach(function(a) {
+      if (_isRejectedAttendance(a)) return;
+      if (!a.date) return;
+      const bucket = byMonth[String(a.date).substring(0, 7)];
+      if (!bucket) return;
+      const targetUser = userMap[a.user_id];
+      if (!targetUser) return;
+      if (!Auth.canAccessUserData(targetUser, rbacConfig)) return;
+      bucket.push(a);
+    });
+
+    const statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES));
+    const positions = DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS);
+    const privacyCtx = Privacy.createContext({
+      viewer: currentUser,
+      positions: positions,
+      statuses: statuses,
+      rbacConfig: rbacConfig
+    });
+
+    const reservations = mapId
+      ? Admin.getMapReservationsForRange(mapId, Object.keys(byMonth))
+      : {};
+
+    const months = {};
+    Object.keys(byMonth).forEach(function(ym) {
+      months[ym] = {
+        attendance: Privacy.prepareAttendanceEntries(byMonth[ym], userMap, privacyCtx),
+        reservations: reservations[ym] || []
+      };
+    });
+
+    return { success: true, months: months };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Vrátí autoritativní roční a měsíční bilance dovolené pro viditelné uživatele.
  * Volá se mimo úvodní getPlannerData, aby první vykreslení nečekalo na čtení ATTENDANCE.
  */

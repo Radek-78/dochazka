@@ -27,8 +27,6 @@
             _sectionViewConfigCache[plannerData.user.section_id] = plannerData.sectionViewConfig || null;
         }
     }
-    let statsUpdateTimer = null;
-    let heartbeatTimer = null;
 
     function _startupPerfNow() {
         return (window.performance && performance.now) ? performance.now() : Date.now();
@@ -300,62 +298,67 @@
         return _attendanceCache[cacheKey];
     }
 
+    /** Kolik měsíců kolem aktuálního se drží přednačtených (dozadu / dopředu). */
+    const PREFETCH_MONTHS_BACK = 1;
+    const PREFETCH_MONTHS_AHEAD = 3;
+
     /**
-     * Asynchronně natáhne data pro definované okolní měsíce sekvenčně.
+     * Přednačte okolní měsíce jediným voláním getCalendarRange.
+     * Dřív se stahoval každý měsíc zvlášť (13 měsíců = 26 requestů a 13× přečtená
+     * celá ATTENDANCE); teď odejde jeden request na celý rozsah a jen pro měsíce,
+     * které ještě nejsou v _attendanceCache.
      */
     async function startBackgroundPrefetch() {
         if (!plannerData) return;
 
         let monthsToFetch = [];
-        // Předchozí 1 měsíc
-        let pDate = new Date(currYear, currMonth - 1, 1);
-        monthsToFetch.push({ y: pDate.getFullYear(), m: pDate.getMonth() });
-
-        // Následujících 12 měsíců
-        for (let i = 1; i <= 12; i++) {
-            let nDate = new Date(currYear, currMonth + i, 1);
-            monthsToFetch.push({ y: nDate.getFullYear(), m: nDate.getMonth() });
+        for (let i = -PREFETCH_MONTHS_BACK; i <= PREFETCH_MONTHS_AHEAD; i++) {
+            const d = new Date(currYear, currMonth + i, 1);
+            const y = d.getFullYear();
+            const m = d.getMonth();
+            if (_attendanceCache[y + '_' + m]) continue; // už staženo nebo se právě stahuje
+            monthsToFetch.push({ y: y, m: m, ym: y + '-' + String(m + 1).padStart(2, '0') });
         }
+        if (monthsToFetch.length === 0) return;
 
         const toast = document.getElementById('prefetch-toast');
         const toastText = document.getElementById('prefetch-toast-text');
         const progressBar = document.getElementById('prefetch-progress-bar');
-
         if (toast) toast.classList.add('active');
+        if (toastText) toastText.innerText = 'Načítám okolní měsíce...';
+        if (progressBar) progressBar.style.width = '40%';
 
-        const monthNames = ["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"];
-
-        // Statistiky se překreslují až po dokončení celé smyčky. Volání uvnitř cyklu
-        // posílalo getDailyStats na každý z 13 měsíců, přestože se ptá pořád na dnešek
-        // a všechny odpovědi kromě poslední zahodí strážce _statsUpdateId.
+        const officeMap = plannerData.officeMap;
+        const mapId = (officeMap && officeMap.map_id) ? officeMap.map_id : null;
         let statsNeedRefresh = false;
 
-        for (let i = 0; i < monthsToFetch.length; i++) {
-            let req = monthsToFetch[i];
-            let mName = monthNames[req.m] + " " + req.y;
+        try {
+            const res = await callServer('getCalendarRange', monthsToFetch.map(function (r) { return r.ym; }), mapId);
+            if (res && res.success) {
+                monthsToFetch.forEach(function (req) {
+                    const data = res.months[req.ym] || { attendance: [], reservations: [] };
 
-            // Aktualizace textu a progressbaru
-            if (toastText) toastText.innerText = `Načítám: ${mName}`;
-            if (progressBar) {
-                const percent = Math.round(((i + 1) / monthsToFetch.length) * 100);
-                progressBar.style.width = percent + "%";
-            }
+                    // Cache drží stejný tvar jako _fetchMonthDataCached: [attRes, resRes]
+                    _attendanceCache[req.y + '_' + req.m] = Promise.resolve([
+                        { success: true, data: data.attendance || [] },
+                        mapId ? { success: true, data: data.reservations || [] } : null
+                    ]);
 
-            try {
-                const [attRes] = await _fetchMonthDataCached(req.y, req.m);
-                if (attRes && attRes.success) {
-                    (attRes.data || []).forEach(function (entry) {
+                    (data.attendance || []).forEach(function (entry) {
                         var dk = String(entry.date).substring(0, 10);
                         var slot = entry.slot || 'ALL_DAY';
                         _globalAttendanceData[entry.user_id + '_' + dk + '_' + slot] = entry;
                     });
                     statsNeedRefresh = true;
-                }
-            } catch (err) {
-                console.warn('[Prefetch] Error fetching background data:', req, err);
+                });
+            } else {
+                console.warn('[Prefetch] getCalendarRange failed:', res ? res.error : 'unknown');
             }
+        } catch (err) {
+            console.warn('[Prefetch] Error fetching background data:', err);
         }
 
+        if (progressBar) progressBar.style.width = '100%';
         if (statsNeedRefresh) updateDailyStats();
 
         if (toastText) toastText.innerText = "Všechna data jsou připravena.";
@@ -493,20 +496,9 @@
 
         updateDailyStats();
 
-        // Heartbeat každých 5 minut
-        if (heartbeatTimer) clearInterval(heartbeatTimer);
-        heartbeatTimer = setInterval(() => {
-            callServer('updateUserActivity').catch(e => console.warn('Heartbeat failed:', e));
-        }, 5 * 60 * 1000);
-
-        // Aktualizace statistik každých 5 minut
-        if (statsUpdateTimer) clearInterval(statsUpdateTimer);
-        statsUpdateTimer = setInterval(() => {
-            updateDailyStats();
-        }, 5 * 60 * 1000);
-
-        // První okamžitý heartbeat
-        callServer('updateUserActivity').catch(e => console.warn('Initial heartbeat failed:', e));
+        // Periodickou synchronizaci řídí jediný časovač ve startHeartbeat().
+        // Tahle funkce se volá z loadAttendance, takže vlastní setInterval tady
+        // zakládal nové časovače při každém běhu synchronizace.
 
         // Tlačítko logu aktivity v patičce (pouze pro SUPERADMIN)
         const activityBtn = document.getElementById('footer-activity-btn');
@@ -2841,31 +2833,34 @@
         _renderBatchMapModal();
         _updateBatchMapBtn();
 
-        // Ulož na server paralelně
-        var saves = eligibleDates.map(function (d) {
-            return callServer('saveMapReservation', {
-                map_id: map.map_id,
-                cell_id: cellId,
-                user_id: myUserId,
-                date: d
-            }).then(function (res) {
-                if (res && res.success && res.id && _mapReservations[myUserId + '_' + d]) {
-                    _mapReservations[myUserId + '_' + d].reservation_id = res.id;
-                } else if (!res || !res.success) {
-                    delete _mapReservations[myUserId + '_' + d];
-                    var calCellEl = getCellElement(myUserId, d);
-                    if (calCellEl) renderAttendanceCell(calCellEl, myUserId, d);
-                }
-            }).catch(function (e) {
-                delete _mapReservations[myUserId + '_' + d];
-                var calCellEl = getCellElement(myUserId, d);
-                if (calCellEl) renderAttendanceCell(calCellEl, myUserId, d);
-                console.warn('batchMapSaveReservation error for ' + d + ':', e);
-            });
+        function _rollbackDate(d) {
+            delete _mapReservations[myUserId + '_' + d];
+            var calCellEl = getCellElement(myUserId, d);
+            if (calCellEl) renderAttendanceCell(calCellEl, myUserId, d);
+        }
+
+        // Jedno volání na celou dávku – dřív odcházel request na každý den zvlášť
+        var payload = eligibleDates.map(function (d) {
+            return { map_id: map.map_id, cell_id: cellId, user_id: myUserId, date: d };
         });
 
-        // Po dokončení všech uložení aktualizuj strip (tečky)
-        Promise.all(saves).then(function () {
+        callServer('saveMapReservations', payload).then(function (res) {
+            if (!res || !res.success) {
+                eligibleDates.forEach(_rollbackDate);
+                console.warn('saveMapReservations failed:', res ? res.error : 'unknown');
+                return;
+            }
+            (res.results || []).forEach(function (r) {
+                if (r.success && r.id && _mapReservations[myUserId + '_' + r.date]) {
+                    _mapReservations[myUserId + '_' + r.date].reservation_id = r.id;
+                } else if (!r.success) {
+                    _rollbackDate(r.date);
+                }
+            });
+        }).catch(function (e) {
+            eligibleDates.forEach(_rollbackDate);
+            console.warn('saveMapReservations error:', e);
+        }).then(function () {
             _renderBatchMapDaysStrip();
         });
     }
@@ -3753,13 +3748,23 @@
      */
     function startHeartbeat() {
         if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+
+        // Označit uživatele jako aktivního hned po startu
+        callServer('updateUserActivity').catch(e => console.warn('Heartbeat failed:', e));
+
         _heartbeatTimer = setInterval(() => {
-            // Přeskočit, pokud uživatel právě pracuje v modálu nebo hromadném režimu
+            callServer('updateUserActivity').catch(e => console.warn('Heartbeat failed:', e));
+
+            // Přeskočit obnovu kalendáře, pokud uživatel právě pracuje v modálu
+            // nebo v hromadném režimu – statistiky ale obnovit i tak.
             const modal = document.getElementById('attendance-modal');
             const isModalOpen = modal && modal.classList.contains('visible');
-            if (isModalOpen || _batchMode.active) return;
+            if (isModalOpen || _batchMode.active) {
+                updateDailyStats();
+                return;
+            }
 
-            console.log('Heartbeat: Auto-sync docházky...');
+            // loadAttendance na konci volá initStatsAndHeartbeat, který statistiky obnoví
             loadAttendance();
         }, 5 * 60 * 1000);
     }

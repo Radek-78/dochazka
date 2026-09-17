@@ -1330,9 +1330,20 @@
             try {
                 const result = await callServer(serverMethod, data);
                 if (result.success) {
-                    // Refresh dat v pozadí pro jistotu (bez blokování UI)
-                    await this.refreshAllData();
-                    this.renderCurrentTab();
+                    if (collection && idKey) {
+                        // Lokální kopie už je aktuální z optimistického updatu, chybí jen
+                        // skutečné ID nového záznamu (dočasné temp-* by rozbilo další editaci).
+                        // Plný refresh admin dat (4 requesty) proto není potřeba.
+                        if (isNew && result.id) {
+                            const savedIdx = collection.findIndex(item => item[idKey] === tempId);
+                            if (savedIdx !== -1) collection[savedIdx][idKey] = result.id;
+                            this.renderCurrentTab();
+                        }
+                    } else {
+                        // Kolekci neznáme (uživatelé atd.) → jistota v podobě plného refreshe
+                        await this.refreshAllData();
+                        this.renderCurrentTab();
+                    }
 
                     if (typeof showAdminToast === 'function') showAdminToast("Uloženo", "success");
 

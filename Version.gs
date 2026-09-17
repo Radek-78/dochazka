@@ -3,9 +3,20 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.17.1";
+const APP_VERSION = "2.18.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.18.0",
+    "date": "2026-09-17",
+    "changes": [
+      "Výrazně nižší zátěž serveru: načtení aplikace posílá 8 dotazů místo zhruba 33 - okolní měsíce se stahují jedním dotazem na celý rozsah místo jednoho dotazu na každý měsíc",
+      "Kalendář se dopředu načítá v rozsahu předchozí měsíc až tři měsíce dopředu (dřív celý rok); vzdálenější měsíc se dotáhne až při přepnutí na něj",
+      "Administrace: uložení lokality, úseku, oddělení, týmu, pozice nebo statusu posílá jeden dotaz místo pěti",
+      "Hromadná rezervace stolu na více dnů odešle jeden dotaz místo jednoho na každý den",
+      "Sjednoceny tři nezávislé pětiminutové časovače na pozadí do jednoho - běžící aplikace posílá 2 dotazy za pět minut místo zhruba 16"
+    ]
+  },
   {
     "version": "2.17.1",
     "date": "2026-09-17",
