@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.19.1";
+const APP_VERSION = "2.19.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.19.2",
+    "date": "2026-10-15",
+    "changes": [
+      "Oprava ztráty dat: celý den zadaný v hromadném režimu (a za určitých okolností i v okně dne) se hned po uložení na serveru znovu smazal - kolidující půldny/celý den teď maže jen uložení na serveru",
+      "Při rychlém přepínání měsíců se už nevykreslí data předchozího měsíce, pokud jeho odpověď dorazí později"
+    ]
+  },
   {
     "version": "2.19.1",
     "date": "2026-09-17",

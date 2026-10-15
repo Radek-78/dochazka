@@ -415,6 +415,10 @@
             // Použití nacachovaného Promise, ev. jeho vytvoření a fetch  
             const [attRes, resRes] = await _fetchMonthDataCached(currYear, currMonth);
 
+            // Mezitím se přepnul měsíc – zastaralou odpověď nevykreslovat,
+            // aktuální měsíc vykreslí novější volání loadAttendance.
+            if (cacheKey !== currYear + '_' + currMonth) return;
+
             if (attRes && attRes.success) {
                 // Záloha čekajících zápisů před přepisem — ochrana před race condition
                 // kdy loadAttendance vrátí stará serverová data dříve, než flush stihl uložit
@@ -1505,14 +1509,13 @@
                     delete _attendanceData[userId + '_' + date + '_PM'];
                     delete _globalAttendanceData[userId + '_' + date + '_AM'];
                     delete _globalAttendanceData[userId + '_' + date + '_PM'];
-                    queueAttendanceDelete(userId, date, 'AM');
-                    queueAttendanceDelete(userId, date, 'PM');
                 } else {
                     _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
                     delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
                     delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
-                    queueAttendanceDelete(userId, date, 'ALL_DAY');
                 }
+                // Kolidující sloty smaže server při uložení (saveAttendanceEntries).
+                // Samostatné mazání by smazalo i právě uložený záznam.
                 // Automaticky přidat výchozí čas příchodu pro vlastní Kancelář záznamy
                 if (userId === plannerData.user.user_id &&
                     plannerData.user.show_work_start_time === 'true' &&
@@ -1860,19 +1863,16 @@
                 setBatchAction('ENTRY');
             }
 
-            // Smazat případné opačné sloty lokálně i na serveru
+            // Smazat případné opačné sloty lokálně – na serveru je smaže uložení
             if (slot === 'ALL_DAY') {
                 _dropPendingAttendanceSave(userId, date, 'AM');
                 _dropPendingAttendanceSave(userId, date, 'PM');
-                if (_attendanceData[userId + '_' + date + '_AM']) queueAttendanceDelete(userId, date, 'AM');
-                if (_attendanceData[userId + '_' + date + '_PM']) queueAttendanceDelete(userId, date, 'PM');
                 delete _attendanceData[userId + '_' + date + '_AM'];
                 delete _attendanceData[userId + '_' + date + '_PM'];
                 delete _globalAttendanceData[userId + '_' + date + '_AM'];
                 delete _globalAttendanceData[userId + '_' + date + '_PM'];
             } else {
                 _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
-                if (_attendanceData[userId + '_' + date + '_ALL_DAY']) queueAttendanceDelete(userId, date, 'ALL_DAY');
                 delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
                 delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
             }
@@ -1901,17 +1901,13 @@
             _renderStatusGrid(_attModal.canEdit);
             var entry = { user_id: userId, date: date, slot: 'ALL_DAY', status_id: statusId };
 
-            // Smazat případné půldenní, pokud zadáváme celodenní → i na serveru!
-            var hadAm = !!_attendanceData[userId + '_' + date + '_AM'];
-            var hadPm = !!_attendanceData[userId + '_' + date + '_PM'];
+            // Smazat případné půldenní lokálně – na serveru je smaže uložení celodenního
             _dropPendingAttendanceSave(userId, date, 'AM');
             _dropPendingAttendanceSave(userId, date, 'PM');
             delete _attendanceData[userId + '_' + date + '_AM'];
             delete _attendanceData[userId + '_' + date + '_PM'];
             delete _globalAttendanceData[userId + '_' + date + '_AM'];
             delete _globalAttendanceData[userId + '_' + date + '_PM'];
-            if (hadAm) queueAttendanceDelete(userId, date, 'AM');
-            if (hadPm) queueAttendanceDelete(userId, date, 'PM');
             _attModal.amStatusId = null;
             _attModal.pmStatusId = null;
 
@@ -1925,12 +1921,10 @@
             var slot = _attModal.nextHalfSlot;
             var entry = { user_id: userId, date: date, slot: slot, status_id: statusId };
 
-            // Smazat celodenní, pokud zadáváme půldenní → i na serveru!
-            var hadAllDay = !!_attendanceData[userId + '_' + date + '_ALL_DAY'];
+            // Smazat celodenní lokálně – na serveru ho smaže uložení půldenního
             _dropPendingAttendanceSave(userId, date, 'ALL_DAY');
             delete _attendanceData[userId + '_' + date + '_ALL_DAY'];
             delete _globalAttendanceData[userId + '_' + date + '_ALL_DAY'];
-            if (hadAllDay) queueAttendanceDelete(userId, date, 'ALL_DAY');
             _attModal.selectedStatusId = null;
 
             _attendanceData[userId + '_' + date + '_' + slot] = entry;
