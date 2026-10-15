@@ -1120,6 +1120,15 @@ function updateUser(userId, data) {
     // Ověření oprávnění
     const currentUser = Auth.getCurrentUser();
     if (!currentUser) throw new Error("Neautorizováno.");
+    if ((data.first_name !== undefined && !_isValidPersonName_(data.first_name)) ||
+        (data.last_name !== undefined && !_isValidPersonName_(data.last_name))) {
+      throw new Error("Jméno a příjmení mohou mít nejvýše 60 znaků a nesmí obsahovat znaky < > \".");
+    }
+    if (data.default_work_start_time !== undefined) {
+      // Apostrof zachovat – jinak Sheets převede čas na datum
+      const workTime = _sanitizeWorkTime_(data.default_work_start_time);
+      data.default_work_start_time = workTime ? "'" + workTime : '';
+    }
     const myRole = currentUser?.system_role || 'USER';
     const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
     const myWeight = roleWeights[myRole] || 0;

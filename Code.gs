@@ -11,6 +11,20 @@ function _resolveOrgRole(user, positions) {
   return user.org_role || ROLES.ORG.MEMBER;
 }
 
+// Ověří jméno/příjmení zadané uživatelem: max. 60 znaků, bez znaků < > "
+// (data se vkládají do HTML; escapování v klientu je hlavní ochrana, tohle je pojistka).
+function _isValidPersonName_(val) {
+  const s = String(val || '').trim();
+  return s.length > 0 && s.length <= 60 && !/[<>"]/.test(s);
+}
+
+// Čas příchodu ve tvaru H:MM / HH:MM, jinak prázdný řetězec.
+// Úvodní apostrof (textový prefix pro Sheets) se odstraní.
+function _sanitizeWorkTime_(val) {
+  const s = String(val || '').trim().replace(/^'/, '');
+  return /^\d{1,2}:\d{2}$/.test(s) ? s : '';
+}
+
 // Vrátí true, pokud je uživatel reálně aktivní - tedy má active !== 'false' A zároveň
 // nemá date_end v minulosti (odvozená neaktivita při odchodu, stejná logika jako
 // Admin.getAllUsers is_derived_active).
@@ -449,6 +463,9 @@ function registerUser(data) {
 
     if (!data.first_name || !data.last_name || !data.department_id) {
       return { success: false, error: "Vyplňte všechna povinná pole." };
+    }
+    if (!_isValidPersonName_(data.first_name) || !_isValidPersonName_(data.last_name)) {
+      return { success: false, error: "Jméno a příjmení mohou mít nejvýše 60 znaků a nesmí obsahovat znaky < > \"." };
     }
 
     const newUser = {
@@ -1091,7 +1108,10 @@ function saveAttendanceEntries(entries) {
     }
 
     const originalInputCount = entries.length;
-    entries = _normalizeSlotConflicts(entries);
+    // Neplatný slot vyřadit ještě před normalizací, aby nevytlačil platný záznam téhož dne
+    entries = _normalizeSlotConflicts(entries.filter(function(e) {
+      return ['ALL_DAY', 'AM', 'PM'].indexOf(e.slot || 'ALL_DAY') !== -1;
+    }));
 
     function _markConflictingRowsForDelete(userId, datePfx, slot) {
       const conflictSlots = slot === 'ALL_DAY' ? ['AM', 'PM'] : ['ALL_DAY'];
@@ -1132,7 +1152,7 @@ function saveAttendanceEntries(entries) {
         allRows[existIdx][noteIdx] = e.note || '';
         allRows[existIdx][apprIdx] = approvedVal;
         if (catIdx !== -1) allRows[existIdx][catIdx] = new Date().toISOString();
-        if (wstIdx !== -1) allRows[existIdx][wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
+        if (wstIdx !== -1) allRows[existIdx][wstIdx] = _sanitizeWorkTime_(e.work_start_time) ? "'" + _sanitizeWorkTime_(e.work_start_time) : '';
         toUpdate.push({ row: existIdx + 2, values: allRows[existIdx].slice() });
         if (needsApproval) {
           pendingEntries.push({ attendance_id: existingAid, user_id: e.user_id, date: datePfx, slot: slot, status_id: statusId });
@@ -1148,7 +1168,7 @@ function saveAttendanceEntries(entries) {
         newRow[noteIdx] = e.note || '';
         newRow[apprIdx] = approvedVal;
         if (catIdx !== -1) newRow[catIdx] = new Date().toISOString();
-        if (wstIdx !== -1) newRow[wstIdx] = e.work_start_time ? "'" + e.work_start_time : '';
+        if (wstIdx !== -1) newRow[wstIdx] = _sanitizeWorkTime_(e.work_start_time) ? "'" + _sanitizeWorkTime_(e.work_start_time) : '';
         toInsert.push(newRow);
         attIndex[lookupKey] = allRows.length; // udržuj index aktuální pro případ duplicit ve vstupu
         allRows.push(newRow);
@@ -1982,6 +2002,8 @@ function createPlannerGroup(data) {
     if (!canCreate) throw new Error("Nemáte oprávnění vytvářet plánovací skupiny.");
 
     const isUpdate = !!data.group_id;
+    // Barva se vkládá do stylů v klientu – povolit jen #rrggbb (výstup <input type="color">)
+    const color = /^#[0-9a-fA-F]{6}$/.test(String(data.color || '')) ? data.color : 'default';
     const groupId = isUpdate ? data.group_id : Utilities.getUuid();
 
     // Kontrola oprávnění pro update (musí být admin skupiny) – ještě před úpravou kalendáře
@@ -2005,7 +2027,7 @@ function createPlannerGroup(data) {
     }
 
     // Vytvořit/získat Google Kalendář pro skupinu
-    const calId = CalendarSync._getOrCreateGroupCalendar(groupId, data.name, data.color);
+    const calId = CalendarSync._getOrCreateGroupCalendar(groupId, data.name, color);
     
     if (isUpdate) {
         const allGroups = DB.getTable(coreSS, DB_SHEETS.CORE.PLANNER_GROUPS);
@@ -2013,7 +2035,7 @@ function createPlannerGroup(data) {
         if (idxGroup !== -1) {
             const rowNumber = idxGroup + 2;
             const headers = pgSheet.getRange(1, 1, 1, pgSheet.getLastColumn()).getValues()[0];
-            const updatedGroup = { ...allGroups[idxGroup], name: data.name, color: data.color || 'default', calendar_id: calId };
+            const updatedGroup = { ...allGroups[idxGroup], name: data.name, color: color, calendar_id: calId };
             const rowValues = headers.map(h => updatedGroup[h] !== undefined ? updatedGroup[h] : "");
             pgSheet.getRange(rowNumber, 1, 1, headers.length).setValues([rowValues]);
         }
@@ -2033,7 +2055,7 @@ function createPlannerGroup(data) {
           name: data.name,
           description: data.description || "",
           active: "true",
-          color: data.color || "default",
+          color: color,
           calendar_id: calId
         };
         DB.insertRow(coreSS, DB_SHEETS.CORE.PLANNER_GROUPS, group);

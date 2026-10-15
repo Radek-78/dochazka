@@ -526,10 +526,10 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.20.0</a>
+            id="app-version-display">v2.20.1</a>
           <a href="javascript:void(0)" onclick="location.reload()" class="app-version-link"
             id="app-update-notice" hidden>&#8635; Je k dispozici nová verze – obnovit</a>
-          | Bezpečnost: kontrola oprávnění serverových funkcí | Aktualizace: 15.10.2026 14:18
+          | Bezpečnost: ochrana proti vložení škodlivého kódu (XSS) | Aktualizace: 15.10.2026 14:42
         </div>
       </footer>
     </div>
@@ -1240,13 +1240,13 @@
       const endIso = user.date_end && user.date_end !== '---' ? new Date(user.date_end).toISOString().split('T')[0] : '';
 
       // Helper: readonly display field
-      const roField = (val) => `<div style="padding:8px 12px; background:#f8fafc; border-radius:6px; border:1.5px solid #e2e8f0; font-size:13px; color:#334155; font-weight:600; min-height:37px; display:flex; align-items:center; box-sizing:border-box;">${val !== null && val !== undefined && val !== '' ? val : '<span style="color:#94a3b8; font-weight:400;">—</span>'}</div>`;
+      const roField = (val) => `<div style="padding:8px 12px; background:#f8fafc; border-radius:6px; border:1.5px solid #e2e8f0; font-size:13px; color:#334155; font-weight:600; min-height:37px; display:flex; align-items:center; box-sizing:border-box;">${val !== null && val !== undefined && val !== '' ? escapeHtml(val) : '<span style="color:#94a3b8; font-weight:400;">—</span>'}</div>`;
       // Helper: readonly date field
       const roDate = (isoStr) => roField(isoStr ? new Date(isoStr).toLocaleDateString('cs-CZ') : null);
 
       // Helper: select or readonly
       const selOrRo = (canEdit, name, opts, curVal, emptyLabel) => canEdit && opts.length
-        ? `<select name="${name}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;"><option value="">${emptyLabel || '—'}</option>${opts.map(o => `<option value="${o.v}" ${o.v === curVal ? 'selected' : ''}>${o.l}</option>`).join('')}</select>`
+        ? `<select name="${name}" style="padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;"><option value="">${emptyLabel || '—'}</option>${opts.map(o => `<option value="${escapeHtml(o.v)}" ${o.v === curVal ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}</select>`
         : roField(opts.find(o => o.v === curVal)?.l || null);
 
       const canEditName = hasPermission('edit_profile_name');
@@ -1266,11 +1266,11 @@
       </svg>
     </div>
     <div style="flex:1; min-width:0;">
-      <h2 class="modal-header-title" style="font-size:16px;">${user.first_name || ''} ${user.last_name || ''}</h2>
-      <p class="modal-header-sub" style="margin:2px 0 0;">${user.email}</p>
+      <h2 class="modal-header-title" style="font-size:16px;">${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)}</h2>
+      <p class="modal-header-sub" style="margin:2px 0 0;">${escapeHtml(user.email)}</p>
     </div>
-    ${posName ? `<span style="font-size:10px; font-weight:800; color:rgba(255,240,0,0.9); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,240,0,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${posName}</span>` : ''}
-    <span style="font-size:10px; font-weight:800; color:rgba(255,255,255,0.85); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,255,255,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${roleLabels[user.system_role] || user.system_role}</span>
+    ${posName ? `<span style="font-size:10px; font-weight:800; color:rgba(255,240,0,0.9); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,240,0,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${escapeHtml(posName)}</span>` : ''}
+    <span style="font-size:10px; font-weight:800; color:rgba(255,255,255,0.85); text-transform:uppercase; letter-spacing:0.5px; background:rgba(255,255,255,0.12); padding:3px 9px; border-radius:20px; white-space:nowrap;">${escapeHtml(roleLabels[user.system_role] || user.system_role)}</span>
   </div>
 </div>
 
@@ -1289,16 +1289,16 @@
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
             <div class="form-group">
               <label>Jméno</label>
-              ${canEditName ? `<input type="text" name="first_name" value="${user.first_name || ''}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.first_name)}
+              ${canEditName ? `<input type="text" name="first_name" value="${escapeHtml(user.first_name)}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.first_name)}
             </div>
             <div class="form-group">
               <label>Příjmení</label>
-              ${canEditName ? `<input type="text" name="last_name" value="${user.last_name || ''}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.last_name)}
+              ${canEditName ? `<input type="text" name="last_name" value="${escapeHtml(user.last_name)}" required style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.last_name)}
             </div>
           </div>
           <div class="form-group">
             <label>E-mail (účet)</label>
-            ${canEditEmail ? `<input type="email" name="email" value="${user.email}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.email)}
+            ${canEditEmail ? `<input type="email" name="email" value="${escapeHtml(user.email)}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">` : roField(user.email)}
           </div>
         </div>
 
@@ -1430,7 +1430,7 @@
           </div>
           <div class="form-group">
             <label>Výchozí čas příchodu</label>
-            <input type="time" name="default_work_start_time" value="${_formatWorkTime(user.default_work_start_time) || '08:00'}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
+            <input type="time" name="default_work_start_time" value="${escapeHtml(_formatWorkTime(user.default_work_start_time) || '08:00')}" style="padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; width:100%; box-sizing:border-box;">
           </div>
         </div>
 

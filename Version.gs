@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.20.0";
+const APP_VERSION = "2.20.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.20.1",
+    "date": "2026-10-15",
+    "changes": [
+      "Bezpečnost: jména, e-maily, časy příchodu, sloty a barvy skupin se při zobrazení vždy převádějí na text, takže je nelze zneužít ke spuštění kódu v prohlížeči jiného uživatele",
+      "Server nově kontroluje jméno a příjmení (max. 60 znaků, bez znaků < > \"), formát času příchodu, slot záznamu a barvu plánovací skupiny"
+    ]
+  },
   {
     "version": "2.20.0",
     "date": "2026-10-15",

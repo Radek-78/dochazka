@@ -254,7 +254,7 @@
                     </td>
                     <td style="font-size:12px; font-weight:600;">${escapeHtml(posMap[u.position_id] || '-')}</td>
                     <td><span
-                            class="badge-role ${u.system_role === 'SUPERADMIN' ? 'badge-superadmin' : (u.system_role === 'ADMIN' ? 'badge-admin' : (u.system_role === 'LEADER' ? 'badge-leader' : ''))}">${u.system_role}</span>
+                            class="badge-role ${u.system_role === 'SUPERADMIN' ? 'badge-superadmin' : (u.system_role === 'ADMIN' ? 'badge-admin' : (u.system_role === 'LEADER' ? 'badge-leader' : ''))}">${escapeHtml(u.system_role)}</span>
                     </td>
                     <td style="text-align:center;">
                         <span class="${isCurrentlyActive ? 'badge-status-active' : 'badge-status-inactive'}">
@@ -271,8 +271,8 @@
                                 : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}
                     </td>
                     <td style="font-size:11px;">
-                        N: <strong>${this.formatDateCompact(u.date_start)}</strong><br>
-                        U: <strong>${this.formatDateCompact(u.date_end)}</strong>
+                        N: <strong>${escapeHtml(this.formatDateCompact(u.date_start))}</strong><br>
+                        U: <strong>${escapeHtml(this.formatDateCompact(u.date_end))}</strong>
                     </td>
                     <td style="text-align:center">
                         ${isOptimistic
@@ -604,7 +604,7 @@
                          ondragleave="admin.onDragLeave(event)"
                          ondrop="admin.onDrop(event,'item','${sectionId}',${iIdx},'${c.id}')">
                         <span class="sec-drag-handle" title="Přetáhněte pro změnu pořadí">⋮⋮</span>
-                        <span class="sec-item-name">${item.label}</span>
+                        <span class="sec-item-name">${escapeHtml(item.label)}</span>
                         <button class="sec-item-del" onclick="admin.deleteContainerItem('${sectionId}','${c.id}','${item.id}')" title="Odebrat">✕</button>
                     </div>`).join('')}
                 </div>` : '';
@@ -619,7 +619,7 @@
                     <div class="sec-container-header">
                         <span class="sec-drag-handle" title="Přetáhněte pro změnu pořadí">⋮⋮</span>
                         <span class="sec-container-type sec-type-${c.type}">${typeLabel[c.type] || c.type}</span>
-                        <span class="sec-container-name">${c.label}</span>
+                        <span class="sec-container-name">${escapeHtml(c.label)}</span>
                         <div class="sec-container-actions">
                             ${c.type !== 'employee' ? `<button class="sec-btn-sm sec-btn-add-item" onclick="admin.showAddContainerItemModal('${sectionId}','${c.id}')" title="Přidat položku">+ Položka</button>` : ''}
                             <button class="sec-btn-sm sec-btn-del-container" onclick="admin.deleteContainer('${sectionId}','${c.id}')" title="Smazat kontejner">🗑️</button>
@@ -740,7 +740,7 @@
                 department: { label: 'Oddělení', items: d.depts.map(x => ({ value: x.department_id, text: x.name })) },
                 team: { label: 'Tým', items: d.grps.map(x => ({ value: x.group_id, text: x.name })) },
                 position: { label: 'Pracovní pozice', items: d.positions.map(x => ({ value: x.position_id, text: x.name })) },
-                employee: { label: 'Zaměstnanec', items: d.sectionUsers.map(x => ({ value: x.user_id, text: `${escapeHtml(x.first_name)} ${escapeHtml(x.last_name)}` })) }
+                employee: { label: 'Zaměstnanec', items: d.sectionUsers.map(x => ({ value: x.user_id, text: `${x.first_name} ${x.last_name}` })) }
             };
             const opt = optMap[type];
             refLabel.textContent = opt.label;
@@ -803,7 +803,7 @@
                 : `<label class="field-label" style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">Zaměstnanec</label>
                     <select id="add-item-sel" class="modal-form-input">
                     <option value="">— Vyberte zaměstnance —</option>
-                    ${available.map(u => `<option value="${u.user_id}">${u.first_name} ${u.last_name}</option>`).join('')}
+                    ${available.map(u => `<option value="${u.user_id}">${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</option>`).join('')}
                    </select>`;
 
             modalBody.innerHTML = `
@@ -812,7 +812,7 @@
     <button class="modal-close-btn" onclick="admin.closeModal()">&#x2715;</button>
     <div class="modal-header-icon">👤</div>
     <h2 class="modal-header-title">Přidat položku</h2>
-    <p class="modal-header-sub">${container.label}</p>
+    <p class="modal-header-sub">${escapeHtml(container.label)}</p>
 </div>
 <div style="padding:20px 24px 16px;">
     <div class="form-field">${optionsHtml}</div>
@@ -2344,7 +2344,7 @@
         <div class="modal-header-icon" style="margin-bottom:0;flex-shrink:0;">👤</div>
         <div>
             <h2 class="modal-header-title">${user ? 'Upravit uživatele' : 'Nový uživatel'}</h2>
-            <p class="modal-header-sub">${user ? `${user.first_name} ${user.last_name} &middot; ${user.email}` : 'Vyplňte údaje nového zaměstnance'}</p>
+            <p class="modal-header-sub">${user ? `${escapeHtml(user.first_name)} ${escapeHtml(user.last_name)} &middot; ${escapeHtml(user.email)}` : 'Vyplňte údaje nového zaměstnance'}</p>
         </div>
     </div>
 </div>
@@ -2363,15 +2363,15 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
                         <div class="form-group" style="margin:0;">
                             <label for="u-fname">Jméno</label>
-                            <input type="text" id="u-fname" name="first_name" value="${user?.first_name || ''}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
+                            <input type="text" id="u-fname" name="first_name" value="${escapeHtml(user?.first_name)}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
                         </div>
                         <div class="form-group" style="margin:0;">
                             <label for="u-lname">Příjmení</label>
-                            <input type="text" id="u-lname" name="last_name" value="${user?.last_name || ''}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
+                            <input type="text" id="u-lname" name="last_name" value="${escapeHtml(user?.last_name)}" ${!user ? 'oninput="admin.autoFillEmail()"' : ''} required>
                         </div>
                         <div class="form-group" style="margin:0;grid-column:span 2;">
                             <label for="u-email">E-mail (Účet)</label>
-                            <input type="email" id="u-email" name="email" value="${user?.email || ''}" required>
+                            <input type="email" id="u-email" name="email" value="${escapeHtml(user?.email)}" required>
                             ${!user ? '<div class="autofill-hint">✦ Vyplní se automaticky z jména a příjmení</div>' : ''}
                         </div>
                     </div>
@@ -2385,28 +2385,28 @@
                             <label for="u-section">Úsek</label>
                             <select id="u-section" name="section_id" onchange="admin.filterDeptsInModal(this.value)" required>
                                 <option value="">-- Vyberte úsek --</option>
-                                ${filteredSections.map(s => `<option value="${s.section_id}" ${user?.section_id === s.section_id ? 'selected' : ''}>${s.name}</option>`).join('')}
+                                ${filteredSections.map(s => `<option value="${s.section_id}" ${user?.section_id === s.section_id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-group" style="margin:0;">
                             <label for="u-dept">Oddělení</label>
                             <select id="u-dept" name="department_id" onchange="admin.filterGroupsInModal(this.value)">
                                 <option value="">-- Vyberte oddělení --</option>
-                                ${filteredDepts.map(d => `<option value="${d.department_id}" data-section="${d.section_id}" ${user?.department_id === d.department_id ? 'selected' : ''} style="${user && user.section_id !== d.section_id ? 'display:none;' : ''}">${d.name}</option>`).join('')}
+                                ${filteredDepts.map(d => `<option value="${d.department_id}" data-section="${d.section_id}" ${user?.department_id === d.department_id ? 'selected' : ''} style="${user && user.section_id !== d.section_id ? 'display:none;' : ''}">${escapeHtml(d.name)}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-group" style="margin:0;">
                             <label for="u-group">Tým</label>
                             <select id="u-group" name="group_id">
                                 <option value="">-- Vyberte tým --</option>
-                                ${filteredGroups.map(g => `<option value="${g.group_id}" data-dept="${g.department_id}" ${user?.group_id === g.group_id ? 'selected' : ''} style="${user && user.department_id !== g.department_id ? 'display:none;' : ''}">${g.name}</option>`).join('')}
+                                ${filteredGroups.map(g => `<option value="${g.group_id}" data-dept="${g.department_id}" ${user?.group_id === g.group_id ? 'selected' : ''} style="${user && user.department_id !== g.department_id ? 'display:none;' : ''}">${escapeHtml(g.name)}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-group" style="margin:0;">
                             <label for="u-pos">Pracovní pozice</label>
                             <select id="u-pos" name="position_id">
                                 <option value="">-- Bez pozice --</option>
-                                ${(this.data.positions || []).map(p => `<option value="${p.position_id}" ${user?.position_id === p.position_id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                                ${(this.data.positions || []).map(p => `<option value="${p.position_id}" ${user?.position_id === p.position_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
                             </select>
                         </div>
                         <div class="form-group" style="margin:0;grid-column:span 2;">
@@ -3036,7 +3036,7 @@
             }
 
             const sectionOptions = sections.map(s =>
-                `<option value="${s.section_id}" ${this._mapsState.sectionId === s.section_id ? 'selected' : ''}>${s.name}</option>`
+                `<option value="${s.section_id}" ${this._mapsState.sectionId === s.section_id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`
             ).join('');
 
             panel.innerHTML = `
@@ -3305,7 +3305,7 @@
                     <div class="map-sidebar-user-item">
                         <div class="map-sidebar-desk-badge">${c.label || '?'}</div>
                         <div class="map-sidebar-user-info">
-                            <div class="map-sidebar-user-name">${name}</div>
+                            <div class="map-sidebar-user-name">${escapeHtml(name)}</div>
                         </div>
                     </div>`;
             }).join('');
@@ -3334,7 +3334,7 @@
                         if (hasUser) {
                             const u = (this.users || []).find(x => x.user_id === cell.permanent_user_id);
                             const initials = u ? (u.first_name || '').charAt(0) + (u.last_name || '').charAt(0) : '?';
-                            inner += `<span class="map-cell-user">${initials}</span>`;
+                            inner += `<span class="map-cell-user">${escapeHtml(initials)}</span>`;
                         }
                     }
                     cells += `<div class="map-cell type-${cell.type}${hasUser ? ' has-user' : ''}${isSelected ? ' selected-desk' : ''}"
@@ -3355,7 +3355,7 @@
             if (!cell || cell.type !== 'desk') return '';
 
             const userOpts = `<option value="">— Žádný (volný stůl) —</option>` +
-                users.map(u => `<option value="${u.user_id}" ${cell.permanent_user_id === u.user_id ? 'selected' : ''}>${u.first_name} ${u.last_name}</option>`).join('');
+                users.map(u => `<option value="${u.user_id}" ${cell.permanent_user_id === u.user_id ? 'selected' : ''}>${escapeHtml(u.first_name)} ${escapeHtml(u.last_name)}</option>`).join('');
 
             return `<div class="map-desk-config" id="desk-config-panel">
   <div style="flex: 0 0 100%; margin-bottom: 4px;">
@@ -3981,10 +3981,10 @@
             </tr>`;
             byMonth[m].forEach(function(r, i) {
                 html += `<tr style="border-bottom:1px solid #f8fafc; background:${r._isVacation ? '#eff6ff' : '#fff'}">
-                    <td style="padding:5px 10px;">${r.date || ''}</td>
-                    <td style="padding:5px 10px;">${r.user_name || ''}</td>
-                    <td style="padding:5px 10px;">${r.status_name || ''}</td>
-                    <td style="padding:5px 10px;">${r.slot || ''}</td>
+                    <td style="padding:5px 10px;">${escapeHtml(r.date)}</td>
+                    <td style="padding:5px 10px;">${escapeHtml(r.user_name)}</td>
+                    <td style="padding:5px 10px;">${escapeHtml(r.status_name)}</td>
+                    <td style="padding:5px 10px;">${escapeHtml(r.slot)}</td>
                     <td style="padding:5px 10px; color:${r._isVacation ? '#0369a1' : '#64748b'};">${r._isVacation ? 'Dovolená' : 'Běžný'}</td>
                 </tr>`;
             });

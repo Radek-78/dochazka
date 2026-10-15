@@ -1089,7 +1089,7 @@
                 return `
                     <div class="stat-tooltip-row">
                         <span class="status-dot" style="background:${color}"></span>
-                        <span>${name}${status}</span>
+                        <span>${escapeHtml(name)}${status}</span>
                     </div>
                 `;
             }).join('');
@@ -1172,9 +1172,9 @@
             const timeFg = st.work_time_text_color || '#ffffff';
 
             const timeTag = (formattedTime && formattedTime !== '')
-                ? '<span class="chip-time-tag" style="background:' + timeBg + ';color:' + timeFg + ';">' + formattedTime + '</span>'
+                ? '<span class="chip-time-tag" style="background:' + timeBg + ';color:' + timeFg + ';">' + escapeHtml(formattedTime) + '</span>'
                 : '';
-            const timeTitleSuffix = (formattedTime && formattedTime !== '') ? ' · příchod ' + formattedTime : '';
+            const timeTitleSuffix = (formattedTime && formattedTime !== '') ? ' · příchod ' + escapeHtml(formattedTime) : '';
             const hasTimeCls = timeTag ? ' has-time-tag' : '';
 
             const hasNote = entry.note && String(entry.note).trim() !== '';
@@ -1183,7 +1183,7 @@
                 : '';
 
             return '<span class="att-cell-chip' + extraClass + pendingCls + stagedCls + hasTimeCls +
-                '" data-slot="' + entry.slot + '" style="background:' + (st.color || '#94a3b8') +
+                '" data-slot="' + escapeHtml(entry.slot) + '" style="background:' + (st.color || '#94a3b8') +
                 ';color:' + (st.text_color || '#fff') + ';" title="' + (titlePrefix ? titlePrefix + ': ' : '') +
                 (st.name || '') + timeTitleSuffix + titleSuffix + '">' +
                 (st.abbreviation || '') + timeTag + noteTag + '</span>' + pendingOverlay;
@@ -1368,10 +1368,11 @@
                 var hh = mMatch[1].padStart(2, '0');
                 return hh + ':' + mMatch[2];
             }
-            return s;
+            // Nerozpoznaný formát nevracet – hodnota pochází od uživatele
+            return '';
         } catch (e) {
             console.warn('_formatWorkTime error:', e, val);
-            return String(val);
+            return '';
         }
     }
 
@@ -1520,7 +1521,7 @@
                 if (userId === plannerData.user.user_id &&
                     plannerData.user.show_work_start_time === 'true' &&
                     _statusIsOffice(_batchMode.statusId)) {
-                    entry.work_start_time = plannerData.user.default_work_start_time || '08:00';
+                    entry.work_start_time = _formatWorkTime(plannerData.user.default_work_start_time) || '08:00';
                 }
                 _attendanceData[key] = entry;
                 renderAttendanceCell(cellEl, userId, date);
@@ -2181,7 +2182,7 @@
 
                 html += '<div class="att-map-cell type-desk ' + deskClass + (isSelected ? ' desk-selected' : '') + '" ' + onclick + '>' +
                     '<span class="att-map-cell-label">' + (cell.label || '?') + '</span>' +
-                    (userInitials ? '<span class="att-map-cell-user">' + userInitials + '</span>' : '') +
+                    (userInitials ? '<span class="att-map-cell-user">' + escapeHtml(userInitials) + '</span>' : '') +
                     '</div>';
             }
         }
@@ -2622,7 +2623,7 @@
                     }
 
                     div.innerHTML = '<span style="font-size:10px;font-weight:700;display:block;">' + (cell.label || '') + '</span>' +
-                        (initials ? '<span style="font-size:8px;opacity:0.7;">' + initials + '</span>' : '');
+                        (initials ? '<span style="font-size:8px;opacity:0.7;">' + escapeHtml(initials) + '</span>' : '');
                     div.title = cell.label || '';
 
                     if (colorClass === 'bmd-free' || colorClass === 'bmd-mine' || colorClass === 'bmd-prereserved-nomatch') {
@@ -4392,7 +4393,7 @@
                     <div class="emp-label-container emp-vac-layout">
                         <div class="vac-row" id="vac-badges-${emp.user_id.replace(/[^a-zA-Z0-9]/g, '_')}" title="${balanceTitle}">
                             <div class="vac-line">
-                                <span class="emp-name clickable-name">${emp.first_name} ${emp.last_name}</span>
+                                <span class="emp-name clickable-name">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</span>
                                 <span class="vac-stat vac-stat-remaining"><span class="vac-stat-label">Zůstatek</span><span class="vac-stat-num">${remainingText}</span></span>
                             </div>
                             <div class="vac-line">
@@ -4405,7 +4406,7 @@
                 </div>`;
             } else {
                 const exitBadge = exitDate
-                    ? `<span class="emp-exit-badge" title="Ukončeno: ${exitDateStr}">${exitDate.toLocaleDateString('cs-CZ')}</span>`
+                    ? `<span class="emp-exit-badge" title="Ukončeno: ${escapeHtml(exitDateStr)}">${exitDate.toLocaleDateString('cs-CZ')}</span>`
                     : '';
 
                 // Výročí nástupu — zelený badge 30 dnů před výročím
@@ -4429,7 +4430,7 @@
                 r = `<div class="cell sticky-label row-emp${ownCls}${highCls}" data-user-id="${emp.user_id}" onclick="toggleRowHighlight('${emp.user_id}')">
                     <div class="emp-label-container">
                         <div class="emp-label-row">
-                            <span class="emp-name clickable-name">${emp.first_name} ${emp.last_name}</span>
+                            <span class="emp-name clickable-name">${escapeHtml(emp.first_name)} ${escapeHtml(emp.last_name)}</span>
                             ${groupName ? `<span class="emp-team">${groupName}</span>` : ''}
                         </div>
                         <div class="emp-label-row"><span class="emp-pos">${cakeIcon}${posName}</span>${anniversaryBadge}${exitBadge}</div>
@@ -5080,9 +5081,10 @@
     /**
      * Escape HTML pro bezpečné vložení do innerHTML.
      */
+    // Stejná implementace jako v Admin_js.html (ta se načítá později a platí pro celou stránku)
     function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function getEmployeeFirstName(userId) {
@@ -5131,13 +5133,13 @@
                 groupsHtml += `
                 <div class="group-item ${isActive ? 'active' : ''}" onclick="togglePlannerGroup('${g.group_id}')" style="display:flex; justify-content:space-between; align-items:center;">
                     <div style="display:flex; align-items:center;">
-                        <div class="group-dot" ${isActive ? `style="background:${g.color || '#0ea5e9'}; border-color:${g.color || '#0ea5e9'};"` : ''}></div>
+                        <div class="group-dot" ${isActive ? `style="background:${safeCssColor(g.color || '#0ea5e9')}; border-color:${safeCssColor(g.color || '#0ea5e9')};"` : ''}></div>
                         <div class="group-info" style="display:flex; flex-direction:column; margin-left:8px;">
                             <span class="group-name">${escapeHtml(g.name)}</span>
                             <span style="font-size:9px; color:#94a3b8;">${isForeign ? '👁 Cizí skupina (superadmin)' : (perm === 'VIEW' ? 'Jen čtení' : perm === 'WRITE' ? 'Zápis' : 'Správce')}</span>
                         </div>
                     </div>
-                    ${perm === 'ADMIN' ? `<div style="display:flex;gap:4px;"><button onclick="event.stopPropagation(); window.openPlannerGroupModal('${g.group_id}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#1e293b;" title="Upravit Planner">✏️</button><button onclick="event.stopPropagation(); deletePlannerGroup('${g.group_id}', '${escapeHtml(g.name).replace(/'/g, "\\'")}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#ef4444;" title="Smazat Planner">🗑️</button></div>` : ''}
+                    ${perm === 'ADMIN' ? `<div style="display:flex;gap:4px;"><button onclick="event.stopPropagation(); window.openPlannerGroupModal('${g.group_id}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#1e293b;" title="Upravit Planner">✏️</button><button onclick="event.stopPropagation(); deletePlannerGroup('${g.group_id}')" style="background:none; border:none; cursor:pointer; font-size:12px; opacity:0.6; color:#ef4444;" title="Smazat Planner">🗑️</button></div>` : ''}
                 </div>`;
             });
             groupsList.innerHTML = groupsHtml;
@@ -5216,7 +5218,8 @@
                     <div class="monthly-day-events">
                         ${dayEvents.map(e => {
                     const group = plannerData.plannerGroups.find(g => String(g.group_id) === String(e.group_id));
-                    const eColor = (group && group.color) ? group.color : '#0ea5e9';
+                    // Jen #rrggbb – za barvu se v CSS přidává průhlednost "18"
+                    const eColor = (group && /^#[0-9a-fA-F]{6}$/.test(group.color)) ? group.color : '#0ea5e9';
                     const eIcon = (e.type && e.type !== 'default') ? e.type : '💬';
 
                     const emp = (plannerData.employees || []).find(emp => String(emp.user_id) === String(e.user_id));
@@ -5249,7 +5252,10 @@
         renderMonthlyPlanner();
     }
 
-    function deletePlannerGroup(groupId, name) {
+    function deletePlannerGroup(groupId) {
+        // Název se dohledá podle ID – nepředává se přes onclick (únik z JS řetězce)
+        const grp = (plannerData.plannerGroups || []).find(g => String(g.group_id) === String(groupId));
+        const name = grp ? grp.name : '';
         showCustomConfirm(
             'Smazat Planner',
             `Opravdu chcete trvale smazat kalendář "${name}" a všechny jeho události? Tuto akci nelze vrátit.`,
@@ -5861,12 +5867,12 @@
                             if (ruu) fullName = ruu.first_name + ' ' + ruu.last_name;
                         }
                     }
-                    if (fullName) tooltip = ' title="' + fullName + '"';
+                    if (fullName) tooltip = ' title="' + escapeHtml(fullName) + '"';
                 }
 
                 html += '<div class="att-map-cell type-desk ' + deskClass + (isSelected ? ' desk-selected' : '') + '"' + tooltip + ' ' + onclick + '>' +
                     '<span class="att-map-cell-label">' + (cell.label || '?') + '</span>' +
-                    (userInitials ? '<span class="att-map-cell-user">' + userInitials + '</span>' : '') +
+                    (userInitials ? '<span class="att-map-cell-user">' + escapeHtml(userInitials) + '</span>' : '') +
                     '</div>';
             }
         }
@@ -6403,11 +6409,11 @@
             var textColor = _darkTextStatuses.indexOf(e.status_name) !== -1 ? '#1e293b' : 'white';
             html += '<tr>' +
                 '<td class="log-timestamp">' + ts + '</td>' +
-                '<td>' + e.user_name + '</td>' +
-                '<td>' + dateFormatted + '</td>' +
+                '<td>' + escapeHtml(e.user_name) + '</td>' +
+                '<td>' + escapeHtml(dateFormatted) + '</td>' +
                 '<td><span class="log-status-badge" style="background:' + (e.status_color || '#94a3b8') + '; color:' + textColor + '">' +
                 (e.status_icon ? e.status_icon + ' ' : '') + e.status_name + '</span></td>' +
-                '<td><span class="log-slot-badge">' + (slotLabels[e.slot] || e.slot) + '</span></td>' +
+                '<td><span class="log-slot-badge">' + escapeHtml(slotLabels[e.slot] || e.slot) + '</span></td>' +
                 '<td class="log-note-cell"' + (e.note ? ' title="' + escapeHtml(e.note) + '"' : '') + '>' +
                 (e.note ? escapeHtml(e.note) : '<span class="log-note-empty">—</span>') + '</td>' +
                 '</tr>';
