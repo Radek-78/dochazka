@@ -67,8 +67,8 @@ var Backup = {
       return result;
     } catch (e) {
       console.warn("Backup: Servisní oprava hlaviček selhala: " + e.toString());
-      if (typeof _auditLog === 'function') {
-        _auditLog("DB_HEADER_REPAIR_AFTER_BACKUP_FAILED", { error: e.toString() }, { email: "SYSTEM_BACKUP" });
+      if (typeof _auditLog_ === 'function') {
+        _auditLog_("DB_HEADER_REPAIR_AFTER_BACKUP_FAILED", { error: e.toString() }, { email: "SYSTEM_BACKUP" });
       }
       return { success: false, error: e.toString() };
     }
@@ -95,8 +95,8 @@ var Backup = {
       DB.clearCache();
     }
 
-    if (typeof _auditLog === 'function') {
-      _auditLog("DB_HEADER_REPAIR_AFTER_BACKUP", details, { email: "SYSTEM_BACKUP" });
+    if (typeof _auditLog_ === 'function') {
+      _auditLog_("DB_HEADER_REPAIR_AFTER_BACKUP", details, { email: "SYSTEM_BACKUP" });
     }
 
     return {
@@ -221,7 +221,7 @@ var Backup = {
 /**
  * GlobĂˇlnĂ­ wrapper funkce pro triggery
  */
-function runDailyFullBackup() { Backup.runDailyFullBackup(); }
-function runAttendanceSafetySnapshot() { Backup.runAttendanceSafetySnapshot(); }
-function setupBackupTriggers() { Backup.setupTriggers(); }
-function runDatabaseHeaderRepair() { return Backup.runDatabaseHeaderRepair(); }
+function runDailyFullBackup() { Auth.requireOwnerContext_(); Backup.runDailyFullBackup(); }
+function runAttendanceSafetySnapshot() { Auth.requireOwnerContext_(); Backup.runAttendanceSafetySnapshot(); }
+function setupBackupTriggers() { Auth.requireOwnerContext_(); Backup.setupTriggers(); }
+function runDatabaseHeaderRepair() { Auth.requireOwnerContext_(); return Backup.runDatabaseHeaderRepair(); }

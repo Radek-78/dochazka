@@ -45,6 +45,7 @@ var DOCH_BG_BUNKA = '#ffffff';
  * @return {string} URL nového spreadsheetu.
  */
 function vytvorDochazkovySpreadsheet(rok) {
+  Auth.requireOwnerContext_();
   rok = Number(rok) || ROK_DEFAULT || new Date().getFullYear();
 
   // ── 1. Zdrojová data z živé DB ──────────────────────────────────────────

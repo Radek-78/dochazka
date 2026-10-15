@@ -256,7 +256,7 @@ Purge.execute = function(purgeId) {
   });
 
   // 4. Audit log
-  _auditLog("GDPR_PURGE_EXECUTED", {
+  _auditLog_("GDPR_PURGE_EXECUTED", {
     purge_id: purgeId,
     deleted_count: deletedCount,
     cutoff_date: pending.cutoffDate,
@@ -340,7 +340,7 @@ Purge.scheduledRun = function() {
     console.log("Purge: Analýza uložena, admini notifikováni. Ke smazání: " + summary.totalToDelete);
   } catch (e) {
     console.error("Purge.scheduledRun error: " + e.toString());
-    _auditLog("GDPR_PURGE_SCHEDULED_ERROR", { error: e.toString() }, { email: "SYSTEM_PURGE" });
+    _auditLog_("GDPR_PURGE_SCHEDULED_ERROR", { error: e.toString() }, { email: "SYSTEM_PURGE" });
   }
 };
 
@@ -411,4 +411,4 @@ Purge._insertInAppNotification_ = function(message) {
 /**
  * Globální wrapper pro time trigger.
  */
-function runScheduledPurgeAnalysis() { Purge.scheduledRun(); }
+function runScheduledPurgeAnalysis() { Auth.requireOwnerContext_(); Purge.scheduledRun(); }

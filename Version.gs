@@ -3,9 +3,19 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.19.2";
+const APP_VERSION = "2.20.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.20.0",
+    "date": "2026-10-15",
+    "changes": [
+      "Bezpečnost: serverové funkce, které šly zavolat bez oprávnění (inicializace, zálohy, nastavení dovolených a jmenin, interní pomocné funkce), nově ověřují přihlášení a roli",
+      "Čekající, zamítnutý nebo deaktivovaný účet už nemá přístup k datům aplikace (registrace a čekací obrazovka fungují beze změny)",
+      "Plánovač: úprava události se řídí oprávněním ve skupině, do které událost patří; skupinu ani autora nelze změnit",
+      "Notifikaci lze označit jako přečtenou jen u vlastních notifikací; úprava jmenin a nastavení dovolených se projeví okamžitě"
+    ]
+  },
   {
     "version": "2.19.2",
     "date": "2026-10-15",

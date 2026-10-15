@@ -1033,6 +1033,7 @@ var Admin = {
  */
 function getRbacConfig() {
   try {
+    if (!Auth.getCurrentUser()) throw new Error("Neautorizováno.");
     return { success: true, data: Admin.getRbacConfig() };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1046,19 +1047,15 @@ function saveRbacConfig(config) {
     return { success: false, error: e.toString() };
   }
 }
-function addDepartment(name, sectionId) {
-  try {
-    return { success: true, data: Admin.addDepartment(name, sectionId) };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
 
 /**
  * Serverová funkce pro uložení úseku a současné dokončení instalace (pro Wizard).
  */
 function wizardSaveAndComplete(name, locationId) {
   try {
+    if (PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_INITIALIZED) === 'true') {
+      throw new Error("Aplikace je již inicializována. Wizard nelze spustit znovu.");
+    }
     // 1. Vytvoříme pouze úsek (Section)
     const section = Admin.addSection(name, locationId);
     
@@ -1104,14 +1101,6 @@ function deleteLocation(locationId) {
   }
 }
 
-function addSection(name, locationId) {
-  try {
-    return { success: true, data: Admin.addSection(name, locationId) };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
-
 function getAllUsers() {
   try {
     return { success: true, data: Admin.getAllUsers() };
@@ -1130,6 +1119,7 @@ function updateUser(userId, data) {
     
     // Ověření oprávnění
     const currentUser = Auth.getCurrentUser();
+    if (!currentUser) throw new Error("Neautorizováno.");
     const myRole = currentUser?.system_role || 'USER';
     const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
     const myWeight = roleWeights[myRole] || 0;
@@ -1221,6 +1211,7 @@ function toggleCalendarSync(type, enabled) {
 function updateSection(data) {
   try {
     const user = Auth.getCurrentUser();
+    if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
       if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
@@ -1237,6 +1228,7 @@ function updateSection(data) {
 function updateDepartment(data) {
   try {
     const user = Auth.getCurrentUser();
+    if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
       if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
@@ -1259,6 +1251,7 @@ function updateDepartment(data) {
 function updateGroup(data) {
   try {
     const user = Auth.getCurrentUser();
+    if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
       if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
@@ -1307,6 +1300,7 @@ function deleteUser(userId) {
 }
 function repairDatabaseHeaders() {
   try {
+    Auth.requireOwnerContext_();
     return { success: true, data: Setup.repairDatabaseHeaders() };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1337,14 +1331,6 @@ function updateAttendanceStatus(data) {
   }
 }
 
-function getPrivacySettings() {
-  try {
-    return { success: true, data: Admin.getPrivacySettings() };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}
-
 function savePrivacySettings(data) {
   try {
     return { success: true, data: Admin.savePrivacySettings(data) };
@@ -1364,7 +1350,10 @@ function deleteAttendanceStatus(statusId) {
 
 function saveVacationConfig(data) {
   try {
-    return Admin.saveVacationConfig(data);
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    const result = Admin.saveVacationConfig(data);
+    DB.clearCache(DB_SHEETS.CORE.VACATION_CONFIG);
+    return result;
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1372,6 +1361,7 @@ function saveVacationConfig(data) {
 
 function getSectionViewConfig(sectionId) {
   try {
+    if (!Auth.getCurrentUser()) throw new Error("Neautorizováno.");
     return { success: true, data: Admin.getSectionViewConfig(sectionId) };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1412,6 +1402,7 @@ function deleteOfficeMap(mapId) {
 
 function getMapReservationsForMonth(mapId, yearMonth) {
   try {
+    if (!Auth.getCurrentUser()) throw new Error("Neautorizováno.");
     return { success: true, data: Admin.getMapReservationsForMonth(mapId, yearMonth) };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1428,7 +1419,10 @@ function getNamedDays() {
 
 function saveNamedDay(dateKey, name) {
   try {
-    return Admin.saveNamedDay(dateKey, name);
+    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    const result = Admin.saveNamedDay(dateKey, name);
+    DB.clearCache(DB_SHEETS.CORE.NAMED_DAYS);
+    return result;
   } catch (e) {
     return { success: false, error: e.toString() };
   }

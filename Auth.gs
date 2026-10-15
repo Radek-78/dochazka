@@ -12,9 +12,36 @@ var Auth = {
     if (this._currentUserCache) return this._currentUserCache;
     const email = Session.getActiveUser().getEmail().toLowerCase();
     const allUsers = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-    
-    this._currentUserCache = allUsers.find(u => u.email && u.email.toLowerCase() === email) || null;
+
+    const user = allUsers.find(u => u.email && u.email.toLowerCase() === email) || null;
+    // Čekající, zamítnutý nebo neaktivní účet se chová jako nepřihlášený.
+    // Registrace a čekací obrazovka (getPlannerData, registerUser) si uživatele hledají samy.
+    const blocked = user && (user.auth_status === AUTH_STATUS.PENDING ||
+      user.auth_status === AUTH_STATUS.REJECTED || !_isUserActiveNow(user));
+    this._currentUserCache = blocked ? null : user;
     return this._currentUserCache;
+  },
+
+  /**
+   * Ověří, zda má aktuální (nebo zadaný) uživatel systémovou roli ADMIN či SUPERADMIN.
+   * @param {Object} [optUser] - Uživatel; výchozí je aktuálně přihlášený.
+   * @returns {boolean}
+   */
+  isSystemAdmin_: function(optUser) {
+    const user = optUser || this.getCurrentUser();
+    if (!user) return false;
+    return user.system_role === ROLES.SYSTEM.ADMIN || user.system_role === ROLES.SYSTEM.SUPERADMIN;
+  },
+
+  /**
+   * Pro triggery a funkce spouštěné z editoru: pustí běh bez aktivního uživatele
+   * (časový trigger) nebo pod účtem, pod kterým skript běží (vlastník v editoru).
+   * Jinak (volání z webové aplikace) vyžaduje systémového admina.
+   */
+  requireOwnerContext_: function() {
+    const active = Session.getActiveUser().getEmail();
+    if (!active || active === Session.getEffectiveUser().getEmail()) return;
+    if (!this.isSystemAdmin_()) throw new Error("Nedostatečná oprávnění.");
   },
 
   /**

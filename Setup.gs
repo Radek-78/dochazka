@@ -197,8 +197,8 @@ const Setup = {
           return false;
         });
         if (duplicateHeaders.length > 0) {
-          if (typeof _auditLog === 'function') {
-            _auditLog("DB_HEADER_DUPLICATES_DETECTED", { sheet: sheetName, duplicates: duplicateHeaders });
+          if (typeof _auditLog_ === 'function') {
+            _auditLog_("DB_HEADER_DUPLICATES_DETECTED", { sheet: sheetName, duplicates: duplicateHeaders });
           }
           continue;
         }
