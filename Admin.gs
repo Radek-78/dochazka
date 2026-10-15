@@ -110,9 +110,11 @@ var Admin = {
     // Seřadit podle KT
     rows.sort((a, b) => Number(a.kt) - Number(b.kt));
 
+    // Text začínající = + - @ by Sheets uložil jako vzorec
+    const asText = v => (typeof v === 'string' && /^[=+\-@]/.test(v)) ? "'" + v : v;
     rows.forEach(row => {
       if (row.kt) {
-        data.push([row.kt, row.monday || "", row.thursday || ""]);
+        data.push([row.kt, asText(row.monday || ""), asText(row.thursday || "")]);
       }
     });
 
@@ -1090,6 +1092,9 @@ function getAdminOrgData() {
 
 function addLocation(name, type) {
   try {
+    if (PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_INITIALIZED) === 'true') {
+      Auth.requireSystemAdmin_();
+    }
     return { success: true, data: Admin.addLocation(name, type) };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1117,9 +1122,67 @@ function deleteLocation(locationId) {
 
 function getAllUsers() {
   try {
-    return { success: true, data: Admin.getAllUsers() };
+    const me = Auth.getCurrentUser();
+    if (!me) throw new Error("Neautorizováno.");
+    let users = Admin.getAllUsers();
+    if (!Auth.isSystemAdmin_(me)) {
+      // Osobní údaje všech zaměstnanců vidí jen administrátor; ostatní jen lidi ve svém rozsahu správy
+      const scope = String(Auth.hasPermission('manage_users') || 'NONE').toUpperCase();
+      if (scope === 'NONE' || scope === 'FALSE') {
+        users = users.filter(u => u.user_id === me.user_id);
+      } else if (scope !== 'ALL' && scope !== 'TRUE') {
+        const inScope = _makeManageScopeCheck_(me, scope);
+        users = users.filter(u => u.user_id === me.user_id || inScope(u.section_id, u.department_id));
+      }
+    }
+    return { success: true, data: users };
   } catch (e) {
     return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Vrátí funkci (sectionId, deptId) => boolean, zda zařazení spadá do rozsahu správy.
+ * Úsek se odvodí z oddělení, pokud chybí (např. nová registrace má jen oddělení).
+ * @param {Object} currentUser
+ * @param {string} scope - 'OWN_SECTION' | 'OWN_DEPARTMENT' (ALL řeší volající)
+ * @returns {Function}
+ */
+function _makeManageScopeCheck_(currentUser, scope) {
+  const depts = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS);
+  const sectionOfDept = function(deptId) {
+    const d = depts.find(x => x.department_id === deptId);
+    return d ? (d.section_id || '') : '';
+  };
+  const mySection = currentUser.section_id || sectionOfDept(currentUser.department_id);
+  return function(sectionId, deptId) {
+    if (scope === 'OWN_DEPARTMENT') {
+      // Vlastní oddělení a úsek (pokud je uveden) musí odpovídat úseku tohoto oddělení
+      return !!deptId && deptId === currentUser.department_id && (!sectionId || sectionId === sectionOfDept(deptId));
+    }
+    if (scope !== 'OWN_SECTION') return false; // neznámý rozsah = žádný přístup (ne širší)
+    // OWN_SECTION: úsek (případně odvozený z oddělení) i oddělení musí patřit do mého úseku
+    if (!mySection) return false;
+    if (deptId && sectionOfDept(deptId) !== mySection) return false;
+    return (sectionId || sectionOfDept(deptId)) === mySection;
+  };
+}
+
+/**
+ * Ověří oprávnění permKey s rozsahem pro objekt patřící do úseku sectionId
+ * (konfigurace zobrazení úseku, mapy kanceláře). SUPERADMIN vždy.
+ * @param {string} permKey - RBAC klíč (manage_org, manage_maps).
+ * @param {string} sectionId - Úsek, kterého se změna týká.
+ */
+function _requireSectionScope_(permKey, sectionId) {
+  const me = Auth.getCurrentUser();
+  if (!me) throw new Error("Neautorizováno.");
+  if (me.system_role === ROLES.SYSTEM.SUPERADMIN) return;
+  const scope = String(Auth.hasPermission(permKey) || 'NONE').toUpperCase();
+  if (scope === 'NONE' || scope === 'FALSE') throw new Error("Nedostatečná oprávnění.");
+  if (scope === 'ALL' || scope === 'TRUE') return;
+  if (!sectionId || !_makeManageScopeCheck_(me, 'OWN_SECTION')(sectionId, '')) {
+    throw new Error("Úsek je mimo rozsah vašeho oprávnění.");
   }
 }
 
@@ -1153,19 +1216,7 @@ function _requireUserManagement_(currentUser, targetId, data) {
   }
 
   if (scope === 'ALL' || scope === 'TRUE') return target;
-  const depts = DB.getTable(core, DB_SHEETS.CORE.DEPARTMENTS);
-  const sectionOfDept = function(deptId) {
-    const d = depts.find(x => x.department_id === deptId);
-    return d ? (d.section_id || '') : '';
-  };
-  const mySection = currentUser.section_id || sectionOfDept(currentUser.department_id);
-  const inScope = function(sectionId, deptId) {
-    if (scope === 'OWN_DEPARTMENT') return !!deptId && deptId === currentUser.department_id;
-    // OWN_SECTION: úsek (případně odvozený z oddělení) i oddělení musí patřit do mého úseku
-    if (!mySection) return false;
-    if (deptId && sectionOfDept(deptId) !== mySection) return false;
-    return (sectionId || sectionOfDept(deptId)) === mySection;
-  };
+  const inScope = _makeManageScopeCheck_(currentUser, scope);
   if (target && !inScope(target.section_id, target.department_id)) {
     throw new Error("Uživatel je mimo rozsah vaší správy.");
   }
@@ -1298,8 +1349,9 @@ function updateSection(data) {
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
       if (!scope || scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
-      if (scope === 'OWN_SECTION' || scope === 'OWN_DEPARTMENT') {
-        if (data.section_id !== user.section_id) throw new Error("Můžete spravovat pouze svůj vlastní úsek.");
+      if (scope === 'OWN_DEPARTMENT') throw new Error("Úseky může spravovat jen správce úseku.");
+      if (scope !== 'ALL' && scope !== true) {
+        if (!data.section_id || data.section_id !== user.section_id) throw new Error("Můžete spravovat pouze svůj vlastní úsek.");
       }
     }
     return Admin.updateEntity(DB_SHEETS.CORE.SECTIONS, 'section_id', data);
@@ -1321,8 +1373,14 @@ function updateDepartment(data) {
         const target = depts.find(d => d.department_id === data.department_id);
         if (target && target.section_id !== user.section_id) throw new Error("Oddělení nepatří do vašeho úseku.");
         if (data.section_id && data.section_id !== user.section_id) throw new Error("Nemůžete přesunout oddělení mimo svůj úsek.");
+        if (!target && data.section_id !== user.section_id) throw new Error("Nové oddělení musí patřit do vašeho úseku.");
       } else if (scope === 'OWN_DEPARTMENT') {
-        if (data.department_id !== user.department_id) throw new Error("Můžete spravovat pouze své vlastní oddělení.");
+        if (!data.department_id || data.department_id !== user.department_id) throw new Error("Můžete spravovat pouze své vlastní oddělení.");
+        const depts = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS);
+        const own = depts.find(d => d.department_id === user.department_id);
+        if (data.section_id !== undefined && own && data.section_id !== own.section_id) throw new Error("Nemůžete přesunout oddělení do jiného úseku.");
+      } else if (scope !== 'ALL' && scope !== true) {
+        throw new Error("Nemáte oprávnění spravovat org. strukturu.");
       }
     }
     return Admin.updateEntity(DB_SHEETS.CORE.DEPARTMENTS, 'department_id', data);
@@ -1341,11 +1399,15 @@ function updateGroup(data) {
       if (scope === 'OWN_SECTION') {
         const groups = DB.getTable(DB.getCore(), DB_SHEETS.CORE.GROUPS);
         const target = groups.find(g => g.group_id === data.group_id);
+        const depts = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS);
         if (target) {
-            const depts = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS);
             const dept = depts.find(d => d.department_id === target.department_id);
             if (dept && dept.section_id !== user.section_id) throw new Error("Tým nepatří do vašeho úseku.");
         }
+        // Nový tým i přesun: cílové oddělení musí být v mém úseku
+        const newDeptId = data.department_id !== undefined ? data.department_id : (target ? target.department_id : '');
+        const newDept = depts.find(d => d.department_id === newDeptId);
+        if (!newDept || newDept.section_id !== user.section_id) throw new Error("Tým musí patřit do oddělení ve vašem úseku.");
       } else if (scope === 'OWN_DEPARTMENT') {
         const groups = DB.getTable(DB.getCore(), DB_SHEETS.CORE.GROUPS);
         const target = groups.find(g => g.group_id === data.group_id);
@@ -1399,6 +1461,7 @@ function getAttendanceStatuses() {
 
 function updateAttendanceStatus(data) {
   try {
+    Auth.requireSystemAdmin_();
     return Admin.updateAttendanceStatus(data);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1407,6 +1470,7 @@ function updateAttendanceStatus(data) {
 
 function savePrivacySettings(data) {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Admin.savePrivacySettings(data) };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1415,6 +1479,7 @@ function savePrivacySettings(data) {
 
 function deleteAttendanceStatus(statusId) {
   try {
+    Auth.requireSystemAdmin_();
     Admin.deleteAttendanceStatus(statusId);
     return { success: true };
   } catch (e) {
@@ -1424,7 +1489,7 @@ function deleteAttendanceStatus(statusId) {
 
 function saveVacationConfig(data) {
   try {
-    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    Auth.requireSystemAdmin_();
     const result = Admin.saveVacationConfig(data);
     DB.clearCache(DB_SHEETS.CORE.VACATION_CONFIG);
     return result;
@@ -1444,6 +1509,7 @@ function getSectionViewConfig(sectionId) {
 
 function saveSectionViewConfig(data) {
   try {
+    _requireSectionScope_('manage_org', data && data.section_id);
     return Admin.saveSectionViewConfig(data);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1460,6 +1526,10 @@ function getOfficeMaps(sectionId) {
 
 function saveOfficeMap(data) {
   try {
+    _requireSectionScope_('manage_maps', data && data.section_id);
+    // U existující mapy i její dosavadní úsek (nelze „přesunout“ cizí mapu k sobě)
+    const existingMap = data && data.map_id ? Admin._findOfficeMapById(data.map_id) : null;
+    if (existingMap) _requireSectionScope_('manage_maps', existingMap.section_id);
     return Admin.saveOfficeMap(data);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1468,6 +1538,9 @@ function saveOfficeMap(data) {
 
 function deleteOfficeMap(mapId) {
   try {
+    const existingMap = Admin._findOfficeMapById(mapId);
+    if (!existingMap) throw new Error("Mapa nenalezena.");
+    _requireSectionScope_('manage_maps', existingMap.section_id);
     return Admin.deleteOfficeMap(mapId);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1493,7 +1566,7 @@ function getNamedDays() {
 
 function saveNamedDay(dateKey, name) {
   try {
-    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    if (!Auth.hasAdminAccess() || !Auth.hasPermission('manage_namedays')) throw new Error("Nedostatečná oprávnění.");
     const result = Admin.saveNamedDay(dateKey, name);
     DB.clearCache(DB_SHEETS.CORE.NAMED_DAYS);
     return result;

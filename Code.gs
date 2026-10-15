@@ -2559,6 +2559,7 @@ function updateMarketingWeeks(rows) {
 
 function adminRunPurgeAnalysis() {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.analyze() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2567,6 +2568,7 @@ function adminRunPurgeAnalysis() {
 
 function adminGetPendingPurge() {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.getPending() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2575,6 +2577,7 @@ function adminGetPendingPurge() {
 
 function adminCancelPurge() {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.cancelPending() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2583,6 +2586,7 @@ function adminCancelPurge() {
 
 function adminExecutePurge(purgeId) {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.execute(purgeId) };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2591,6 +2595,7 @@ function adminExecutePurge(purgeId) {
 
 function adminGetPurgeLog() {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.getLog() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2599,6 +2604,7 @@ function adminGetPurgeLog() {
 
 function adminGetAutoPurgeSetting() {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.getAutoPurgeSetting() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2607,6 +2613,7 @@ function adminGetAutoPurgeSetting() {
 
 function adminSetAutoPurgeSetting(enabled) {
   try {
+    Auth.requireSystemAdmin_();
     return { success: true, data: Purge.setAutoPurgeSetting(enabled) };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2615,7 +2622,7 @@ function adminSetAutoPurgeSetting(enabled) {
 
 function adminGetTriggersStatus() {
   try {
-    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    Auth.requireSystemAdmin_();
     return { success: true, data: Backup.getTriggersStatus() };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -2624,7 +2631,7 @@ function adminGetTriggersStatus() {
 
 function adminSetupSystemTriggers() {
   try {
-    if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    Auth.requireSystemAdmin_();
     Backup.setupTriggers();
     return { success: true, data: Backup.getTriggersStatus() };
   } catch(e) {
@@ -2640,7 +2647,7 @@ function cleanupOrphanedCalendars() {
   try {
     var currentUser = Auth.getCurrentUser();
     if (!currentUser) return { success: false, error: 'Neautorizováno.' };
-    if (!Auth.hasAdminAccess(currentUser)) return { success: false, error: 'Nedostatečná oprávnění.' };
+    if (!Auth.isSystemAdmin_(currentUser)) return { success: false, error: 'Tuto akci může provést jen administrátor.' };
     return CalendarSync.cleanupOrphanedCalendars();
   } catch(e) {
     return { success: false, error: e.toString() };

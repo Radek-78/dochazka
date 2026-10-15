@@ -68,12 +68,18 @@
                     'gdpr': 'manage_gdpr'
                 };
 
+                // Tyto záložky server povolí jen administrátorovi bez ohledu na RBAC
+                const sysAdminTabs = ['statuses', 'settings', 'gdpr'];
+                const isSysAdmin = !!(window.plannerData && window.plannerData.user &&
+                    ['ADMIN', 'SUPERADMIN'].indexOf(window.plannerData.user.system_role) !== -1);
+                const canSeeTab = (view) => (typeof window.hasPermission === 'function' || typeof hasPermission === 'function') &&
+                    !!hasPermission(rbacMapping[view]) && (sysAdminTabs.indexOf(view) === -1 || isSysAdmin);
+
                 let firstVisibleTab = null;
                 document.querySelectorAll('.admin-nav-item').forEach(navEl => {
                     const view = navEl.getAttribute('data-view');
                     if (view && rbacMapping[view]) {
-                        const permKey = rbacMapping[view];
-                        const hasPerm = (typeof window.hasPermission === 'function' || typeof hasPermission === 'function') ? hasPermission(permKey) : false;
+                        const hasPerm = canSeeTab(view);
                         navEl.style.display = hasPerm ? 'flex' : 'none';
                         if (hasPerm && !firstVisibleTab) firstVisibleTab = view;
                     }
@@ -81,7 +87,7 @@
 
                 // Přepne tabulku, pokud k aktuální nemá uživatel oprávnění
                 if (this.currentTab && rbacMapping[this.currentTab]) {
-                    if (!((typeof window.hasPermission === 'function' || typeof hasPermission === 'function') && hasPermission(rbacMapping[this.currentTab]))) {
+                    if (!canSeeTab(this.currentTab)) {
                         this.currentTab = firstVisibleTab || 'users';
                     }
                 }
@@ -2257,10 +2263,8 @@
                     if (result && result.success) {
                         this.refreshAllData().then(() => {
                             this.renderCurrentTab();
-                            if (window.plannerData) {
-                                window.plannerData.employees = this.users;
-                                if (typeof renderPlanner === 'function') renderPlanner();
-                            }
+                            // Seznam z getAllUsers je omezený rozsahem správy – kalendář načíst znovu ze serveru
+                            if (typeof refreshApp === 'function') refreshApp({ full: true });
                         });
                     } else {
                         showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
@@ -2728,7 +2732,7 @@
             { label: 'Nastavení synchronizace kalendářů', key: 'edit_profile_sync', category: 'Uživatelský profil', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
 
             // Kategorie: ADMINISTRACE SYSTÉMU
-            { label: 'Přístup do administrace', key: 'access_admin', category: 'Administrace', USER: true, LEADER: true, ADMIN: true, SUPERADMIN: true },
+            { label: 'Přístup do administrace', key: 'access_admin', category: 'Administrace', USER: false, LEADER: true, ADMIN: true, SUPERADMIN: true },
             { label: 'Správa Uživatelů', key: 'manage_users', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
             { label: 'Správa Org.struktury', key: 'manage_org', category: 'Administrace', type: 'scope', USER: 'NONE', LEADER: 'OWN_DEPARTMENT', ADMIN: 'OWN_SECTION', SUPERADMIN: 'ALL' },
             { label: 'Správa Statusů', key: 'manage_statuses', category: 'Administrace', USER: false, LEADER: false, ADMIN: true, SUPERADMIN: true },

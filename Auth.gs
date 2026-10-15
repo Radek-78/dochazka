@@ -34,6 +34,14 @@ var Auth = {
   },
 
   /**
+   * Vyhodí chybu, pokud aktuální uživatel není ADMIN ani SUPERADMIN.
+   * Pro citlivé admin funkce (GDPR, statusy, nastavení, triggery).
+   */
+  requireSystemAdmin_: function() {
+    if (!this.isSystemAdmin_()) throw new Error("Tuto akci může provést jen administrátor.");
+  },
+
+  /**
    * Pro triggery a funkce spouštěné z editoru: pustí běh bez aktivního uživatele
    * (časový trigger) nebo pod účtem, pod kterým skript běží (vlastník v editoru).
    * Jinak (volání z webové aplikace) vyžaduje systémového admina.

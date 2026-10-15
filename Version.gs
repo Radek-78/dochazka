@@ -3,9 +3,19 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.21.0";
+const APP_VERSION = "2.21.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.21.1",
+    "date": "2026-10-15",
+    "changes": [
+      "Bezpečnost: GDPR mazání, statusy, nastavení dovolených a soukromí, triggery a přidávání lokalit může měnit jen administrátor; vedoucím se tyto záložky v administraci nezobrazují",
+      "Vedoucí vidí v administraci jen uživatele ve svém rozsahu správy; administrátoři všechny",
+      "Konfigurace zobrazení úseku a mapy kanceláře se řídí oprávněním a úsekem; přesnější kontrola rozsahu u správy uživatelů, oddělení a týmů",
+      "Marketingové kampaně: text začínající znakem = se už neuloží jako vzorec"
+    ]
+  },
   {
     "version": "2.21.0",
     "date": "2026-10-15",
