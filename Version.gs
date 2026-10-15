@@ -3,9 +3,20 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.20.1";
+const APP_VERSION = "2.20.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.20.2",
+    "date": "2026-10-15",
+    "changes": [
+      "Méně dotazů na server: denní statistiky se počítají v prohlížeči a seznam online kolegů chodí spolu s pravidelnou synchronizací (odpadl samostatný dotaz při každém kliknutí, uložení i překreslení)",
+      "Tab na pozadí už neposílá žádné dotazy; po návratu se hned synchronizuje. Kdo má aplikaci jen na pozadí, po 10 minutách se kolegům přestane zobrazovat jako online",
+      "Měsíc se načítá jedním dotazem, rychlé přepínání měsíců neposílá dotaz za každý klik a přednačtené měsíce se nestahují dvakrát",
+      "Hromadná rezervace stolů se ukládá jedním dotazem; zvýraznění řádku kliknutím na jméno už nepřekresluje celý kalendář",
+      "Rychlejší ukládání a mazání docházky na serveru"
+    ]
+  },
   {
     "version": "2.20.1",
     "date": "2026-10-15",

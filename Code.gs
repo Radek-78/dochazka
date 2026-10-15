@@ -48,10 +48,16 @@ function _isUserActiveNow(user) {
 }
 
 // Pomocná funkce pro sjednocení formátu data (vždy YYYY-MM-DD) dle TZ spreadsheetu
+// Časová zóna sešitu se zjišťuje jen pro hodnoty typu Date a pamatuje se pro daný sešit –
+// _toPfx se volá v cyklech přes celé ATTENDANCE a volání služby na každý řádek je drahé.
+let _toPfxSs = null, _toPfxTz = null;
 function _toPfx(val, ss) {
   if (!val) return "";
-  const tz = ss ? ss.getSpreadsheetTimeZone() : Session.getScriptTimeZone();
-  if (val instanceof Date) return Utilities.formatDate(val, tz, "yyyy-MM-dd");
+  if (val instanceof Date) {
+    if (!ss) return Utilities.formatDate(val, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    if (_toPfxSs !== ss) { _toPfxSs = ss; _toPfxTz = ss.getSpreadsheetTimeZone(); }
+    return Utilities.formatDate(val, _toPfxTz, "yyyy-MM-dd");
+  }
   let s = String(val);
   // Strip leading apostrophe (Google Sheets text prefix) — zabraňuje kolizi klíčů
   // při deduplikaci in-memory řádků kde datum je "'2026-04-07" (11 znaků)
@@ -748,8 +754,8 @@ function getInitialViewData(year, month, mapId, statsDate) {
       success: true,
       attendance: getMonthAttendance(year, month),
       reservations: mapId ? getMapReservationsForMonth(mapId, yearMonth) : null,
-      vacationBalances: getVacationBalances(year),
-      dailyStats: getDailyStats(statsDate)
+      vacationBalances: getVacationBalances(year)
+      // dailyStats se už neposílá – online seznam chodí s heartbeatem (updateUserActivity)
     };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1712,9 +1718,27 @@ function clearAttendanceEntries(entries) {
 /**
  * Aktualizuje aktivitu uživatele (heartbeat).
  */
+/**
+ * Vrátí ID uživatelů aktivních v posledních 10 minutách, jejichž data smí aktuální uživatel vidět.
+ * Stejná pravidla jako dřívější online seznam v getDailyStats.
+ * @param {Object[]} allUsers - Tabulka USERS (už načtená v rámci requestu).
+ * @returns {string[]}
+ */
+function _getOnlineUserIds_(allUsers) {
+  const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+  const nowMs = Date.now();
+  return allUsers.filter(function(u) {
+    if (u.active === 'false' || !u.last_active) return false;
+    const diffMs = nowMs - new Date(u.last_active).getTime();
+    if (!(diffMs > 0 && diffMs / 1000 / 60 < 10)) return false;
+    return Auth.canAccessUserData(u, rbacConfig);
+  }).map(function(u) { return u.user_id; });
+}
+
 function updateUserActivity() {
   // Verze se vrací s každým heartbeatem, aby prohlížeč poznal, že běží na starém
   // kódu (načtené HTML se samo neaktualizuje) – nestojí to žádný request navíc.
+  // Navíc se vrací seznam online uživatelů (dřív samostatné getDailyStats).
   const deployedVersion = typeof APP_VERSION !== 'undefined' ? APP_VERSION : '';
   try {
     const user = Auth.getCurrentUser();
@@ -1733,7 +1757,9 @@ function updateUserActivity() {
     for (let i = 1; i < data.length; i++) {
         if (data[i][uidIdx] === user.user_id) {
             sheet.getRange(i + 1, actIdx + 1).setValue(now);
-            return { success: true, version: deployedVersion };
+            const online = _getOnlineUserIds_(DB.getTable(coreSS, DB_SHEETS.CORE.USERS));
+            if (online.indexOf(user.user_id) === -1) online.push(user.user_id);
+            return { success: true, version: deployedVersion, online: online };
         }
     }
     return { success: false, version: deployedVersion };

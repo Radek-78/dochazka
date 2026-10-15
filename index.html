@@ -526,10 +526,10 @@
         </div>
         <div id="deploy-time-footer">
           <a href="javascript:void(0)" onclick="_showChangelog()" class="app-version-link"
-            id="app-version-display">v2.20.1</a>
+            id="app-version-display">v2.20.2</a>
           <a href="javascript:void(0)" onclick="location.reload()" class="app-version-link"
             id="app-update-notice" hidden>&#8635; Je k dispozici nová verze – obnovit</a>
-          | Bezpečnost: ochrana proti vložení škodlivého kódu (XSS) | Aktualizace: 15.10.2026 14:42
+          | Méně dotazů na server (statistiky, heartbeat, načítání měsíců) | Aktualizace: 15.10.2026 14:57
         </div>
       </footer>
     </div>
@@ -1213,7 +1213,8 @@
 
       // Načíst org data (z admin cache nebo ze serveru)
       let orgData = (typeof admin !== 'undefined' && admin.data) ? admin.data : null;
-      if (!orgData) {
+      // Bez přístupu do administrace server getAdminOrgData stejně odmítne – číselníky jsou v plannerData
+      if (!orgData && typeof hasPermission === 'function' && hasPermission('access_admin')) {
         try {
           const res = await callServer('getAdminOrgData');
           if (res && res.success) orgData = res.data;
@@ -1221,9 +1222,9 @@
       }
 
       const positions = (orgData && orgData.positions) || plannerData.positions || [];
-      const sections = (orgData && orgData.sections) || [];
+      const sections = (orgData && orgData.sections) || plannerData.sections || [];
       const departments = (orgData && orgData.departments) || plannerData.departments || [];
-      const groups = (orgData && orgData.groups) || [];
+      const groups = (orgData && orgData.groups) || plannerData.groups || [];
 
       const isAdminPlus = ['ADMIN', 'SUPERADMIN'].includes(user.system_role);
       const isSuperAdmin = user.system_role === 'SUPERADMIN';
@@ -1707,7 +1708,9 @@
       }
 
       try {
-        const info = await callServer('getAppVersionInfo');
+        // Changelog se během otevřené stránky nemění – stačí ho stáhnout jednou
+        const info = window._versionInfo || await callServer('getAppVersionInfo');
+        if (info && info.changelog) window._versionInfo = info;
         if (info && info.changelog) {
           // Seskupit podle data
           const byDate = new Map();
