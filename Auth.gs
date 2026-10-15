@@ -176,7 +176,9 @@ var Auth = {
   canApproveVacation: function(user) {
     if (!user) return false;
     user.org_role = _resolveOrgRole(user, DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS));
-    return this.hasAdminAccess(user) ||
+    const approveScope = this.hasPermission('approve_vacation_scope');
+    return this.isSystemAdmin_(user) ||
+      (approveScope && String(approveScope).toUpperCase() !== 'NONE') ||
       user.org_role === ROLES.ORG.DEPT_LEADER ||
       user.org_role === ROLES.ORG.DEPT_DEPUTY ||
       user.org_role === ROLES.ORG.SECTION_LEADER ||

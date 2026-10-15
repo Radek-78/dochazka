@@ -3,9 +3,21 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.20.2";
+const APP_VERSION = "2.21.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.21.0",
+    "date": "2026-10-15",
+    "changes": [
+      "Bezpečnost: úprava vlastního profilu, synchronizace kalendáře a rezervace stolů už nevyžadují přístup do administrace; v profilu lze měnit jen pole povolená v nastavení oprávnění",
+      "Docházku kolegů lze upravovat podle oprávnění „Úprava docházky“ (zaměstnanec jen svou, vedoucí své oddělení, administrátor svůj úsek) nebo jako vedoucí podle pozice; dovolenou kolegovi zadá jen ten, kdo ji smí schválit",
+      "Správa uživatelů (úprava, schválení a zamítnutí registrace, smazání) respektuje rozsah oprávnění a hierarchii rolí",
+      "Rezervace stolů: jen vlastní nebo pro kolegy, jejichž docházku smíte upravovat; souběžná rezervace stejného stolu už nevznikne",
+      "Lokality a pozice mohou měnit jen administrátoři; správce plánovací skupiny ji může upravit i bez oprávnění zakládat skupiny",
+      "Opraveno: upozornění u mapy a rezervací stolů se nezobrazovala"
+    ]
+  },
   {
     "version": "2.20.2",
     "date": "2026-10-15",

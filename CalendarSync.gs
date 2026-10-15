@@ -50,7 +50,7 @@ var CalendarSync = {
         CalendarSync._unsubscribeFromCalendar(calId);
       }
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_own_attendance: 'true',
         personal_calendar_id: calId
@@ -90,7 +90,7 @@ var CalendarSync = {
         }
       }
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_own_attendance: 'false',
         personal_calendar_id: ''
@@ -136,7 +136,7 @@ var CalendarSync = {
         CalendarSync._unsubscribeFromCalendar(calId);
       }
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_team_vacations: 'true',
         team_calendar_id: calId
@@ -171,7 +171,7 @@ var CalendarSync = {
         }
       }
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_team_vacations: 'false',
         team_calendar_id: ''
@@ -217,7 +217,7 @@ var CalendarSync = {
         }
       });
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_planner: 'true'
       });
@@ -257,7 +257,7 @@ var CalendarSync = {
         }
       });
 
-      Admin.updateUser(userId, {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
         user_id: userId,
         sync_planner: 'false'
       });

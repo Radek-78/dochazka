@@ -255,6 +255,18 @@ var Admin = {
    */
   updateEntity: function(sheetName, idField, data) {
     if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+    return this._writeEntity(sheetName, idField, data);
+  },
+
+  /**
+   * Zápis entity BEZ kontroly oprávnění. Volat jen z cest, které oprávnění
+   * ověřily samy (vlastní profil, synchronizace kalendáře, rezervace stolů).
+   * @param {string} sheetName - List v CORE DB.
+   * @param {string} idField - Název sloupce s ID.
+   * @param {Object} data - Zapisovaná pole (s ID = úprava, bez ID = nový záznam).
+   * @returns {{success: boolean, id: string}}
+   */
+  _writeEntity: function(sheetName, idField, data) {
     const coreSS = DB.getCore();
     let sheet = coreSS.getSheetByName(sheetName);
     if (!sheet) {
@@ -756,7 +768,7 @@ var Admin = {
       date: targetDate, // Uložíme čistý formát YYYY-MM-DD
       active: true      // Uložíme jako boolean pro checkbox
     };
-    return this.updateEntity(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS, 'reservation_id', payload);
+    return this._writeEntity(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS, 'reservation_id', payload);
   },
 
   clearUserReservations: function(userId, date) {
@@ -838,7 +850,7 @@ var Admin = {
     });
     
     if (!existing) return { success: true };
-    return this.updateEntity(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS, 'reservation_id', {
+    return this._writeEntity(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS, 'reservation_id', {
       reservation_id: existing.reservation_id, active: 'false'
     });
   },
@@ -1086,6 +1098,7 @@ function addLocation(name, type) {
 
 function updateLocation(data) {
   try {
+    if (!Auth.isSystemAdmin_()) throw new Error("Lokality a pozice může měnit jen administrátor.");
     return Admin.updateEntity(DB_SHEETS.CORE.LOCATIONS, 'location_id', data);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1094,6 +1107,7 @@ function updateLocation(data) {
 
 function deleteLocation(locationId) {
   try {
+    if (!Auth.isSystemAdmin_()) throw new Error("Lokality a pozice může měnit jen administrátor.");
     Admin.deleteLocation(locationId);
     return { success: true };
   } catch (e) {
@@ -1109,6 +1123,60 @@ function getAllUsers() {
   }
 }
 
+/**
+ * Ověří, že aktuální uživatel smí spravovat cílového uživatele: rozsah manage_users
+ * (úsek/oddělení – úsek se odvodí i z oddělení, když chybí) a hierarchii rolí.
+ * @param {Object} currentUser - Přihlášený uživatel.
+ * @param {string} targetId - ID existujícího uživatele ('' = zakládání nového).
+ * @param {Object} [data] - Nové hodnoty (section_id, department_id, system_role).
+ * @returns {Object|null} Cílový uživatel (null u nového).
+ */
+function _requireUserManagement_(currentUser, targetId, data) {
+  data = data || {};
+  const core = DB.getCore();
+  const target = targetId ? DB.getTable(core, DB_SHEETS.CORE.USERS).find(u => u.user_id === targetId) : null;
+  if (targetId && !target) throw new Error("Uživatel nenalezen.");
+  const myRole = currentUser.system_role || 'USER';
+  if (myRole === 'SUPERADMIN') return target;
+
+  const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
+  const myWeight = roleWeights[myRole] || 0;
+  const scope = String(Auth.hasPermission('manage_users') || 'NONE').toUpperCase();
+  if (scope === 'NONE' || scope === 'FALSE') throw new Error("Nemáte oprávnění spravovat uživatele.");
+
+  // Hierarchie: nelze spravovat stejnou/vyšší roli ani ji přidělit
+  if (target && target.user_id !== currentUser.user_id && (roleWeights[target.system_role] || 1) >= myWeight) {
+    throw new Error("Nemáte oprávnění spravovat uživatele se stejnou nebo vyšší rolí (" + target.system_role + ").");
+  }
+  if (data.system_role && (roleWeights[data.system_role] || 0) >= myWeight) {
+    throw new Error("Nemáte oprávnění přidělit roli " + data.system_role + ".");
+  }
+
+  if (scope === 'ALL' || scope === 'TRUE') return target;
+  const depts = DB.getTable(core, DB_SHEETS.CORE.DEPARTMENTS);
+  const sectionOfDept = function(deptId) {
+    const d = depts.find(x => x.department_id === deptId);
+    return d ? (d.section_id || '') : '';
+  };
+  const mySection = currentUser.section_id || sectionOfDept(currentUser.department_id);
+  const inScope = function(sectionId, deptId) {
+    if (scope === 'OWN_DEPARTMENT') return !!deptId && deptId === currentUser.department_id;
+    // OWN_SECTION: úsek (případně odvozený z oddělení) i oddělení musí patřit do mého úseku
+    if (!mySection) return false;
+    if (deptId && sectionOfDept(deptId) !== mySection) return false;
+    return (sectionId || sectionOfDept(deptId)) === mySection;
+  };
+  if (target && !inScope(target.section_id, target.department_id)) {
+    throw new Error("Uživatel je mimo rozsah vaší správy.");
+  }
+  if (!target || data.section_id !== undefined || data.department_id !== undefined) {
+    const newSection = data.section_id !== undefined ? data.section_id : (target ? target.section_id : '');
+    const newDept = data.department_id !== undefined ? data.department_id : (target ? target.department_id : '');
+    if (!inScope(newSection, newDept)) throw new Error("Nové zařazení uživatele je mimo rozsah vaší správy.");
+  }
+  return target;
+}
+
 function updateUser(userId, data) {
   try {
     // Pokud je voláno jen s jedním argumentem (objektem), posuneme to
@@ -1116,6 +1184,11 @@ function updateUser(userId, data) {
       data = userId;
       userId = data.user_id;
     }
+    if (!data || typeof data !== 'object') throw new Error("Chybí data uživatele.");
+    // Jediné cílové ID pro všechny kontroly i zápis (jinak by šlo poslat prázdné userId
+    // a skutečný cíl schovat do data.user_id)
+    userId = userId || data.user_id || '';
+    if (userId) data.user_id = userId; else delete data.user_id;
     
     // Ověření oprávnění
     const currentUser = Auth.getCurrentUser();
@@ -1133,37 +1206,37 @@ function updateUser(userId, data) {
     const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
     const myWeight = roleWeights[myRole] || 0;
 
-    if (!Auth.hasAdminAccess(currentUser)) {
-      if (!userId || userId !== currentUser.user_id) {
-        throw new Error("Můžete upravovat pouze vlastní profil.");
-      }
-      // Omezení polí pro běžného uživatele
-      delete data.org_role;
-      delete data.section_id;
-      delete data.department_id;
-      delete data.group_id;
-    } else if (myRole !== 'SUPERADMIN') {
-      // ── ROLE HIERARCHY CHECK ──
-      // 1. Nemůže editovat někoho se stejnou nebo vyšší rolí
-      if (userId && userId !== currentUser.user_id) {
-        const users = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-        const targetUser = users.find(u => u.user_id === userId);
-        if (targetUser) {
-          const targetWeight = roleWeights[targetUser.system_role] || 1;
-          if (targetWeight >= myWeight) {
-            throw new Error("Nemáte oprávnění editovat uživatele se stejnou nebo vyšší rolí (" + targetUser.system_role + ").");
-          }
-        }
-      }
-      // 2. Nemůže přidělit roli vyšší nebo stejnou jako má on sám
-      if (data.system_role) {
-         if (roleWeights[data.system_role] >= myWeight) {
-           throw new Error("Nemáte oprávnění přidělit roli " + data.system_role + ".");
-         }
-      }
+    // ── Vlastní profil: jen pole povolená v RBAC (edit_profile_*), bez admin brány ──
+    if (userId && userId === currentUser.user_id && myRole !== 'SUPERADMIN') {
+      const SELF_FIELDS = {
+        first_name: 'edit_profile_name', last_name: 'edit_profile_name',
+        email: 'edit_profile_email',
+        section_id: 'edit_profile_org', department_id: 'edit_profile_org', group_id: 'edit_profile_org',
+        date_start: 'edit_profile_org', date_end: 'edit_profile_org',
+        position_id: 'edit_profile_pos',
+        default_work_start_time: null, show_work_start_time: null
+      };
+      const clean = { user_id: currentUser.user_id };
+      Object.keys(SELF_FIELDS).forEach(function(k) {
+        if (!data.hasOwnProperty(k)) return;
+        const perm = SELF_FIELDS[k] ? Auth.hasPermission(SELF_FIELDS[k]) : true;
+        if (perm === true || perm === 'ALL') clean[k] = data[k];
+      });
+      return { success: true, data: Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', clean) };
     }
 
-    return { success: true, data: Admin.updateUser(userId, data) };
+    // ── Úprava jiného uživatele nebo založení nového = správa uživatelů ──
+    if (!Auth.hasAdminAccess(currentUser)) throw new Error("Můžete upravovat pouze vlastní profil.");
+    if (data.system_role !== undefined && data.system_role !== '' && !roleWeights.hasOwnProperty(data.system_role)) {
+      throw new Error("Neplatná systémová role.");
+    }
+    if (data.auth_status !== undefined &&
+        ['', AUTH_STATUS.APPROVED, AUTH_STATUS.PENDING, AUTH_STATUS.REJECTED].indexOf(data.auth_status) === -1) {
+      throw new Error("Neplatný stav účtu.");
+    }
+    _requireUserManagement_(currentUser, userId, data);
+
+    return { success: true, data: Admin.updateUser(userId || null, data) };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1197,7 +1270,8 @@ function toggleCalendarSync(type, enabled) {
         ROLES.ORG.SECTION_LEADER, ROLES.ORG.SECTION_DEPUTY,
         ROLES.ORG.DEPT_LEADER,    ROLES.ORG.DEPT_DEPUTY
       ];
-      if (!Auth.hasAdminAccess(currentUser) && managerRoles.indexOf(currentUser.org_role) === -1) {
+      var orgRole = _resolveOrgRole(currentUser, DB.getTable(DB.getCore(), DB_SHEETS.CORE.POSITIONS));
+      if (!Auth.isSystemAdmin_(currentUser) && managerRoles.indexOf(orgRole) === -1) {
         return { success: false, error: 'Nedostatečná oprávnění pro synchronizaci týmového kalendáře.' };
       }
       return enabled
@@ -1223,7 +1297,7 @@ function updateSection(data) {
     if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
-      if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
+      if (!scope || scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
       if (scope === 'OWN_SECTION' || scope === 'OWN_DEPARTMENT') {
         if (data.section_id !== user.section_id) throw new Error("Můžete spravovat pouze svůj vlastní úsek.");
       }
@@ -1240,7 +1314,7 @@ function updateDepartment(data) {
     if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
-      if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
+      if (!scope || scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
       if (scope === 'OWN_SECTION') {
         // Musí patřit do stejného úseku
         const depts = DB.getTable(DB.getCore(), DB_SHEETS.CORE.DEPARTMENTS);
@@ -1263,7 +1337,7 @@ function updateGroup(data) {
     if (!user) throw new Error("Neautorizováno.");
     if (user.system_role !== 'SUPERADMIN') {
       const scope = Auth.hasPermission('manage_org');
-      if (scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
+      if (!scope || scope === 'NONE') throw new Error("Nemáte oprávnění spravovat org. strukturu.");
       if (scope === 'OWN_SECTION') {
         const groups = DB.getTable(DB.getCore(), DB_SHEETS.CORE.GROUPS);
         const target = groups.find(g => g.group_id === data.group_id);
@@ -1288,20 +1362,10 @@ function updateGroup(data) {
 function deleteUser(userId) {
   try {
     const currentUser = Auth.getCurrentUser();
-    const myRole = currentUser?.system_role || 'USER';
+    if (!currentUser) throw new Error("Neautorizováno.");
     if (!Auth.hasAdminAccess(currentUser)) throw new Error("Nedostatečná oprávnění.");
-
-    // Role hierarchy check
-    if (myRole !== 'SUPERADMIN') {
-        const users = DB.getTable(DB.getCore(), DB_SHEETS.CORE.USERS);
-        const targetUser = users.find(u => u.user_id === userId);
-        if (targetUser) {
-           const roleWeights = { 'USER': 1, 'LEADER': 2, 'ADMIN': 3, 'SUPERADMIN': 100 };
-           if (roleWeights[targetUser.system_role] >= roleWeights[myRole]) {
-               throw new Error("Nemáte oprávnění smazat uživatele se stejnou nebo vyšší rolí.");
-           }
-        }
-    }
+    if (!userId || userId === currentUser.user_id) throw new Error("Vlastní účet nelze smazat.");
+    _requireUserManagement_(currentUser, userId, {});
     return { success: true, data: Admin.deleteUser(userId) };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1318,6 +1382,7 @@ function repairDatabaseHeaders() {
 
 function updatePosition(data) {
   try {
+    if (!Auth.isSystemAdmin_()) throw new Error("Lokality a pozice může měnit jen administrátor.");
     return Admin.updateEntity(DB_SHEETS.CORE.POSITIONS, 'position_id', data);
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1437,9 +1502,41 @@ function saveNamedDay(dateKey, name) {
   }
 }
 
+/**
+ * Ověří, že přihlášený uživatel smí spravovat rezervace daného uživatele:
+ * vlastní, nebo uživatele, jehož docházku smí upravovat.
+ * @param {string} userId - Uživatel, kterého se rezervace týká.
+ */
+function _requireReservationTarget_(userId) {
+  const me = Auth.getCurrentUser();
+  if (!me) throw new Error("Neautorizováno.");
+  if (String(userId) === String(me.user_id)) return;
+  const core = DB.getCore();
+  const target = DB.getTable(core, DB_SHEETS.CORE.USERS).find(u => String(u.user_id) === String(userId));
+  if (!target || !_canEditTargetAttendance_(me, target, DB.getTable(core, DB_SHEETS.CORE.POSITIONS), Admin.getRbacConfig())) {
+    throw new Error("Nemáte oprávnění spravovat rezervace tohoto uživatele.");
+  }
+}
+
+/**
+ * Spustí fn pod script lockem (kontrola obsazenosti a zápis rezervace nesmí běžet souběžně).
+ * @param {Function} fn
+ * @returns {*} výsledek fn, nebo {success:false} když se zámek nepodaří získat
+ */
+function _withReservationLock_(fn) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { success: false, error: "Zápis právě probíhá. Zkuste to prosím znovu za okamžik." };
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function saveMapReservation(data) {
   try {
-    return Admin.saveMapReservation(data);
+    _requireReservationTarget_(data && data.user_id);
+    return _withReservationLock_(function() { return Admin.saveMapReservation(data); });
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1456,15 +1553,18 @@ function saveMapReservations(list) {
     if (!Array.isArray(list) || list.length === 0) {
       return { success: false, error: "Nebyly zadány žádné rezervace." };
     }
-    const results = list.map(function(item) {
-      try {
-        const res = Admin.saveMapReservation(item) || {};
-        return { date: item.date, success: !!res.success, id: res.id || '', error: res.error || '' };
-      } catch (e) {
-        return { date: item.date, success: false, id: '', error: e.toString() };
-      }
+    list.forEach(function(item) { _requireReservationTarget_(item && item.user_id); });
+    return _withReservationLock_(function() {
+      const results = list.map(function(item) {
+        try {
+          const res = Admin.saveMapReservation(item) || {};
+          return { date: item.date, success: !!res.success, id: res.id || '', error: res.error || '' };
+        } catch (e) {
+          return { date: item.date, success: false, id: '', error: e.toString() };
+        }
+      });
+      return { success: true, results: results };
     });
-    return { success: true, results: results };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1472,7 +1572,8 @@ function saveMapReservations(list) {
 
 function deleteMapReservation(mapId, userId, date) {
   try {
-    return Admin.deleteMapReservation(mapId, userId, date);
+    _requireReservationTarget_(userId);
+    return _withReservationLock_(function() { return Admin.deleteMapReservation(mapId, userId, date); });
   } catch (e) {
     return { success: false, error: e.toString() };
   }

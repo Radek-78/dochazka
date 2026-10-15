@@ -151,6 +151,16 @@
 
     // --- SYNC TOAST ---
     let _syncToastTimer = null;
+    /**
+     * Krátké upozornění v rohu obrazovky. Funkce se volala (mapa, rezervace),
+     * ale nebyla definovaná – vykreslení zajišťuje showAdminToast z Admin_js.
+     * @param {string} msg
+     * @param {string} [type] - 'success' | 'warning' | 'error' | 'info'
+     */
+    function showToast(msg, type) {
+        showAdminToast(msg, type === 'warning' ? 'warn' : type);
+    }
+
     function showSyncToast(action, count, isError = false) {
         const toast = document.getElementById('sync-toast');
         const text = document.getElementById('sync-toast-text');
@@ -3539,6 +3549,21 @@
                         if (cell) renderAttendanceCell(cell, pe.user_id, dk);
                     });
                     // Přesná dovolenková bilance se obnoví společně po invalidaci níže.
+                }
+
+                // Položky, které server odmítl (status vyžadující schválení zadaný kolegovi bez práva schvalovat)
+                if (result.rejectedEntries && result.rejectedEntries.length > 0) {
+                    result.rejectedEntries.forEach(function (re) {
+                        var dk = String(re.date).substring(0, 10);
+                        var key = re.user_id + '_' + dk + '_' + (re.slot || 'ALL_DAY');
+                        delete _attendanceData[key];
+                        delete _globalAttendanceData[key];
+                        var cell = getCellElement(re.user_id, dk);
+                        if (cell) renderAttendanceCell(cell, re.user_id, dk);
+                    });
+                    showToast('Status „' + (result.rejectedEntries[0].status_name || '') + '“ může kolegovi zadat jen ten, kdo mu ho smí schválit. Neuloženo: ' + result.rejectedEntries.length, 'warning');
+                    // V DB mohl zůstat původní status – po zneplatnění cache (níže) měsíc znovu načíst
+                    setTimeout(loadAttendance, 0);
                 }
 
                 // Invalidace cache pro všechny ovlivněné měsíce

@@ -100,6 +100,26 @@ function _canManageTargetAttendance(currentUser, targetUser, positions, rbacConf
   return false;
 }
 
+/**
+ * Smí aktuální uživatel upravovat docházku cílového uživatele?
+ * Vlastní docházka vždy; jinak podle RBAC edit_attendance_scope (dle systémové role)
+ * nebo podle organizační role (vedoucí/zástupce úseku či oddělení).
+ * @returns {boolean}
+ */
+function _canEditTargetAttendance_(currentUser, targetUser, positions, rbacConfig) {
+  if (!currentUser || !targetUser) return false;
+  if (String(currentUser.user_id) === String(targetUser.user_id)) return true;
+  const role = currentUser.system_role || ROLES.SYSTEM.USER;
+  let scope = role === ROLES.SYSTEM.SUPERADMIN
+    ? 'ALL'
+    : ((rbacConfig && rbacConfig.edit_attendance_scope) || {})[role];
+  scope = String(scope === true ? 'ALL' : (scope || 'NONE')).toUpperCase();
+  if (scope === 'ALL') return true;
+  if (scope === 'OWN_SECTION' && currentUser.section_id && currentUser.section_id === targetUser.section_id) return true;
+  if (scope === 'OWN_DEPARTMENT' && currentUser.department_id && currentUser.department_id === targetUser.department_id) return true;
+  return _canManageTargetAttendance(currentUser, targetUser, positions, rbacConfig);
+}
+
 function _canApproveVacationForTarget(currentUser, targetUser, positions, rbacConfig) {
   if (!currentUser || !targetUser) return false;
   if (String(currentUser.user_id) === String(targetUser.user_id)) return false;
@@ -578,6 +598,8 @@ function approveUser(userId) {
   try {
     const currentUser = Auth.getCurrentUser();
     if (!Auth.hasAdminAccess(currentUser)) throw new Error("Nedostatečná oprávnění.");
+    const target = _requireUserManagement_(currentUser, userId, {});
+    if (!target || target.auth_status !== AUTH_STATUS.PENDING) throw new Error("Účet nečeká na schválení.");
     Admin.updateUser(userId, { user_id: userId, auth_status: AUTH_STATUS.APPROVED, active: "true" });
     _markRegNotifsRead_(userId);
     return { success: true };
@@ -593,6 +615,8 @@ function rejectUser(userId) {
   try {
     const currentUser = Auth.getCurrentUser();
     if (!Auth.hasAdminAccess(currentUser)) throw new Error("Nedostatečná oprávnění.");
+    const target = _requireUserManagement_(currentUser, userId, {});
+    if (!target || target.auth_status !== AUTH_STATUS.PENDING) throw new Error("Účet nečeká na schválení.");
     Admin.updateUser(userId, { user_id: userId, auth_status: AUTH_STATUS.REJECTED });
     _markRegNotifsRead_(userId);
     return { success: true };
@@ -1016,7 +1040,7 @@ function saveAttendanceEntries(entries) {
     const allStatuses = DB.getTable(coreDbForAppr, DB_SHEETS.CORE.ATTENDANCE_STATUSES);
     const allPositions = DB.getTable(coreDbForAppr, DB_SHEETS.CORE.POSITIONS);
     const vacCfg = Admin.getVacationConfig ? Admin.getVacationConfig() : {};
-    const isAdminUser = Auth.hasAdminAccess(currentUser);
+    const rbacConfig = Admin.getRbacConfig();
     // Efektivní org_role: primárně z pozice uživatele, fallback na uložené user.org_role
     const curOrgRole = _resolveOrgRole(currentUser, allPositions);
     // Přepočítat org_role i pro všechny uživatele (pro hledání schvalovatele)
@@ -1090,6 +1114,8 @@ function saveAttendanceEntries(entries) {
     let approverId = null;
     // Sbírá úspěšně uložené záznamy pro CalendarSync
     const calSyncEntries = [];
+    // Položky odmítnuté kvůli schvalování (D3) – klient je odebere z kalendáře
+    const rejectedEntries = [];
 
     function _normalizeSlotConflicts(rawEntries) {
       const byKey = {};
@@ -1134,12 +1160,17 @@ function saveAttendanceEntries(entries) {
     for (let i = 0; i < entries.length; i++) {
       let e = entries[i];
       let statusId = _getWritableStatusId(e.status_id);
-      let canEdit = e.user_id === currentUser.user_id || isAdminUser;
-      if (!canEdit) {
-        let tu = userMap[e.user_id] || null;
-        canEdit = tu ? Auth.canAccessUserData(tu) : false;
+      if (!_canEditTargetAttendance_(currentUser, userMap[e.user_id] || null, allPositions, rbacConfig)) continue;
+      // Status vyžadující schválení (dovolená) smí kolegovi zadat jen ten, kdo mu ho smí schválit
+      if (e.user_id !== currentUser.user_id) {
+        const reqSt = statusMap[Privacy.normalizeStatusId(statusId)];
+        if (reqSt && reqSt.requires_approval === 'true' &&
+            !_canApproveVacationForTarget(currentUser, userMap[e.user_id], allPositions, rbacConfig)) {
+          // Nevyhazovat – klient by celou dávku opakoval; položku jen přeskočit a vrátit
+          rejectedEntries.push({ user_id: e.user_id, date: _toPfx(e.date, transDB), slot: e.slot || 'ALL_DAY', status_name: reqSt.name || '' });
+          continue;
+        }
       }
-      if (!canEdit) continue;
 
       let slot = e.slot || 'ALL_DAY';
       let datePfx = _toPfx(e.date, transDB);
@@ -1230,8 +1261,9 @@ function saveAttendanceEntries(entries) {
       // Deduplikace affected pairs pomocí Set – O(entries) místo O(entries²)
       const affectedPairSet = new Set();
       const affectedPairs = [];
-      entries.forEach(function(e) {
-        const d = _toPfx(e.date, transDB);
+      // Jen přijaté záznamy – položky bez oprávnění se přeskočily a nesmí rušit cizí rezervace
+      calSyncEntries.forEach(function(e) {
+        const d = e.date;
         const k = e.user_id + '_' + d;
         if (!affectedPairSet.has(k)) {
           affectedPairSet.add(k);
@@ -1302,7 +1334,8 @@ function saveAttendanceEntries(entries) {
       success: true,
       saved: toUpdate.length + toInsert.length,
       pendingApproval: pendingEntries.length > 0,
-      pendingEntries: pendingEntries
+      pendingEntries: pendingEntries,
+      rejectedEntries: rejectedEntries
     };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -1604,7 +1637,7 @@ function clearAttendanceEntries(entries) {
     const calSyncDeletes = [];
     
     entries.forEach(function(e) {
-      let canEdit = _canManageTargetAttendance(currentUser, userMap[e.user_id], positions, rbacConfig);
+      let canEdit = _canEditTargetAttendance_(currentUser, userMap[e.user_id], positions, rbacConfig);
       if (canEdit) {
         let datePfx = _toPfx(e.date, transSS);
         let slotVal = e.slot || 'ALL_DAY';
@@ -2024,10 +2057,11 @@ function createPlannerGroup(data) {
     // Oprávnění k vytvoření (např. ADMIN nebo vedoucí)
     const coreSS = DB.getCore();
     const orgRole = _resolveOrgRole(user, DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS));
-    const canCreate = Auth.hasAdminAccess(user) || ['SECTION_LEADER', 'DEPT_LEADER'].includes(orgRole);
-    if (!canCreate) throw new Error("Nemáte oprávnění vytvářet plánovací skupiny.");
-
     const isUpdate = !!data.group_id;
+    // Úpravu existující skupiny řídí členství s právem ADMIN (níže), ne oprávnění zakládat
+    const canCreate = Auth.hasAdminAccess(user) || ['SECTION_LEADER', 'DEPT_LEADER'].includes(orgRole);
+    if (!isUpdate && !canCreate) throw new Error("Nemáte oprávnění vytvářet plánovací skupiny.");
+
     // Barva se vkládá do stylů v klientu – povolit jen #rrggbb (výstup <input type="color">)
     const color = /^#[0-9a-fA-F]{6}$/.test(String(data.color || '')) ? data.color : 'default';
     const groupId = isUpdate ? data.group_id : Utilities.getUuid();
