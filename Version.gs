@@ -3,9 +3,17 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.23.0";
+const APP_VERSION = "2.23.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.23.1",
+    "date": "2026-10-16",
+    "changes": [
+      "Bezpečnost: aplikaci už nelze vložit do cizí webové stránky",
+      "Úklid: odebrána nepoužívaná služba Google Drive v2, export logu docházky používá správnou časovou zónu, počet 0 se v záznamech ukládá jako číslo"
+    ]
+  },
   {
     "version": "2.23.0",
     "date": "2026-10-16",

@@ -166,7 +166,7 @@ const DB = {
     if (lastCol === 0) throw new Error("List " + sheetName + " neexistuje nebo nemá definované sloupce.");
     
     const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const newRow = headers.map(header => dataObj[header] || "");
+    const newRow = headers.map(header => dataObj[header] === 0 ? 0 : (dataObj[header] || ""));
     
     sheet.appendRow(newRow);
   }

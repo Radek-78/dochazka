@@ -647,7 +647,7 @@ var CalendarSync = {
         maxResults: 10
       });
       (result.items || []).forEach(function(ev) {
-        try { Calendar.Events.remove(calId, ev.id); } catch (e) {}
+        try { Calendar.Events.remove(calId, ev.id); } catch (e) { console.warn('CalendarSync: smazání události plánovače selhalo: ' + e); }
       });
     } catch (e) {
       console.warn('CalendarSync._deletePlannerEventById: ' + e);

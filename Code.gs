@@ -276,8 +276,7 @@ function doGet(e) {
 
   return template.evaluate()
       .setTitle(CONFIG.APP_NAME)
-      .addMetaTag("viewport", "width=device-width, initial-scale=1")
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .addMetaTag("viewport", "width=device-width, initial-scale=1");
 }
 
 /**
@@ -832,17 +831,8 @@ function getMonthAttendance(year, month) {
 }
 
 /**
- * Vrátí docházku a rezervace stolů pro několik měsíců v jediném volání.
- * Používá se pro přednačtení okolních měsíců — oproti opakovanému getMonthAttendance
- * přečte ATTENDANCE, USERS a číselníky jen jednou pro celý rozsah.
- *
- * @param {string[]} yearMonths - měsíce ve tvaru "YYYY-MM"
- * @param {string} [mapId] - mapa kanceláře; bez ní se rezervace nevracejí
- * @return {Object} { success, months: { "YYYY-MM": { attendance: [], reservations: [] } } }
- */
-/**
- * Startovní dávka pro první vykreslení kalendáře: docházka měsíce, rezervace stolů,
- * bilance dovolené a denní statistika v jednom volání.
+ * Startovní dávka pro první vykreslení kalendáře: docházka měsíce, rezervace stolů
+ * a bilance dovolené v jednom volání.
  *
  * Je to záměrně jen tenký obal nad existujícími funkcemi – DB.getTable cachuje
  * v rámci jedné exekuce, takže ATTENDANCE, USERS i číselníky se přečtou jednou
@@ -863,6 +853,15 @@ function getInitialViewData(year, month, mapId, statsDate) {
   }
 }
 
+/**
+ * Vrátí docházku a rezervace stolů pro několik měsíců v jediném volání.
+ * Používá se pro načtení měsíce i přednačtení okolních měsíců — přečte ATTENDANCE,
+ * USERS a číselníky jen jednou pro celý rozsah.
+ *
+ * @param {string[]} yearMonths - měsíce ve tvaru "YYYY-MM"
+ * @param {string} [mapId] - mapa kanceláře; bez ní se rezervace nevracejí
+ * @return {Object} { success, months: { "YYYY-MM": { attendance: [], reservations: [] } } }
+ */
 function getCalendarRange(yearMonths, mapId) {
   try {
     const currentUser = Auth.getCurrentUser();
@@ -2398,12 +2397,6 @@ function getPlannerGroupMembers(groupId) {
 }
 
 /**
- * Vrátí log docházkových záznamů pro celý úsek (section) aktuálního uživatele.
- * Seřazeno podle created_at DESC. Vrací max 500 záznamů.
- * @param {number} offset - kolik záznamů přeskočit (pro stránkování)
- * @return {{ success: boolean, entries: Array, hasMore: boolean }}
- */
-/**
  * Sestaví kompletní (nestránkovaný) log docházky úseku aktuálního uživatele,
  * seřazený podle created_at DESC. Sdíleno mezi getAttendanceLog a exportem.
  */
@@ -2494,6 +2487,12 @@ function _buildAttendanceLogEntries_(currentUser) {
   return logEntries;
 }
 
+/**
+ * Vrátí log docházkových záznamů pro celý úsek (section) aktuálního uživatele.
+ * Seřazeno podle created_at DESC. Vrací max 500 záznamů.
+ * @param {number} offset - kolik záznamů přeskočit (pro stránkování)
+ * @return {{ success: boolean, entries: Array, hasMore: boolean }}
+ */
 function getAttendanceLog(offset) {
   try {
     const currentUser = Auth.getCurrentUser();
@@ -2569,7 +2568,7 @@ function exportAttendanceLogToSheet(filters) {
     }
 
     const slotLabels = { 'ALL_DAY': 'Celý den', 'AM': 'Dopoledne', 'PM': 'Odpoledne' };
-    const dateStr = Utilities.formatDate(new Date(), "GMT+1", "yyyy-MM-dd_HH-mm");
+    const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd_HH-mm");
     const ss = SpreadsheetApp.create('Log docházky export ' + dateStr);
     const sheet = ss.getSheets()[0];
     sheet.setName('Log docházky');
