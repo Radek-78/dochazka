@@ -50,7 +50,7 @@ var CalendarSync = {
         CalendarSync._unsubscribeFromCalendar(calId);
       }
 
-      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
+      CalendarSync._saveCalendarState_(cal, {
         user_id: userId,
         sync_own_attendance: 'true',
         personal_calendar_id: calId
@@ -64,9 +64,7 @@ var CalendarSync = {
       Utilities.sleep(3000);
 
       // Naplnit záznamy z aktuálního roku
-      CalendarSync._fillPersonalCalendar(userId, calId);
-
-      return { success: true };
+      return CalendarSync._fillResult_(CalendarSync._fillPersonalCalendar(userId, calId));
     } catch (e) {
       console.error('CalendarSync.enablePersonalSync: ' + e);
       return { success: false, error: e.message || e.toString() };
@@ -136,7 +134,7 @@ var CalendarSync = {
         CalendarSync._unsubscribeFromCalendar(calId);
       }
 
-      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', {
+      CalendarSync._saveCalendarState_(cal, {
         user_id: userId,
         sync_team_vacations: 'true',
         team_calendar_id: calId
@@ -146,9 +144,7 @@ var CalendarSync = {
       CalendarSync._auditLog(userEmail, 'TEAM_SYNC_ENABLED', 'Calendar: ' + calId + ' for ' + displayName);
 
       // Naplnit dovolené a HO podřízených z aktuálního roku
-      CalendarSync._fillTeamCalendar(userId, calId);
-
-      return { success: true };
+      return CalendarSync._fillResult_(CalendarSync._fillTeamCalendar(userId, calId));
     } catch (e) {
       console.error('CalendarSync.enableTeamSync: ' + e);
       return { success: false, error: e.message || e.toString() };
@@ -484,9 +480,10 @@ var CalendarSync = {
    * Vytvoří nebo přepíše event v kalendáři pro daný den a slot.
    * Slot je uložen v extendedProperties.private.dochazka_slot pro přesný výběr.
    */
-  _upsertEvent: function(calendarId, dateStr, slot, title) {
+  _upsertEvent: function(calendarId, dateStr, slot, title, skipDelete) {
     var date = CalendarSync._toDate(dateStr);
-    CalendarSync._deleteSlotEvents(calendarId, date, slot);
+    // skipDelete: plnění nově vytvořeného (prázdného) kalendáře – mazat není co
+    if (!skipDelete) CalendarSync._deleteSlotEvents(calendarId, date, slot);
 
     Calendar.Events.insert({
       summary: title,
@@ -505,16 +502,8 @@ var CalendarSync = {
    */
   _deleteSlotEvents: function(calendarId, dateStr, slot) {
     try {
-      var date = CalendarSync._toDate(dateStr);
-      var result = Calendar.Events.list(calendarId, {
-        timeMin: date + 'T00:00:00Z',
-        timeMax: CalendarSync._nextDay(date) + 'T00:00:00Z',
-        privateExtendedProperty: 'dochazka_slot=' + slot,
-        singleEvents: true,
-        maxResults: 20
-      });
-      (result.items || []).forEach(function(ev) {
-        try { Calendar.Events.remove(calendarId, ev.id); } catch (e) {}
+      CalendarSync._listDayEvents_(calendarId, CalendarSync._toDate(dateStr), slot).forEach(function(ev) {
+        try { Calendar.Events.remove(calendarId, ev.id); } catch (e) { console.warn('CalendarSync: smazání události selhalo: ' + e); }
       });
     } catch (e) {
       console.warn('CalendarSync._deleteSlotEvents: ' + e);
@@ -522,11 +511,73 @@ var CalendarSync = {
   },
 
   /**
+   * Vrátí docházkové události daného slotu, které připadají přesně na daný den.
+   * Okno timeMin/timeMax v UTC zachytí i celodenní události sousedních dnů
+   * (kalendář je v časové zóně Prahy), proto se výsledek filtruje podle start.date.
+   * @param {string} calendarId
+   * @param {string} date - yyyy-MM-dd
+   * @param {string} slot - ALL_DAY | AM | PM
+   * @returns {Object[]} události Calendar API
+   */
+  _listDayEvents_: function(calendarId, date, slot) {
+    var items = [];
+    var pageToken;
+    do {
+      var result = Calendar.Events.list(calendarId, {
+        timeMin: date + 'T00:00:00Z',
+        timeMax: CalendarSync._nextDay(date) + 'T00:00:00Z',
+        privateExtendedProperty: 'dochazka_slot=' + slot,
+        singleEvents: true,
+        maxResults: 50,
+        pageToken: pageToken
+      });
+      items = items.concat(result.items || []);
+      pageToken = result.nextPageToken;
+    } while (pageToken);
+    return items.filter(function(ev) {
+      var start = ev.start || {};
+      return start.date === date || String(start.dateTime || '').substring(0, 10) === date;
+    });
+  },
+
+  /**
+   * Zapíše stav synchronizace do USERS. Když zápis selže, nově vytvořený kalendář
+   * smaže – jinak by zůstal osiřelý (kalendář existuje, ale aplikace o něm neví).
+   * @param {Calendar} cal - Právě vytvořený kalendář.
+   * @param {Object} data - Pole pro USERS (včetně user_id).
+   */
+  _saveCalendarState_: function(cal, data) {
+    try {
+      Admin._writeEntity(DB_SHEETS.CORE.USERS, 'user_id', data);
+    } catch (e) {
+      try { cal.deleteCalendar(); } catch (delErr) { console.warn('CalendarSync: úklid kalendáře selhal: ' + delErr); }
+      throw e;
+    }
+  },
+
+  /**
+   * Převede výsledek plnění kalendáře na odpověď pro klienta. Chyby se už
+   * nehlásí jako čistý úspěch – kalendář vznikl, ale část záznamů chybí.
+   * @param {{total: number, failed: number}} fill
+   * @returns {Object}
+   */
+  _fillResult_: function(fill) {
+    if (fill && fill.failed > 0) {
+      return {
+        success: true,
+        warning: 'Kalendář je vytvořený, ale ' + fill.failed + ' z ' + fill.total +
+          ' záznamů se nepodařilo přenést. Zkuste synchronizaci vypnout a znovu zapnout.'
+      };
+    }
+    return { success: true };
+  },
+
+  /**
    * Vytvoří nebo přepíše team event identifikovaný kombinací slot + subordinateId.
    */
-  _upsertTeamEvent: function(calendarId, dateStr, slot, subordinateId, title) {
+  _upsertTeamEvent: function(calendarId, dateStr, slot, subordinateId, title, skipDelete) {
     var date = CalendarSync._toDate(dateStr);
-    CalendarSync._deleteTeamSlotEvents(calendarId, date, slot, subordinateId);
+    if (!skipDelete) CalendarSync._deleteTeamSlotEvents(calendarId, date, slot, subordinateId);
 
     Calendar.Events.insert({
       summary: title,
@@ -545,22 +596,14 @@ var CalendarSync = {
 
   _deleteTeamSlotEvents: function(calendarId, dateStr, slot, subordinateId) {
     try {
-      var date = CalendarSync._toDate(dateStr);
-      var result = Calendar.Events.list(calendarId, {
-        timeMin: date + 'T00:00:00Z',
-        timeMax: CalendarSync._nextDay(date) + 'T00:00:00Z',
-        privateExtendedProperty: 'dochazka_slot=' + slot,
-        singleEvents: true,
-        maxResults: 20
-      });
-      (result.items || [])
+      CalendarSync._listDayEvents_(calendarId, CalendarSync._toDate(dateStr), slot)
         .filter(function(ev) {
           return ev.extendedProperties &&
             ev.extendedProperties.private &&
             ev.extendedProperties.private.dochazka_user === subordinateId;
         })
         .forEach(function(ev) {
-          try { Calendar.Events.remove(calendarId, ev.id); } catch (e) {}
+          try { Calendar.Events.remove(calendarId, ev.id); } catch (e) { console.warn('CalendarSync: smazání události selhalo: ' + e); }
         });
     } catch (e) {
       console.warn('CalendarSync._deleteTeamSlotEvents: ' + e);
@@ -665,29 +708,55 @@ var CalendarSync = {
    * Naplní osobní kalendář záznamy docházky z aktuálního roku.
    */
   _fillPersonalCalendar: function(userId, calId) {
-    var yearStart = new Date().getFullYear() + '-01-01';
-    var records = DB.getTable(DB.getTransaction(), DB_SHEETS.TRANSACTION.ATTENDANCE)
-      .filter(function(a) { return a.user_id === userId && a.date >= yearStart; });
-
-    var statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    var fill = { total: 0, failed: 0 };
+    var records, statuses;
+    try {
+      var yearStart = new Date().getFullYear() + '-01-01';
+      records = CalendarSync._dedupeByDaySlot_(DB.getTable(DB.getTransaction(), DB_SHEETS.TRANSACTION.ATTENDANCE)
+        .filter(function(a) { return a.user_id === userId && a.date >= yearStart; }));
+      statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    } catch (e) {
+      // Kalendář už je uložený – chyba načtení skončí upozorněním, ne nekonzistentním neúspěchem
+      console.error('CalendarSync._fillPersonalCalendar: ' + e);
+      return { total: 1, failed: 1 };
+    }
 
     records.forEach(function(rec) {
       var st = statuses.find(function(s) { return s.status_id === rec.status_id; });
       if (!st) return;
+      fill.total++;
       try {
         var title = CalendarSync._buildTitle(st.name, rec.slot);
-        CalendarSync._upsertEvent(calId, rec.date, rec.slot, title);
+        // Kalendář je právě vytvořený a prázdný – stačí vložit (polovina volání API)
+        CalendarSync._upsertEvent(calId, rec.date, rec.slot, title, true);
       } catch (e) {
         // Chyba jednoho eventu nezastaví zpracování ostatních
-        console.warn('_fillPersonalCalendar – event ' + rec.date + '/' + rec.slot + ': ' + e);
+        fill.failed++;
+        console.error('_fillPersonalCalendar – event ' + rec.date + '/' + rec.slot + ': ' + e);
       }
     });
+    return fill;
+  },
+
+  /**
+   * Ponechá pro každý den a slot jen poslední záznam (duplicitní řádky v ATTENDANCE
+   * by při plnění bez předchozího mazání vytvořily duplicitní události).
+   * @param {Object[]} records - Záznamy jednoho uživatele.
+   * @returns {Object[]}
+   */
+  _dedupeByDaySlot_: function(records) {
+    var byKey = {};
+    records.forEach(function(rec) {
+      byKey[CalendarSync._toDate(rec.date) + '|' + (rec.slot || 'ALL_DAY')] = rec;
+    });
+    return Object.keys(byKey).map(function(k) { return byKey[k]; });
   },
 
   /**
    * Naplní týmový kalendář dovolenými a HO podřízených z aktuálního roku.
    */
   _fillTeamCalendar: function(managerId, calId) {
+    var fill = { total: 0, failed: 0 };
     try {
       var yearStart = new Date().getFullYear() + '-01-01';
       var coreSS = DB.getCore();
@@ -695,7 +764,7 @@ var CalendarSync = {
       var statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
       var allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
       var manager = allUsers.find(function(u) { return u.user_id === managerId; });
-      if (!manager) return;
+      if (!manager) return fill;
       var positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
       var privacyCtx = Privacy.createContext({ viewer: manager, positions: positions, statuses: statuses });
       var statusById = {};
@@ -708,7 +777,7 @@ var CalendarSync = {
         .filter(function(a) { return a.date >= yearStart; });
 
       subordinates.forEach(function(sub) {
-        var subRecords = allAttendance.filter(function(a) { return a.user_id === sub.user_id; });
+        var subRecords = CalendarSync._dedupeByDaySlot_(allAttendance.filter(function(a) { return a.user_id === sub.user_id; }));
         subRecords.forEach(function(rec) {
           var st = statuses.find(function(s) { return s.status_id === rec.status_id; });
           if (!st || !CalendarSync._isTeamSyncStatus(st)) return;
@@ -718,12 +787,23 @@ var CalendarSync = {
             : (statusById[Privacy.getMaskedStatusId(st.status_id, privacyCtx)] || st);
           var displayName = (displayStatus.abbreviation && displayStatus.abbreviation.toUpperCase() === 'HO') ? displayStatus.abbreviation : displayStatus.name;
           var title = name.trim() + ' – ' + CalendarSync._buildTitle(displayName, rec.slot);
-          CalendarSync._upsertTeamEvent(calId, rec.date, rec.slot, sub.user_id, title);
+          fill.total++;
+          try {
+            // Kalendář je právě vytvořený a prázdný – stačí vložit
+            CalendarSync._upsertTeamEvent(calId, rec.date, rec.slot, sub.user_id, title, true);
+          } catch (evErr) {
+            fill.failed++;
+            console.error('_fillTeamCalendar – event ' + rec.date + '/' + rec.slot + ': ' + evErr);
+          }
         });
       });
     } catch (e) {
-      console.warn('CalendarSync._fillTeamCalendar: ' + e);
+      // Chyba před plněním (načtení dat) – nic se nepřeneslo
+      console.error('CalendarSync._fillTeamCalendar: ' + e);
+      fill.failed = Math.max(fill.failed, 1);
+      fill.total = Math.max(fill.total, fill.failed);
     }
+    return fill;
   },
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.22.0";
+const APP_VERSION = "2.22.1";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.22.1",
+    "date": "2026-10-16",
+    "changes": [
+      "Opraveno: synchronizace s Google Kalendářem mohla při úpravě dne smazat událost následujícího dne",
+      "Při zapnutí synchronizace kalendáře se chyby přenosu už nehlásí jako úspěch – profil ukáže upozornění s počtem nepřenesených záznamů",
+      "Nový kalendář se naplní rychleji a bez duplicit; pokud se nepodaří uložit stav synchronizace, kalendář se nevytvoří napůl"
+    ]
+  },
   {
     "version": "2.22.0",
     "date": "2026-10-16",
