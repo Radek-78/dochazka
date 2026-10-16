@@ -3,9 +3,20 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.21.1";
+const APP_VERSION = "2.22.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.22.0",
+    "date": "2026-10-16",
+    "changes": [
+      "Opraveno GDPR mazání: analýza už nepadá při větším počtu záznamů (seznam se neukládá, vždy se přepočítá), mazání běží po zálohování pod zámkem a po blocích",
+      "GDPR mazání už neposílá upozornění; čekající analýzu najde administrátor v sekci GDPR / Archivace, selhání plánovaného běhu je vidět v přehledu spuštění",
+      "Zálohy ve dvou složkách (jedna s chybně zobrazeným názvem) se sloučí do jedné složky „Zálohy Docházky“",
+      "Retence: denní zálohy 7 dní, zálohy před GDPR mazáním 30 dní, exporty logu docházky 30 dní",
+      "Bezpečnostní snapshot docházky se už během zápisu nevyprázdní; chyby zálohy se zapisují do auditu"
+    ]
+  },
   {
     "version": "2.21.1",
     "date": "2026-10-15",

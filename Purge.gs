@@ -43,21 +43,16 @@ Purge._getCutoffDate = function(now) {
 };
 
 /**
- * Provede analýzu co by se smazalo — bez jakéhokoliv zásahu do dat.
- * Výsledek uloží do Script Properties jako pending purge.
- * Vrátí summary objekt.
+ * Vybere záznamy docházky ke smazání podle retenční politiky.
+ * Používá ji analýza, náhled čekající analýzy i samotné mazání – seznam se
+ * neukládá (Script Properties mají limit 9 kB na hodnotu), vždy se přepočítá.
+ * @param {Date} cutoffDate - Záznamy starší než toto datum jsou kandidáti ke smazání.
+ * @param {boolean} isNewYear - Novoroční běh: mažou se i dovolené z předchozího roku.
+ * @param {number} currentYear - Rok, ke kterému se novoroční běh vztahuje.
+ * @returns {Object} toDelete, toDeleteVacation a měsíční přehledy
  */
-Purge.analyze = function() {
-  if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
-
-  const now = new Date();
-  const cutoffDate = Purge._getCutoffDate(now);
-  const currentYear = now.getFullYear();
-  const isNewYear = (now.getMonth() === 0 && now.getDate() === 1);
-
-  const cutoffDateStr = Utilities.formatDate(cutoffDate, "GMT+1", "yyyy-MM-dd");
+Purge._selectRecords_ = function(cutoffDate, isNewYear, currentYear) {
   const vacationIds = Purge._getVacationStatusIds();
-
   const transSS = DB.getTransaction();
   const attendance = DB.getTable(transSS, DB_SHEETS.TRANSACTION.ATTENDANCE);
 
@@ -94,101 +89,111 @@ Purge.analyze = function() {
       return;
     }
 
+    const record = {
+      attendance_id: entry.attendance_id,
+      user_name: userMap[entry.user_id] || entry.user_id,
+      date: dateStr,
+      status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
+      slot: entry.slot || ''
+    };
+
     // Starší než cutoff
     if (isVacation) {
       if (isNewYear && entryYear < currentYear) {
         // 1. ledna: dovolené z minulého roku se také mažou
-        toDeleteVacation.push({
-          attendance_id: entry.attendance_id,
-          user_name: userMap[entry.user_id] || entry.user_id,
-          date: dateStr,
-          status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
-          slot: entry.slot || ''
-        });
+        toDeleteVacation.push(record);
         deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
       } else {
         // Dovolená v nenovoročním běhu — ponechat
         keptVacationMonths[mk] = (keptVacationMonths[mk] || 0) + 1;
       }
     } else {
-      toDelete.push({
-        attendance_id: entry.attendance_id,
-        user_name: userMap[entry.user_id] || entry.user_id,
-        date: dateStr,
-        status_name: statusMap[String(entry.status_id || '').trim()] || entry.status_id,
-        slot: entry.slot || ''
-      });
+      toDelete.push(record);
       deleteMonths[mk] = (deleteMonths[mk] || 0) + 1;
     }
   });
 
-  // Sestavit přehledy měsíců (seřazeno)
-  const months = Object.keys(deleteMonths).sort().map(function(m) {
-    return { month: m, count: deleteMonths[m] };
-  });
-  const keptRecentMonthsList = Object.keys(keptRecentMonths).sort().map(function(m) {
-    return { month: m, count: keptRecentMonths[m] };
-  });
-  const keptVacationMonthsList = Object.keys(keptVacationMonths).sort().map(function(m) {
-    return { month: m, count: keptVacationMonths[m] };
-  });
-
-  const purgeId = 'PURGE_' + Utilities.formatDate(now, "GMT+1", "yyyyMMdd_HHmmss");
-
-  const pending = {
-    purgeId: purgeId,
-    analyzedAt: now.toISOString(),
-    cutoffDate: cutoffDateStr,
-    isNewYear: isNewYear,
-    totalToDelete: toDelete.length + toDeleteVacation.length,
-    regularCount: toDelete.length,
-    vacationCount: toDeleteVacation.length,
-    keptVacation: Object.values(keptVacationMonths).reduce(function(a,b){return a+b;}, 0),
-    keptRecent: Object.values(keptRecentMonths).reduce(function(a,b){return a+b;}, 0),
-    months: months,
-    keptRecentMonths: keptRecentMonthsList,
-    keptVacationMonths: keptVacationMonthsList,
-    records: toDelete,
-    vacationRecords: toDeleteVacation,
-    status: PURGE_STATUS.PENDING
+  const toList = function(obj) {
+    return Object.keys(obj).sort().map(function(m) { return { month: m, count: obj[m] }; });
   };
-
-  PropertiesService.getScriptProperties().setProperty(
-    PROP_PENDING_PURGE,
-    JSON.stringify(pending)
-  );
-
+  const sum = function(obj) {
+    return Object.keys(obj).reduce(function(a, k) { return a + obj[k]; }, 0);
+  };
   return {
-    purgeId: purgeId,
-    analyzedAt: pending.analyzedAt,
-    cutoffDate: cutoffDateStr,
-    isNewYear: isNewYear,
-    totalToDelete: pending.totalToDelete,
-    regularCount: pending.regularCount,
-    vacationCount: pending.vacationCount,
-    keptVacation: pending.keptVacation,
-    keptRecent: pending.keptRecent,
-    months: months,
-    keptRecentMonths: keptRecentMonthsList,
-    keptVacationMonths: keptVacationMonthsList,
-    records: toDelete,
-    vacationRecords: toDeleteVacation
+    toDelete: toDelete,
+    toDeleteVacation: toDeleteVacation,
+    months: toList(deleteMonths),
+    keptRecentMonths: toList(keptRecentMonths),
+    keptVacationMonths: toList(keptVacationMonths),
+    keptRecent: sum(keptRecentMonths),
+    keptVacation: sum(keptVacationMonths)
   };
 };
 
 /**
- * Vrátí aktuálně čekající analýzu (nebo null).
+ * Doplní k uloženým metadatům analýzy aktuální výběr záznamů (tvar pro UI).
+ * @param {Object} meta - Metadata uložená v Script Properties.
+ * @returns {Object}
+ */
+Purge._withRecords_ = function(meta) {
+  const sel = Purge._selectRecords_(new Date(meta.cutoffDate + 'T00:00:00'), meta.isNewYear, meta.currentYear);
+  const result = {};
+  Object.keys(meta).forEach(function(k) { result[k] = meta[k]; });
+  result.totalToDelete = sel.toDelete.length + sel.toDeleteVacation.length;
+  result.regularCount = sel.toDelete.length;
+  result.vacationCount = sel.toDeleteVacation.length;
+  result.keptVacation = sel.keptVacation;
+  result.keptRecent = sel.keptRecent;
+  result.months = sel.months;
+  result.keptRecentMonths = sel.keptRecentMonths;
+  result.keptVacationMonths = sel.keptVacationMonths;
+  result.records = sel.toDelete;
+  result.vacationRecords = sel.toDeleteVacation;
+  return result;
+};
+
+/**
+ * Provede analýzu co by se smazalo — bez jakéhokoliv zásahu do dat.
+ * Do Script Properties uloží jen metadata (bez seznamu záznamů).
+ * Vrátí summary objekt včetně seznamu záznamů.
+ */
+Purge.analyze = function() {
+  if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
+
+  const now = new Date();
+  const cutoffDate = Purge._getCutoffDate(now);
+  const tz = Session.getScriptTimeZone();
+  const meta = {
+    purgeId: 'PURGE_' + Utilities.formatDate(now, tz, "yyyyMMdd_HHmmss"),
+    analyzedAt: now.toISOString(),
+    cutoffDate: Utilities.formatDate(cutoffDate, tz, "yyyy-MM-dd"),
+    isNewYear: (now.getMonth() === 0 && now.getDate() === 1),
+    currentYear: now.getFullYear(),
+    status: PURGE_STATUS.PENDING
+  };
+  const summary = Purge._withRecords_(meta);
+  meta.totalToDelete = summary.totalToDelete; // jen pro přehled, provedení vždy přepočítá
+
+  PropertiesService.getScriptProperties().setProperty(PROP_PENDING_PURGE, JSON.stringify(meta));
+  return summary;
+};
+
+/**
+ * Vrátí aktuálně čekající analýzu (nebo null) se seznamem záznamů přepočteným k teď.
  */
 Purge.getPending = function() {
   if (!Auth.hasAdminAccess()) throw new Error("Nedostatečná oprávnění.");
   const raw = PropertiesService.getScriptProperties().getProperty(PROP_PENDING_PURGE);
   if (!raw) return null;
+  let p;
   try {
-    const p = JSON.parse(raw);
-    return p.status === PURGE_STATUS.PENDING ? p : null;
+    p = JSON.parse(raw);
   } catch (e) {
     return null;
   }
+  if (p.status !== PURGE_STATUS.PENDING) return null;
+  if (!p.currentYear) p.currentYear = new Date(p.analyzedAt).getFullYear(); // analýza z dřívější verze
+  return Purge._withRecords_(p);
 };
 
 /**
@@ -213,34 +218,52 @@ Purge.execute = function(purgeId) {
   const pending = JSON.parse(raw);
   if (pending.purgeId !== purgeId) throw new Error("Neplatné purgeId — spusťte analýzu znovu.");
   if (pending.status !== PURGE_STATUS.PENDING) throw new Error("Analýza již byla provedena nebo zrušena.");
+  if (!pending.currentYear) pending.currentYear = new Date(pending.analyzedAt).getFullYear();
 
   const actor = Auth.getCurrentUser();
 
-  // 1. Záloha TRANSACTION spreadsheetu před mazáním
+  // 1. Záloha TRANSACTION spreadsheetu před mazáním (bez zálohy se nemaže).
+  // Běží ještě mimo zámek – kopie trvá i desítky sekund a uživatelé by mezitím nemohli ukládat.
+  // Mažou se jen staré záznamy, které se mezi zálohou a mazáním nemění.
   const backupFileId = Backup.createPurgeBackup();
 
-  // 2. Fyzické smazání z ATTENDANCE sheetu
-  const transSS = DB.getTransaction();
-  const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
-  const allRows = sheet.getDataRange().getValues();
-  const headers = allRows[0];
-  const idIdx = headers.indexOf('attendance_id');
-
-  // Sestavit Set ID k smazání
-  const allToDelete = (pending.records || []).concat(pending.vacationRecords || []);
-  const deleteIds = new Set(allToDelete.map(function(r) { return String(r.attendance_id); }));
-
-  // Smazat od posledního řádku (aby indexy nespadly)
+  // Mazání řádků nesmí běžet souběžně s ukládáním docházky (to pracuje s čísly řádků)
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error("Probíhá zápis docházky, zkuste mazání za chvíli znovu.");
   let deletedCount = 0;
-  for (let i = allRows.length - 1; i >= 1; i--) {
-    const rowId = String(allRows[i][idIdx] || '');
-    if (deleteIds.has(rowId)) {
-      sheet.deleteRow(i + 1); // +1 protože GAS je 1-based
-      deletedCount++;
+  try {
+    // Souběžné provedení stejné analýzy (dvojklik, dva admini) – druhé už nemá co dělat
+    const current = PropertiesService.getScriptProperties().getProperty(PROP_PENDING_PURGE);
+    if (!current || JSON.parse(current).purgeId !== purgeId) {
+      throw new Error("Analýza již byla provedena nebo zrušena.");
     }
-  }
+    // Čerstvá data – v plánovaném běhu má ATTENDANCE v mezipaměti už analýza
+    DB.clearCache(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    // Výběr se přepočítá podle uložených parametrů (seznam se kvůli limitu Properties neukládá)
+    const sel = Purge._selectRecords_(new Date(pending.cutoffDate + 'T00:00:00'), pending.isNewYear, pending.currentYear);
+    const deleteIds = new Set(sel.toDelete.concat(sel.toDeleteVacation)
+      .map(function(r) { return String(r.attendance_id || ''); })
+      .filter(function(id) { return id !== ''; })); // prázdné ID by smazalo všechny řádky bez ID
 
-  DB.clearCache(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    // 2. Fyzické smazání z ATTENDANCE – souvislé bloky odspodu, aby se indexy neposunuly
+    const transSS = DB.getTransaction();
+    const sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.ATTENDANCE);
+    const allRows = sheet.getDataRange().getValues();
+    const idIdx = allRows[0].indexOf('attendance_id');
+    let i = allRows.length - 1;
+    while (i >= 1) {
+      if (!deleteIds.has(String(allRows[i][idIdx] || ''))) { i--; continue; }
+      const end = i;
+      while (i >= 1 && deleteIds.has(String(allRows[i][idIdx] || ''))) i--;
+      // řádky i+1..end (index v poli) = listové řádky i+2..end+1
+      sheet.deleteRows(i + 2, end - i);
+      deletedCount += end - i;
+    }
+    SpreadsheetApp.flush();
+    DB.clearCache(DB_SHEETS.TRANSACTION.ATTENDANCE);
+  } finally {
+    lock.releaseLock();
+  }
 
   // 3. Zápis do PURGE_LOG
   const systemSS = DB.getSystem();
@@ -264,17 +287,7 @@ Purge.execute = function(purgeId) {
     is_new_year: pending.isNewYear
   }, actor);
 
-  // 5. Email notifikace adminům
-  Purge._notifyAdmins_(
-    'GDPR mazání provedeno — ' + deletedCount + ' záznamů smazáno',
-    'Uživatel ' + (actor ? actor.email : 'SYSTEM') + ' provedl GDPR mazání docházky.\n\n' +
-    'Smazáno záznamů: ' + deletedCount + '\n' +
-    'Cutoff datum: ' + pending.cutoffDate + '\n' +
-    'Záloha: ' + backupFileId + '\n' +
-    (pending.isNewYear ? 'Novoroční běh — smazány i dovolené z předchozího roku.\n' : '')
-  );
-
-  // 6. Vymazat pending
+  // 5. Vymazat pending
   PropertiesService.getScriptProperties().deleteProperty(PROP_PENDING_PURGE);
 
   return { success: true, deletedCount: deletedCount, backupFileId: backupFileId };
@@ -305,8 +318,8 @@ Purge.setAutoPurgeSetting = function(enabled) {
 /**
  * Time trigger — 1. dne každého měsíce v 01:00.
  * Spustí analýzu. Pokud je zapnuté automatické mazání, rovnou ho provede
- * (se zálohou, jako při ručním schválení). Jinak jen notifikuje adminy
- * a čeká na ruční schválení v administraci.
+ * (se zálohou, jako při ručním schválení). Jinak analýza čeká na ruční
+ * schválení v administraci (sekce GDPR / Archivace) – bez upozornění.
  */
 Purge.scheduledRun = function() {
   try {
@@ -317,30 +330,18 @@ Purge.scheduledRun = function() {
       return;
     }
 
-    const autoEnabled = Purge.getAutoPurgeSetting().enabled;
-
-    if (autoEnabled) {
-      // Purge.execute již sama zajišťuje zálohu, smazání, log i notifikaci adminů.
+    if (Purge.getAutoPurgeSetting().enabled) {
+      // Purge.execute sama zajišťuje zálohu, smazání i log
       const result = Purge.execute(summary.purgeId);
       console.log("Purge: Automatické mazání provedeno. Smazáno: " + result.deletedCount);
       return;
     }
 
-    const subject = 'GDPR docházka — čeká schválení mazání (' + summary.totalToDelete + ' záznamů)';
-    const body =
-      'Automatická GDPR analýza docházky proběhla ' + new Date().toLocaleDateString('cs-CZ') + '.\n\n' +
-      'Ke smazání: ' + summary.totalToDelete + ' záznamů\n' +
-      'Cutoff datum: ' + summary.cutoffDate + '\n' +
-      (summary.isNewYear ? 'Novoroční běh — budou smazány i dovolené z předchozího roku.\n' : '') +
-      '\nPřihlaste se do administrace a schvalte nebo zamítněte promazání v sekci GDPR / Archivace.';
-
-    Purge._notifyAdmins_(subject, body);
-    Purge._insertInAppNotification_(subject);
-
-    console.log("Purge: Analýza uložena, admini notifikováni. Ke smazání: " + summary.totalToDelete);
+    console.log("Purge: Analýza uložena, čeká na schválení v administraci. Ke smazání: " + summary.totalToDelete);
   } catch (e) {
     console.error("Purge.scheduledRun error: " + e.toString());
     _auditLog_("GDPR_PURGE_SCHEDULED_ERROR", { error: e.toString() }, { email: "SYSTEM_PURGE" });
+    throw e; // bez upozornění musí být selhání vidět aspoň v Executions (a e-mailem od Googlu)
   }
 };
 
@@ -352,60 +353,6 @@ Purge.getLog = function() {
   const systemSS = DB.getSystem();
   const log = DB.getTable(systemSS, DB_SHEETS.SYSTEM.PURGE_LOG);
   return log.slice().reverse(); // nejnovější první
-};
-
-/**
- * Pošle email všem adminům a superadminům.
- */
-Purge._notifyAdmins_ = function(subject, body) {
-  try {
-    const coreSS = DB.getCore();
-    const users = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
-    const adminEmails = users
-      .filter(function(u) {
-        return (u.system_role === ROLES.SYSTEM.SUPERADMIN || u.system_role === ROLES.SYSTEM.ADMIN) &&
-               String(u.active) === 'true' && u.email;
-      })
-      .map(function(u) { return u.email; });
-
-    if (adminEmails.length === 0) return;
-
-    GmailApp.sendEmail(
-      adminEmails.join(','),
-      '[Docházkový systém] ' + subject,
-      body
-    );
-  } catch (e) {
-    console.warn("Purge._notifyAdmins_ failed: " + e.toString());
-  }
-};
-
-/**
- * Vloží in-app notifikaci do NOTIFICATIONS pro všechny adminy.
- */
-Purge._insertInAppNotification_ = function(message) {
-  try {
-    const coreSS = DB.getCore();
-    const systemSS = DB.getSystem();
-    const users = DB.getTable(coreSS, DB_SHEETS.CORE.USERS);
-    const admins = users.filter(function(u) {
-      return (u.system_role === ROLES.SYSTEM.SUPERADMIN || u.system_role === ROLES.SYSTEM.ADMIN) &&
-             String(u.active) === 'true';
-    });
-    admins.forEach(function(u) {
-      DB.insertRow(systemSS, DB_SHEETS.SYSTEM.NOTIFICATIONS, {
-        notif_id: Utilities.getUuid(),
-        user_id: u.user_id,
-        title: 'GDPR — čeká schválení mazání',
-        message: message,
-        type: 'GDPR_PURGE_PENDING',
-        read: 'false',
-        timestamp: new Date().toISOString()
-      });
-    });
-  } catch (e) {
-    console.warn("Purge._insertInAppNotification_ failed: " + e.toString());
-  }
 };
 
 /**

@@ -10,50 +10,115 @@ var Backup = {
    * Udržuje historii po dobu 7 dní.
    */
   runDailyFullBackup: function() {
-    console.log("Backup: SpouĹˇtĂ­m dennĂ­ plnou zĂˇlohu...");
-    
-    const prop = PropertiesService.getScriptProperties();
-    const ssIds = [
-      prop.getProperty(CONFIG.PROP_SS_CORE_ID),
-      prop.getProperty(CONFIG.PROP_SS_TRANSACTION_ID),
-      prop.getProperty(CONFIG.PROP_SS_SYSTEM_ID)
-    ];
+    console.log("Backup: Spouštím denní plnou zálohu...");
+    try {
+      const prop = PropertiesService.getScriptProperties();
+      const ssIds = [
+        prop.getProperty(CONFIG.PROP_SS_CORE_ID),
+        prop.getProperty(CONFIG.PROP_SS_TRANSACTION_ID),
+        prop.getProperty(CONFIG.PROP_SS_SYSTEM_ID)
+      ];
 
-    // NajĂ­t nebo vytvoĹ™it sloĹľku "ZĂˇlohy DochĂˇzky"
-    const parentFolder = DriveApp.getFileById(ssIds[0]).getParents().next();
-    let backupFolder;
-    const folders = parentFolder.getFoldersByName("ZĂˇlohy DochĂˇzky");
-    if (folders.hasNext()) {
-      backupFolder = folders.next();
-    } else {
-      backupFolder = parentFolder.createFolder("ZĂˇlohy DochĂˇzky");
+      const backupFolder = this._getBackupFolder_(ssIds[0]);
+      const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+
+      // 1. Provést kopie
+      ssIds.forEach(id => {
+        if (!id) return;
+        const file = DriveApp.getFileById(id);
+        file.makeCopy(`[BACKUP ${dateStr}] ${file.getName()}`, backupFolder);
+      });
+
+      // 2. Promazat staré zálohy a exporty podle retence – chyba retence nesmí shodit hotovou zálohu
+      try {
+        this._applyRetention_(backupFolder, ssIds[0]);
+      } catch (retErr) {
+        console.error("Backup: Retence selhala: " + retErr.toString());
+        if (typeof _auditLog_ === 'function') {
+          _auditLog_("BACKUP_RETENTION_ERROR", { error: retErr.toString() }, { email: "SYSTEM_BACKUP" });
+        }
+      }
+    } catch (e) {
+      console.error("Backup: Denní záloha selhala: " + e.toString());
+      if (typeof _auditLog_ === 'function') {
+        _auditLog_("BACKUP_ERROR", { error: e.toString() }, { email: "SYSTEM_BACKUP" });
+      }
+      throw e; // trigger musí skončit chybou (viditelné v Executions)
     }
 
-    const dateStr = Utilities.formatDate(new Date(), "GMT+1", "yyyy-MM-dd");
-    
-    // 1. Provest kopie
-    ssIds.forEach(id => {
-      if (!id) return;
-      const file = DriveApp.getFileById(id);
-      file.makeCopy(`[BACKUP ${dateStr}] ${file.getName()}`, backupFolder);
-    });
+    console.log("Backup: Denní záloha dokončena.");
+    this.runPostBackupMaintenance_();
+    return true;
+  },
 
-    // 2. Promazat starĂ© zĂˇlohy (starĹˇĂ­ neĹľ 7 dnĂ­)
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - 7);
-    
+  /** Název složky se zálohami (vedle databázových souborů). */
+  FOLDER_NAME_: "Zálohy Docházky",
+  /** Dřívější název s chybným kódováním – obsah se jednorázově přesune do FOLDER_NAME_. */
+  LEGACY_FOLDER_NAME_: "ZĂˇlohy DochĂˇzky",
+  /** Složka s exporty logu docházky (Code.gs exportAttendanceLogToSheet). */
+  EXPORT_FOLDER_NAME_: "Exporty Docházky",
+  /** Retence ve dnech podle typu souboru. */
+  RETENTION_DAYS_: { BACKUP: 7, PURGE_BACKUP: 30, EXPORT: 30 },
+
+  /**
+   * Najde (nebo založí) složku záloh vedle souboru fileId. Pokud ještě existuje
+   * stará složka s chybně zakódovaným názvem, přesune její soubory sem a vyhodí ji do koše.
+   * @param {string} fileId - ID databázového souboru, vedle kterého složka leží.
+   * @returns {Folder}
+   */
+  _getBackupFolder_: function(fileId) {
+    const parentFolder = DriveApp.getFileById(fileId).getParents().next();
+    const folders = parentFolder.getFoldersByName(this.FOLDER_NAME_);
+    const backupFolder = folders.hasNext() ? folders.next() : parentFolder.createFolder(this.FOLDER_NAME_);
+
+    const legacy = parentFolder.getFoldersByName(this.LEGACY_FOLDER_NAME_);
+    while (legacy.hasNext()) {
+      const oldFolder = legacy.next();
+      const files = oldFolder.getFiles();
+      while (files.hasNext()) files.next().moveTo(backupFolder);
+      if (!oldFolder.getFiles().hasNext() && !oldFolder.getFolders().hasNext()) {
+        oldFolder.setTrashed(true);
+        console.log("Backup: Stará složka záloh sloučena do '" + this.FOLDER_NAME_ + "'.");
+      }
+    }
+    return backupFolder;
+  },
+
+  /**
+   * Vyhodí do koše soubory starší než retence: denní zálohy [BACKUP ...] 7 dní,
+   * zálohy před GDPR mazáním [PURGE_BACKUP ...] 30 dní, exporty logu 30 dní.
+   * Ostatní soubory ve složce zálohy nechá být.
+   * @param {Folder} backupFolder
+   * @param {string} coreId - ID CORE sešitu (vedle něj leží složka exportů).
+   */
+  _applyRetention_: function(backupFolder, coreId) {
+    const now = Date.now();
+    const olderThan = (file, days) => file.getDateCreated().getTime() < now - days * 24 * 60 * 60 * 1000;
+
     const backupFiles = backupFolder.getFiles();
     while (backupFiles.hasNext()) {
       const bFile = backupFiles.next();
-      if (bFile.getDateCreated() < cutoffDate) {
-        console.log(`Backup: MaĹľu starou zĂˇlohu: ${bFile.getName()}`);
+      const name = bFile.getName();
+      const days = name.indexOf('[PURGE_BACKUP ') === 0 ? this.RETENTION_DAYS_.PURGE_BACKUP
+        : (name.indexOf('[BACKUP ') === 0 ? this.RETENTION_DAYS_.BACKUP : null);
+      if (days !== null && olderThan(bFile, days)) {
+        console.log(`Backup: Mažu starou zálohu: ${name}`);
         bFile.setTrashed(true);
       }
     }
-    
-    console.log("Backup: DennĂ­ zĂˇloha dokonÄŤena.");
-    this.runPostBackupMaintenance_();
-    return true;
+
+    const parentFolder = DriveApp.getFileById(coreId).getParents().next();
+    const exportFolders = parentFolder.getFoldersByName(this.EXPORT_FOLDER_NAME_);
+    while (exportFolders.hasNext()) {
+      const exportFiles = exportFolders.next().getFiles();
+      while (exportFiles.hasNext()) {
+        const eFile = exportFiles.next();
+        if (olderThan(eFile, this.RETENTION_DAYS_.EXPORT)) {
+          console.log(`Backup: Mažu starý export: ${eFile.getName()}`);
+          eFile.setTrashed(true);
+        }
+      }
+    }
   },
 
   /**
@@ -138,8 +203,18 @@ var Backup = {
       snapshotSheet.hideSheet(); // Schovat pĹ™ed bÄ›ĹľnĂ˝m uĹľivatelem
     }
 
-    snapshotSheet.clearContents();
+    // Nejdřív zapsat, až pak uklidit přebývající řádky – při chybě zápisu nezůstane snapshot prázdný
+    if (snapshotSheet.getMaxRows() < data.length) {
+      snapshotSheet.insertRowsAfter(snapshotSheet.getMaxRows(), data.length - snapshotSheet.getMaxRows());
+    }
+    if (snapshotSheet.getMaxColumns() < data[0].length) {
+      snapshotSheet.insertColumnsAfter(snapshotSheet.getMaxColumns(), data[0].length - snapshotSheet.getMaxColumns());
+    }
     snapshotSheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+    const extraRows = snapshotSheet.getLastRow() - data.length;
+    if (extraRows > 0) {
+      snapshotSheet.getRange(data.length + 1, 1, extraRows, snapshotSheet.getMaxColumns()).clearContent();
+    }
     console.log(`Backup: Snapshot dochĂˇzky uloĹľen (${rowCount} Ĺ™ĂˇdkĹŻ).`);
   },
 
@@ -201,16 +276,8 @@ var Backup = {
     const transId = prop.getProperty(CONFIG.PROP_SS_TRANSACTION_ID);
     if (!transId) throw new Error("TRANSACTION spreadsheet není nakonfigurován.");
 
-    const parentFolder = DriveApp.getFileById(transId).getParents().next();
-    let backupFolder;
-    const folders = parentFolder.getFoldersByName("Zálohy Docházky");
-    if (folders.hasNext()) {
-      backupFolder = folders.next();
-    } else {
-      backupFolder = parentFolder.createFolder("Zálohy Docházky");
-    }
-
-    const dateStr = Utilities.formatDate(new Date(), "GMT+1", "yyyy-MM-dd_HH-mm");
+    const backupFolder = this._getBackupFolder_(transId);
+    const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd_HH-mm");
     const file = DriveApp.getFileById(transId);
     const copy = file.makeCopy(`[PURGE_BACKUP ${dateStr}] ${file.getName()}`, backupFolder);
     console.log("Backup: Purge záloha vytvořena: " + copy.getId());
