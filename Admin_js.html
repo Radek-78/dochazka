@@ -52,7 +52,10 @@
             showAdminStatus("Načítám konfiguraci systému...");
 
             try {
-                await this.refreshAllData();
+                // Data načtená před méně než 5 minutami se při znovuotevření administrace nestahují
+                if (!this.data || !this._loadedAt || Date.now() - this._loadedAt > this.CACHE_MS) {
+                    await this.refreshAllData();
+                }
 
                 if (statusEl) statusEl.textContent = "Aplikuji pravidla přístupu podle rolí...";
 
@@ -105,14 +108,30 @@
             }
         },
 
+        /** Jak dlouho se drží načtená data administrace (D-4). */
+        CACHE_MS: 5 * 60 * 1000,
+        _loadedAt: 0,
+        _mapsCache: {},
+
+        /** Změny v administraci se do kalendáře propíšou až při odchodu z administrace (switchView). */
+        queueAppRefresh: function () {
+            // Optimistické uložení může doběhnout až po odchodu z administrace – pak obnovit hned
+            if (typeof currentView !== 'undefined' && currentView !== 'admin') {
+                if (typeof refreshApp === 'function') refreshApp({ full: true });
+                return;
+            }
+            window._adminNeedsAppRefresh = true;
+        },
+
         refreshAllData: async function () {
             try {
-                const [orgResult, usersResult, statusesResult, namedDaysResult] = await Promise.all([
-                    callServer('getAdminOrgData'),
-                    callServer('getAllUsers'),
-                    callServer('getAttendanceStatuses'),
-                    callServer('getNamedDays')
-                ]);
+                // Jedno volání místo čtyř
+                const bundle = await callServer('getAdminBundle');
+                if (!bundle || !bundle.success) throw new Error(bundle ? bundle.error : 'getAdminBundle failed');
+                const orgResult = bundle.org || {};
+                const usersResult = bundle.users || {};
+                const statusesResult = bundle.statuses || {};
+                const namedDaysResult = bundle.namedDays || {};
                 if (orgResult.success) {
                     this.data = orgResult.data;
                     this.vacationConfig = orgResult.data.vacationConfig;
@@ -121,6 +140,9 @@
                 if (usersResult.success) this.users = usersResult.data;
                 if (statusesResult.success) this.statuses = statusesResult.data || [];
                 if (namedDaysResult.success) this.namedDays = namedDaysResult.data || {};
+                // Cache jen když se načetlo vše – jinak příští otevření stáhne data znovu
+                const allOk = orgResult.success && usersResult.success && statusesResult.success && namedDaysResult.success;
+                this._loadedAt = allOk ? Date.now() : 0;
 
                 console.log("Admin: Data načtena.", { org: this.data, users: this.users, statuses: this.statuses, namedDays: this.namedDays });
             } catch (e) {
@@ -1020,7 +1042,7 @@
                 if (result && result.success) {
                     await this.refreshAllData();
                     this.renderCurrentTab();
-                    if (typeof refreshApp === 'function') refreshApp({ full: true });
+                    this.queueAppRefresh();
                 } else {
                     alert('Chyba při mazání lokace: ' + (result ? result.error : 'Neznámá chyba'));
                     await this.refreshAllData();
@@ -1353,9 +1375,7 @@
 
                     if (typeof showAdminToast === 'function') showAdminToast("Uloženo", "success");
 
-                    if (typeof refreshApp === 'function') {
-                        refreshApp({ full: true });
-                    }
+                    this.queueAppRefresh();
                 } else {
                     // V případě chyby nahlásit a refreshnout (pro "rollback")
                     alert("Chyba při ukládání: " + result.error);
@@ -2226,8 +2246,7 @@
                 const res = await callServer('saveVacationConfig', data);
                 if (res.success) {
                     await this.refreshAllData();
-                    // Sync with main app
-                    if (typeof refreshApp === 'function') refreshApp({ full: true });
+                    this.queueAppRefresh();
                 } else {
                     showAdminToast("Chyba: " + res.error);
                 }
@@ -2263,8 +2282,8 @@
                     if (result && result.success) {
                         this.refreshAllData().then(() => {
                             this.renderCurrentTab();
-                            // Seznam z getAllUsers je omezený rozsahem správy – kalendář načíst znovu ze serveru
-                            if (typeof refreshApp === 'function') refreshApp({ full: true });
+                            // Seznam z getAllUsers je omezený rozsahem správy – kalendář se načte znovu ze serveru
+                            this.queueAppRefresh();
                         });
                     } else {
                         showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
@@ -2650,7 +2669,7 @@
                                     }
                                 }
                                 this.renderCurrentTab();
-                                if (typeof refreshApp === 'function') refreshApp({ full: true });
+                                this.queueAppRefresh();
                             });
                         } else {
                             // Rollback: smaž dočasný záznam a ukaž chybu
@@ -2689,7 +2708,14 @@
                                 if (idx !== -1) delete this.users[idx]._optimistic;
 
                                 this.renderCurrentTab();
-                                if (typeof refreshApp === 'function') refreshApp({ full: true });
+                                // Vlastní profil hned (jméno v hlavičce apod.), ostatní až při odchodu z administrace
+                                if (plannerData && plannerData.user && data.user_id === plannerData.user.user_id) {
+                                    // Změna vlastní role/rozsahu: data administrace načíst při příštím otevření znovu
+                                    this._loadedAt = 0;
+                                    if (typeof refreshApp === 'function') refreshApp({ full: true });
+                                } else {
+                                    this.queueAppRefresh();
+                                }
                                 if (plannerData && plannerData.user && data.user_id === plannerData.user.user_id) {
                                     if (typeof updateUserProfile === 'function') updateUserProfile(plannerData.user);
                                 }
@@ -2781,6 +2807,8 @@
             // 1. Načtení konfigurace
             let config = this.defaultRbac.map(r => ({ ...r }));
             try {
+                // Vždy aktuální stav ze serveru – uložení přepisuje celý list a jiný SUPERADMIN
+                // mohl mezitím oprávnění změnit (jedno volání, jen pro SUPERADMINa)
                 const res = await callServer('getRbacConfig');
                 if (res && res.success && res.data) {
                     config = config.map(row => {
@@ -2985,6 +3013,11 @@
             try {
                 const result = await callServer('saveRbacConfig', config);
                 if (result && result.success) {
+                    // Lokální kopie, ze které čte hasPermission i záložka Oprávnění
+                    if (window.plannerData) {
+                        const rbac = window.plannerData.rbacConfig || (window.plannerData.rbacConfig = {});
+                        Object.keys(config).forEach(k => { rbac[k] = Object.assign({}, rbac[k], config[k]); });
+                    }
                     showAdminToast('Oprávnění byla úspěšně uložena.', 'success');
                 } else {
                     showAdminToast('Chyba: ' + (result ? result.error : 'Neznámá chyba'));
@@ -3086,15 +3119,23 @@
         loadMaps: async function (sectionId) {
             const content = document.getElementById('maps-content');
             if (!content) return;
+            const cached = this._mapsCache[sectionId];
+            if (cached && Date.now() - cached.at < this.CACHE_MS) {
+                this._mapsState.maps = cached.maps;
+                this.renderMapsContent();
+                return;
+            }
             content.innerHTML = `<div style="padding:30px;text-align:center;color:#94a3b8;">Načítám mapy…</div>`;
             try {
                 const result = await callServer('getOfficeMaps', sectionId);
-                if (result && result.success) {
-                    this._mapsState.maps = result.data || [];
-                } else {
-                    this._mapsState.maps = [];
-                }
+                const maps = (result && result.success) ? (result.data || []) : [];
+                // Pole se při uložení/smazání mapy upravuje na místě, cache tak zůstává aktuální
+                if (result && result.success) this._mapsCache[sectionId] = { at: Date.now(), maps: maps };
+                // Mezitím se přepnul úsek – odpověď nevykreslovat
+                if (this._mapsState.sectionId && this._mapsState.sectionId !== sectionId) return;
+                this._mapsState.maps = maps;
             } catch (e) {
+                if (this._mapsState.sectionId && this._mapsState.sectionId !== sectionId) return;
                 this._mapsState.maps = [];
             }
             this.renderMapsContent();
@@ -3610,7 +3651,9 @@
             try {
                 const result = await callServer('deleteOfficeMap', mapId);
                 if (result && result.success) {
-                    this._mapsState.maps = this._mapsState.maps.filter(m => m.map_id !== mapId);
+                    // Smazat na místě (stejné pole drží i cache map)
+                    const delIdx = this._mapsState.maps.findIndex(m => m.map_id === mapId);
+                    if (delIdx !== -1) this._mapsState.maps.splice(delIdx, 1);
                     this.renderMapsContent();
                 } else {
                     showAdminToast('Chyba při mazání: ' + (result ? result.error : 'Neznámá chyba'));

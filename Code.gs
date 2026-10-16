@@ -2030,6 +2030,8 @@ function savePlannerEvent(event) {
        
        // Skupinu, autora ani ID události nelze úpravou změnit
        event.group_id = existing.group_id;
+       event.user_id = existing.user_id;
+       event.event_id = existing.event_id;
        const fixed = { event_id: existing.event_id, user_id: existing.user_id, group_id: existing.group_id };
        const sheet = transSS.getSheetByName(sheetName);
        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -2055,7 +2057,8 @@ function savePlannerEvent(event) {
     }
     // -------------------------------------------------
 
-    return { success: true, event_id: event.event_id };
+    // Klient si událost aktualizuje lokálně – nemusí znovu načítat celou aplikaci
+    return { success: true, event_id: event.event_id, event: event };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

@@ -1087,6 +1087,21 @@ function getAdminOrgData() {
   }
 }
 
+/**
+ * Data pro administraci jedním voláním (dřív 4 paralelní requesty).
+ * Každá část má vlastní success – chybějící oprávnění k jedné části neshodí ostatní.
+ * @returns {{success: boolean, org: Object, users: Object, statuses: Object, namedDays: Object}}
+ */
+function getAdminBundle() {
+  return {
+    success: true,
+    org: getAdminOrgData(),
+    users: getAllUsers(),
+    statuses: getAttendanceStatuses(),
+    namedDays: getNamedDays()
+  };
+}
+
 function addLocation(name, type) {
   try {
     if (PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_INITIALIZED) === 'true') {

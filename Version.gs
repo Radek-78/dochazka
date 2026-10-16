@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.22.2";
+const APP_VERSION = "2.22.3";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.22.3",
+    "date": "2026-10-16",
+    "changes": [
+      "Administrace se otevírá rychleji: data se načítají jedním dotazem a při opětovném otevření do 5 minut se nestahují znovu",
+      "Změny provedené v administraci se do kalendáře načtou jednou, při odchodu z administrace (úprava vlastního profilu hned)",
+      "Plánovač: uložení a smazání události se projeví okamžitě bez načítání celé aplikace"
+    ]
+  },
   {
     "version": "2.22.2",
     "date": "2026-10-16",

@@ -3912,6 +3912,11 @@
         } else {
             adminView.classList.remove('active');
             currentView = view;
+            // Změny provedené v administraci se do kalendáře načtou jednou, až při odchodu z ní
+            if (window._adminNeedsAppRefresh) {
+                window._adminNeedsAppRefresh = false;
+                refreshApp({ full: true });
+            }
 
             // Zobrazit statistiku jen v režimech Dashboard a Dovolené
             if (statsModule) {
@@ -5453,10 +5458,15 @@
         showOpSpinner('Ukládám událost...', 'Probíhá zápis do plánovacího kalendáře');
 
         try {
-            const res = await callServer('savePlannerEvent', _currentPlannerEvent);
+            const sent = _currentPlannerEvent;
+            const res = await callServer('savePlannerEvent', sent);
             if (res && res.success) {
-                updateOpSpinner('Aktualizuji kalendář...', 'Načítám aktuální data');
-                await refreshApp({ full: true });
+                // Lokální aktualizace místo načtení celé aplikace
+                const saved = Object.assign({}, sent, res.event || {}, { event_id: res.event_id });
+                const list = plannerData.plannerEvents || (plannerData.plannerEvents = []);
+                const pos = list.findIndex(e => e.event_id === saved.event_id);
+                if (pos !== -1) list[pos] = saved; else list.push(saved);
+                renderPlanner();
                 hideOpSpinner();
             } else {
                 hideOpSpinner();
@@ -5502,8 +5512,9 @@
         try {
             const res = await callServer('deletePlannerEvent', eid);
             if (res && res.success) {
-                updateOpSpinner('Aktualizuji kalendář...', 'Načítám aktuální data');
-                await refreshApp({ full: true });
+                // Lokální aktualizace místo načtení celé aplikace
+                plannerData.plannerEvents = (plannerData.plannerEvents || []).filter(e => e.event_id !== eid);
+                renderPlanner();
                 hideOpSpinner();
             } else {
                 hideOpSpinner();
