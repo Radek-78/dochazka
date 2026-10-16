@@ -3,9 +3,20 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.22.3";
+const APP_VERSION = "2.23.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.23.0",
+    "date": "2026-10-16",
+    "changes": [
+      "Rychlejší ukládání a mazání docházky: rezervace stolů se ruší jedním zápisem a zámek se drží kratší dobu – méně hlášek „Zápis právě probíhá“",
+      "Schvalování dovolených, označování notifikací a úpravy záznamů zapisují dávkově místo po jednotlivých buňkách",
+      "Plánovač: úpravy a mazání událostí, skupin a členů jsou chráněné proti souběhu",
+      "Automatické zrušení rezervace stolu se v auditu zapisuje jedním souhrnným záznamem",
+      "Retence: přečtené notifikace starší 90 dní a auditní záznamy starší 12 měsíců se po noční záloze mažou"
+    ]
+  },
   {
     "version": "2.22.3",
     "date": "2026-10-16",

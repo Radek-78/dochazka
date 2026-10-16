@@ -25,6 +25,79 @@ function _sanitizeWorkTime_(val) {
   return /^\d{1,2}:\d{2}$/.test(s) ? s : '';
 }
 
+/**
+ * Převede číslo sloupce (1 = A) na písmena pro A1 notaci.
+ * @param {number} col
+ * @returns {string}
+ */
+function _colLetter_(col) {
+  let letters = '';
+  while (col > 0) {
+    const m = (col - 1) % 26;
+    letters = String.fromCharCode(65 + m) + letters;
+    col = Math.floor((col - 1) / 26);
+  }
+  return letters;
+}
+
+/**
+ * Zapíše stejnou hodnotu do sloupce col na řádcích rows jedním voláním (RangeList)
+ * místo setValue po jednotlivých buňkách.
+ * @param {Sheet} sheet
+ * @param {number[]} rows - Čísla řádků (1-based).
+ * @param {number} col - Číslo sloupce (1-based).
+ * @param {*} value
+ */
+function _setCellsValue_(sheet, rows, col, value) {
+  if (!rows || rows.length === 0) return;
+  const letter = _colLetter_(col);
+  sheet.getRangeList(rows.map(function(r) { return letter + r; })).setValue(value);
+}
+
+/**
+ * Smaže řádky listu, pro které predicate(řádek) vrátí true – souvislé bloky odspodu,
+ * aby se čísla zbylých řádků během mazání neposouvala. Hlavička se nemaže.
+ * @param {Sheet} sheet
+ * @param {Function} predicate - (rowValues: Array) => boolean
+ * @param {number} [maxBlocks] - Nejvýš tolik bloků za jedno volání (zbytek příště).
+ * @returns {number} počet smazaných řádků
+ */
+function _deleteRowsWhere_(sheet, predicate, maxBlocks) {
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const data = sheet.getDataRange().getValues();
+  // Sheets nedovolí smazat všechny nezmrazené řádky – při mazání až po konec mřížky přidat rezervní řádek
+  if (sheet.getMaxRows() === data.length) sheet.insertRowsAfter(sheet.getMaxRows(), 1);
+  let deleted = 0;
+  let blocks = 0;
+  let i = data.length - 1;
+  while (i >= 1) {
+    if (!predicate(data[i])) { i--; continue; }
+    if (maxBlocks && blocks >= maxBlocks) break;
+    const end = i;
+    while (i >= 1 && predicate(data[i])) i--;
+    sheet.deleteRows(i + 2, end - i);
+    deleted += end - i;
+    blocks++;
+  }
+  return deleted;
+}
+
+/**
+ * Spustí fn pod script lockem (zápisy, které pracují s čísly řádků).
+ * @param {Function} fn
+ * @param {number} [timeoutMs]
+ * @returns {*} výsledek fn
+ */
+function _withScriptLock_(fn, timeoutMs) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(timeoutMs || 15000)) throw new Error("Zápis právě probíhá. Zkuste to prosím znovu za okamžik.");
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // Vrátí true, pokud je uživatel reálně aktivní - tedy má active !== 'false' A zároveň
 // nemá date_end v minulosti (odvozená neaktivita při odchodu, stejná logika jako
 // Admin.getAllUsers is_derived_active).
@@ -671,11 +744,13 @@ function markAllNotificationsRead() {
     if (!currentUser) return { success: false, error: "Neautorizováno." };
     const myId = currentUser.user_id;
 
+    const unreadRows = [];
     for (let i = 1; i < data.length; i++) {
       if (data[i][userIdx] === myId && (data[i][readIdx] === "false" || data[i][readIdx] === false)) {
-        sheet.getRange(i + 1, readIdx + 1).setValue("true");
+        unreadRows.push(i + 1);
       }
     }
+    _setCellsValue_(sheet, unreadRows, readIdx + 1, "true");
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -698,13 +773,15 @@ function _markRegNotifsRead_(pendingUserId) {
     const typeIdx = headers.indexOf('type');
     const rdIdx   = headers.indexOf('read');
     const msgIdx  = headers.indexOf('message');
+    const rows = [];
     for (let i = 1; i < data.length; i++) {
       if (data[i][typeIdx] === NOTIFICATION_TYPES.REGISTRATION_REQUEST &&
           data[i][msgIdx].indexOf(pu.email) !== -1 &&
           data[i][rdIdx] === "false") {
-        sheet.getRange(i + 1, rdIdx + 1).setValue("true");
+        rows.push(i + 1);
       }
     }
+    _setCellsValue_(sheet, rows, rdIdx + 1, "true");
   } catch (e) {
     console.warn("_markRegNotifsRead: " + e.toString());
   }
@@ -1235,24 +1312,12 @@ function saveAttendanceEntries(entries) {
     Array.from(rowsToDelete).sort(function(a, b) { return b - a; }).forEach(function(rowIdx) {
       sheet.deleteRow(rowIdx + 2);
     });
-    _auditLog_("ATTENDANCE_SAVE_BATCH", {
-      input_count: originalInputCount,
-      normalized_input_count: entries.length,
-      updated_count: updatedRows.size,
-      inserted_count: toInsert.length,
-      conflict_deleted_count: rowsToDelete.size
-    }, currentUser);
-
-    // Vytvořit notifikaci pro schvalovatele
-    if (pendingEntries.length > 0 && approverId) {
-      _createVacationNotification_(approverId, currentUser.user_id, pendingEntries);
-    }
 
     // --- AGRESIVNÍ SYNCHRONIZACE REZERVACÍ STOLŮ ---
+    // Stav docházky po uložení se počítá z dat v paměti (allRows po úpravách + nové řádky),
+    // list se nečte podruhé a rezervace se ruší jedním čtením a jedním zápisem.
+    let clearedReservations = [];
     try {
-      SpreadsheetApp.flush(); 
-      const sysDb = DB.getSystem();
-      
       const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
       const deskStatusIds = statuses
         .filter(function(s) { return String(s.allows_desk_reservation).toLowerCase() === 'true'; })
@@ -1271,41 +1336,45 @@ function saveAttendanceEntries(entries) {
         }
       });
 
-      const dbRows = sheet.getDataRange().getValues();
-      const h = dbRows[0];
-      const dbUidIdx = h.indexOf('user_id');
-      const dbDateIdx = h.indexOf('date');
-      const dbStatIdx = h.indexOf('status_id');
-
       // Build Set pro O(1) lookup – místo O(pairs × rows) .some() v cyklu
-      const deskStatusSet = new Set(deskStatusIds);
+      const deskStatusSet = new Set(deskStatusIds.map(String));
       const hasDeskAttendance = new Set();
-      for (let ri = 1; ri < dbRows.length; ri++) {
-        const r = dbRows[ri];
-        if (deskStatusSet.has(String(r[dbStatIdx]))) {
-          hasDeskAttendance.add(r[dbUidIdx] + '_' + _toPfx(r[dbDateIdx], transDB));
+      const addDeskRow = function(r) {
+        if (deskStatusSet.has(String(r[statIdx]))) {
+          hasDeskAttendance.add(r[uidIdx] + '_' + _toPfx(r[dateIdx], transDB));
         }
-      }
+      };
+      allRows.forEach(function(r, ri) { if (!rowsToDelete.has(ri)) addDeskRow(r); });
+      toInsert.forEach(addDeskRow);
 
-      affectedPairs.forEach(function(pair) {
-        const stillNeedsDesk = hasDeskAttendance.has(pair.userId + '_' + pair.date);
-
-        if (!stillNeedsDesk) {
-          Admin.clearUserReservations(pair.userId, pair.date);
-          DB.insertRow(sysDb, DB_SHEETS.SYSTEM.AUDIT_LOG, {
-            timestamp: new Date().toISOString(),
-            user_email: pair.userId,
-            action: "AUTO_CLEAR_RESERVATION",
-            details: "Datum: " + pair.date + " | Statusy nevyžadují stůl."
-          });
-        }
-      });
+      clearedReservations = Admin.clearUserReservationsBatch(affectedPairs.filter(function(pair) {
+        return !hasDeskAttendance.has(pair.userId + '_' + pair.date);
+      }));
     } catch (resErr) {
       console.error("SYNC ERROR: " + resErr.toString());
     }
     // -------------------------------------------------
 
+    // Jediný flush těsně před uvolněním zámku – další zápis už uvidí konzistentní data
+    SpreadsheetApp.flush();
     releaseLockOnce();
+
+    // Audit a notifikace jdou do SYSTEM sešitu – zámek pro ATTENDANCE kvůli nim držet nemusíme
+    _auditLog_("ATTENDANCE_SAVE_BATCH", {
+      input_count: originalInputCount,
+      normalized_input_count: entries.length,
+      updated_count: updatedRows.size,
+      inserted_count: toInsert.length,
+      conflict_deleted_count: rowsToDelete.size
+    }, currentUser);
+    if (clearedReservations.length > 0) {
+      _auditLog_("AUTO_CLEAR_RESERVATION", { count: clearedReservations.length, pairs: clearedReservations.slice(0, 50) }, currentUser);
+    }
+
+    // Vytvořit notifikaci pro schvalovatele
+    if (pendingEntries.length > 0 && approverId) {
+      _createVacationNotification_(approverId, currentUser.user_id, pendingEntries);
+    }
 
     // --- CALENDAR SYNC ---
     try {
@@ -1453,6 +1522,10 @@ function processVacationDecisions(approvedIds, rejectedIds) {
       return "";
     }
 
+    // Řádky se sbírají a zapíšou dvěma dávkovými voláními (místo setValue po buňkách)
+    const approvedRows = [];
+    const rejectedRows = [];
+
     // --- Schválení ---
     for (let i = 1; i < data.length; i++) {
       let aid = data[i][aidIdx];
@@ -1463,7 +1536,7 @@ function processVacationDecisions(approvedIds, rejectedIds) {
         skipped.push({ attendance_id: aid, user_id: uid, decision: "approve", reason: skipReason });
         continue;
       }
-      sheet.getRange(i + 1, apprIdx + 1).setValue(APPROVAL_STATUS.APPROVED);
+      approvedRows.push(i + 1);
       approvedCount++;
       let dateVal = data[i][dateIdx];
       let slot    = data[i][slotIdx] || 'ALL_DAY';
@@ -1485,7 +1558,7 @@ function processVacationDecisions(approvedIds, rejectedIds) {
         skipped.push({ attendance_id: aid2, user_id: uid2, decision: "reject", reason: skipReason2 });
         continue;
       }
-      sheet.getRange(j + 1, apprIdx + 1).setValue(APPROVAL_STATUS.REJECTED);
+      rejectedRows.push(j + 1);
       rejectedCount++;
       let dateVal2 = data[j][dateIdx];
       let slot2    = data[j][slotIdx] || 'ALL_DAY';
@@ -1497,6 +1570,8 @@ function processVacationDecisions(approvedIds, rejectedIds) {
       if (!userRejected[uid2]) userRejected[uid2] = [];
       userRejected[uid2].push(dateStr2);
     }
+    _setCellsValue_(sheet, approvedRows, apprIdx + 1, APPROVAL_STATUS.APPROVED);
+    _setCellsValue_(sheet, rejectedRows, apprIdx + 1, APPROVAL_STATUS.REJECTED);
 
     // --- Jedna souhrnná notifikace per uživatel ---
     let allUids = Object.keys(userApproved).concat(Object.keys(userRejected))
@@ -1579,15 +1654,17 @@ function _markVacationNotifsProcessed_(requesterIds) {
     const typeIdx = h.indexOf('type');
     const rdIdx   = h.indexOf('read');
     const msgIdx  = h.indexOf('message');
+    const rows = [];
     for (let i = 1; i < data.length; i++) {
       if (data[i][typeIdx] !== NOTIFICATION_TYPES.VACATION_APPROVAL_REQUEST) continue;
       try {
         let payload = JSON.parse(data[i][msgIdx]);
         if (requesterIds.indexOf(payload.requester_id) !== -1) {
-          sheet.getRange(i + 1, rdIdx + 1).setValue('true');
+          rows.push(i + 1);
         }
       } catch (pe) { /* JSON parse error, skip */ }
     }
+    _setCellsValue_(sheet, rows, rdIdx + 1, 'true');
   } catch (e) {
     console.warn('_markVacationNotifsProcessed_ error: ' + e.toString());
   }
@@ -1683,43 +1760,44 @@ function clearAttendanceEntries(entries) {
           keys_sample: Array.from(deleteKeys).slice(0, 30)
         }, currentUser);
         
-        // Desk Sync
+        // Desk Sync – zbylé řádky z paměti (data bez smazaných), rezervace dávkově
+        let clearedOnDelete = [];
         try {
-          SpreadsheetApp.flush(); 
           const statuses = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-          const deskStatusIds = statuses
+          const deskStatusSet = new Set(statuses
             .filter(function(s) { return String(s.allows_desk_reservation).toLowerCase() === 'true'; })
-            .map(function(s) { return s.status_id; });
-    
-          const remainingRows = sheet.getDataRange().getValues();
+            .map(function(s) { return String(s.status_id); }));
           const dbUidIdx = h.indexOf('user_id');
           const dbDateIdx = h.indexOf('date');
           const dbStatIdx = h.indexOf('status_id');
-          
+          const deletedRowSet = new Set(rowsToDelete);
+
           const hasDeskMap = new Set();
-          for (let ri = 1; ri < remainingRows.length; ri++) {
-            if (deskStatusIds.indexOf(String(remainingRows[ri][dbStatIdx])) !== -1) {
-              hasDeskMap.add(remainingRows[ri][dbUidIdx] + '_' + _toPfx(remainingRows[ri][dbDateIdx], transSS));
+          for (let ri = 1; ri < data.length; ri++) {
+            if (deletedRowSet.has(ri + 1)) continue;
+            if (deskStatusSet.has(String(data[ri][dbStatIdx]))) {
+              hasDeskMap.add(data[ri][dbUidIdx] + '_' + _toPfx(data[ri][dbDateIdx], transSS));
             }
           }
-    
+
+          const seenPairs = new Set();
+          const pairs = [];
           calSyncDeletes.forEach(function(e) {
-             let k = e.user_id + '_' + e.date;
-             if (!hasDeskMap.has(k)) {
-                Admin.clearUserReservations(e.user_id, e.date);
-                DB.insertRow(DB.getSystem(), DB_SHEETS.SYSTEM.AUDIT_LOG, {
-                  timestamp: new Date().toISOString(),
-                  user_email: e.user_id,
-                  action: "AUTO_CLEAR_RESERVATION_ON_DELETE",
-                  details: "Datum: " + e.date
-                });
-             }
+            const k = e.user_id + '_' + e.date;
+            if (hasDeskMap.has(k) || seenPairs.has(k)) return;
+            seenPairs.add(k);
+            pairs.push({ userId: e.user_id, date: e.date });
           });
+          clearedOnDelete = Admin.clearUserReservationsBatch(pairs);
         } catch (resErr) {
           console.error("SYNC DELETE ERROR: " + resErr.toString());
         }
 
+        SpreadsheetApp.flush();
         releaseLockOnce();
+        if (clearedOnDelete.length > 0) {
+          _auditLog_("AUTO_CLEAR_RESERVATION_ON_DELETE", { count: clearedOnDelete.length, pairs: clearedOnDelete.slice(0, 50) }, currentUser);
+        }
 
         // CalendarSync
         try {
@@ -2035,9 +2113,15 @@ function savePlannerEvent(event) {
        const fixed = { event_id: existing.event_id, user_id: existing.user_id, group_id: existing.group_id };
        const sheet = transSS.getSheetByName(sheetName);
        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-       const row = idx + 2;
        const rowValues = headers.map(h => fixed[h] !== undefined ? fixed[h] : (event[h] || ""));
-       sheet.getRange(row, 1, 1, headers.length).setValues([rowValues]);
+       // Řádek se hledá podle event_id až pod zámkem – jiný request mohl mezitím mazat řádky
+       _withScriptLock_(function() {
+         const idCol = headers.indexOf('event_id') + 1;
+         const ids = sheet.getRange(2, idCol, Math.max(sheet.getLastRow() - 1, 1), 1).getValues();
+         const r = ids.findIndex(x => String(x[0]) === String(existing.event_id));
+         if (r === -1) throw new Error("Událost nenalezena.");
+         sheet.getRange(r + 2, 1, 1, headers.length).setValues([rowValues]);
+       });
     }
     // --- CALENDAR SYNC ---
     try {
@@ -2098,7 +2182,11 @@ function deletePlannerEvent(eventId) {
     }
     // -------------------------------------------------
 
-    transSS.getSheetByName(sheetName).deleteRow(idx + 2);
+    _withScriptLock_(function() {
+      const evSheet = transSS.getSheetByName(sheetName);
+      const idCol = evSheet.getRange(1, 1, 1, evSheet.getLastColumn()).getValues()[0].indexOf('event_id');
+      _deleteRowsWhere_(evSheet, r => String(r[idCol]) === String(eventId));
+    });
     return { success: true };
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -2159,14 +2247,6 @@ function createPlannerGroup(data) {
             pgSheet.getRange(rowNumber, 1, 1, headers.length).setValues([rowValues]);
         }
         
-        // Smazat staré členy, aby se přepsali novými
-        const memSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
-        const mData = memSheet.getDataRange().getValues();
-        for (let i = mData.length - 1; i > 0; i--) {
-            if (String(mData[i][0]) === String(groupId)) {
-                memSheet.deleteRow(i + 1);
-            }
-        }
     } else {
         // Založení nového
         const group = {
@@ -2193,8 +2273,17 @@ function createPlannerGroup(data) {
     // Zpracování členů a explicitně vložit/updatovat zakladatele
     const members = data.members || [];
     const hasOtherAdmin = members.some(m => String(m.user_id) !== String(user.user_id) && (m.permission || '').toString().toUpperCase() === 'ADMIN');
+
+    // Smazání starých členů a vložení nových pod jedním zámkem – souběžná úprava jinak
+    // vytvoří duplicitní členství a pád mezi kroky nechá skupinu bez správce
+    _withScriptLock_(function() {
+    if (isUpdate) {
+      const memSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
+      _deleteRowsWhere_(memSheet, r => String(r[0]) === String(groupId));
+      DB.clearCache(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
+    }
     let callerFoundInList = false;
-    
+
     if (members.length > 0) {
       members.forEach(m => {
         let perm = m.permission || 'VIEW';
@@ -2224,6 +2313,7 @@ function createPlannerGroup(data) {
         permission: 'ADMIN'
       });
     }
+    }, 20000);
 
     return { success: true, group_id: groupId };
   } catch (e) {
@@ -2259,38 +2349,23 @@ function deletePlannerGroup(groupId) {
         }
     }
     
-    // Smazat skupinu
-    const pgSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUPS);
-    const dataGroups = pgSheet.getDataRange().getValues();
-    for (let i = dataGroups.length - 1; i > 0; i--) {
-        if (String(dataGroups[i][0]) === String(groupId)) {
-            pgSheet.deleteRow(i + 1);
-        }
-    }
-    
-    // Smazat členství
-    const memSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
-    const mData = memSheet.getDataRange().getValues();
-    for (let i = mData.length - 1; i > 0; i--) {
-        if (String(mData[i][0]) === String(groupId)) {
-            memSheet.deleteRow(i + 1);
-        }
-    }
-    
-    // Smazat události
-    const evSheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.PLANNER_EVENTS);
-    if (evSheet && evSheet.getLastRow() > 0) {
-      const eData = evSheet.getDataRange().getValues();
-      const h = eData[0];
-      const gIdIdx = h.indexOf("group_id");
-      if (gIdIdx !== -1) {
-        for (let i = eData.length - 1; i > 0; i--) {
-            if (String(eData[i][gIdIdx]) === String(groupId)) {
-                evSheet.deleteRow(i + 1);
-            }
-        }
+    // Smazat skupinu, členství a události – pod zámkem, po blocích odspodu
+    _withScriptLock_(function() {
+      const pgSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUPS);
+      _deleteRowsWhere_(pgSheet, r => String(r[0]) === String(groupId));
+
+      const memSheet = coreSS.getSheetByName(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
+      _deleteRowsWhere_(memSheet, r => String(r[0]) === String(groupId));
+
+      const evSheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.PLANNER_EVENTS);
+      if (evSheet && evSheet.getLastRow() > 0) {
+        const gIdIdx = evSheet.getRange(1, 1, 1, evSheet.getLastColumn()).getValues()[0].indexOf("group_id");
+        if (gIdIdx !== -1) _deleteRowsWhere_(evSheet, r => String(r[gIdIdx]) === String(groupId));
       }
-    }
+    });
+    DB.clearCache(DB_SHEETS.CORE.PLANNER_GROUPS);
+    DB.clearCache(DB_SHEETS.CORE.PLANNER_GROUP_MEMBERS);
+    DB.clearCache(DB_SHEETS.TRANSACTION.PLANNER_EVENTS);
     
     return { success: true };
   } catch (e) {

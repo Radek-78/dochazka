@@ -127,6 +127,11 @@ var Backup = {
    */
   runPostBackupMaintenance_: function() {
     try {
+      _withScriptLock_(() => this._applyLogRetention_(), 30000);
+    } catch (e) {
+      console.error("Backup: Retence logů selhala: " + e.toString());
+    }
+    try {
       const result = this.runDatabaseHeaderRepair();
       console.log("Backup: Servisní oprava hlaviček dokončena: " + JSON.stringify(result));
       return result;
@@ -137,6 +142,45 @@ var Backup = {
       }
       return { success: false, error: e.toString() };
     }
+  },
+
+  /** Retence záznamů v SYSTEM DB (dny). */
+  LOG_RETENTION_DAYS_: { NOTIFICATIONS_READ: 90, AUDIT_LOG: 365 },
+
+  /**
+   * Smaže přečtené notifikace starší 90 dní a záznamy AUDIT_LOG starší 12 měsíců.
+   * Běží po úspěšné noční záloze (data jsou v záloze ještě 7 dní).
+   */
+  _applyLogRetention_: function() {
+    const sys = DB.getSystem();
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const toMs = v => (v instanceof Date) ? v.getTime() : Date.parse(String(v || ''));
+
+    const notif = sys.getSheetByName(DB_SHEETS.SYSTEM.NOTIFICATIONS);
+    if (notif && notif.getLastRow() > 1) {
+      const h = notif.getRange(1, 1, 1, notif.getLastColumn()).getValues()[0];
+      const tsIdx = h.indexOf('timestamp');
+      const rdIdx = h.indexOf('read');
+      if (tsIdx !== -1 && rdIdx !== -1) {
+        const limit = now - this.LOG_RETENTION_DAYS_.NOTIFICATIONS_READ * DAY;
+        // Staré přečtené notifikace jsou roztroušené – nejvýš 200 bloků za noc, zbytek příště
+        const n = _deleteRowsWhere_(notif, r => String(r[rdIdx]) === 'true' && toMs(r[tsIdx]) < limit, 200);
+        if (n > 0) console.log("Backup: Smazáno starých přečtených notifikací: " + n);
+      }
+    }
+
+    const audit = sys.getSheetByName(DB_SHEETS.SYSTEM.AUDIT_LOG);
+    if (audit && audit.getLastRow() > 1) {
+      const tsIdx = audit.getRange(1, 1, 1, audit.getLastColumn()).getValues()[0].indexOf('timestamp');
+      if (tsIdx !== -1) {
+        const limit = now - this.LOG_RETENTION_DAYS_.AUDIT_LOG * DAY;
+        const n = _deleteRowsWhere_(audit, r => toMs(r[tsIdx]) < limit, 200);
+        if (n > 0) console.log("Backup: Smazáno starých záznamů auditu: " + n);
+      }
+    }
+    DB.clearCache(DB_SHEETS.SYSTEM.NOTIFICATIONS);
+    DB.clearCache(DB_SHEETS.SYSTEM.AUDIT_LOG);
   },
 
   /**

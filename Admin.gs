@@ -329,11 +329,24 @@ var Admin = {
     } else {
       // Aktualizace stávající
       const rowNum = rowIndex + 2;
+      // Zapisují se jen změněné buňky (nezměněné by se přepisem mohly převést, např. text '07:30 na čas);
+      // sousední změněné sloupce jedním setValues místo setValue po buňkách
+      let runStart = -1;
+      const runValues = [];
+      const flushRun = function() {
+        if (runStart !== -1) sheet.getRange(rowNum, runStart + 1, 1, runValues.length).setValues([runValues.slice()]);
+        runStart = -1;
+        runValues.length = 0;
+      };
       headers.forEach((header, i) => {
         if (data.hasOwnProperty(header)) {
-          sheet.getRange(rowNum, i + 1).setValue(data[header]);
+          if (runStart === -1) runStart = i;
+          runValues.push(data[header]);
+        } else {
+          flushRun();
         }
       });
+      flushRun();
       // Zápis jde mimo DB.insertRow, takže mezipaměť je nutné zneplatnit ručně
       DB.clearCache(sheetName);
       return { success: true, id: entityId };
@@ -773,9 +786,16 @@ var Admin = {
     return this._writeEntity(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS, 'reservation_id', payload);
   },
 
-  clearUserReservations: function(userId, date) {
-    if (!userId || !date) return;
-    
+
+
+  /**
+   * Zruší (active=false) aktivní rezervace pro dvojice uživatel+den jedním čtením listu
+   * a jedním zápisem (dřív celé čtení listu a flush pro každou dvojici zvlášť).
+   * @param {{userId: string, date: string}[]} pairs
+   * @returns {string[]} klíče "userId_yyyy-MM-dd" skutečně zrušených rezervací
+   */
+  clearUserReservationsBatch: function(pairs) {
+    if (!pairs || pairs.length === 0) return [];
     const coreSS = DB.getCore();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     let activeSS = coreSS;
@@ -783,48 +803,34 @@ var Admin = {
       sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
       activeSS = DB.getTransaction();
     }
-    if (!sheet) return;
+    if (!sheet || sheet.getLastRow() < 2) return [];
 
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const uidIdx = headers.indexOf('user_id');
     const dateIdx = headers.indexOf('date');
     const actIdx = headers.indexOf('active');
+    if (uidIdx === -1 || dateIdx === -1 || actIdx === -1) return [];
 
-    if (uidIdx === -1 || dateIdx === -1 || actIdx === -1) return;
+    const tz = activeSS.getSpreadsheetTimeZone();
+    const toDateStr = d => (d instanceof Date) ? Utilities.formatDate(d, tz, "yyyy-MM-dd") : String(d).substring(0, 10);
+    const wanted = new Set(pairs.map(p => String(p.userId).trim() + '_' + toDateStr(p.date)));
 
-    // Totální normalizace cílového data na YYYY-MM-DD
-    const targetDateStr = (date instanceof Date) 
-      ? Utilities.formatDate(date, activeSS.getSpreadsheetTimeZone(), "yyyy-MM-dd")
-      : String(date).substring(0, 10);
-    
-    const targetUserId = String(userId).trim();
-
-    let changedCount = 0;
+    const rows = [];
+    const cleared = new Set();
     for (let i = 1; i < data.length; i++) {
-      // Normalizace data v aktuálním řádku
-      let rowDate = data[i][dateIdx];
-      let rowDateStr = "";
-      if (rowDate instanceof Date) {
-        rowDateStr = Utilities.formatDate(rowDate, activeSS.getSpreadsheetTimeZone(), "yyyy-MM-dd");
-      } else {
-        rowDateStr = String(rowDate).substring(0, 10);
-      }
-
-      const rowUserId = String(data[i][uidIdx]).trim();
-      const rowActiveRaw = String(data[i][actIdx]).toUpperCase();
-      const isActive = (rowActiveRaw === 'TRUE' || rowActiveRaw === '1');
-
-      if (rowUserId === targetUserId && rowDateStr === targetDateStr && isActive) {
-        // Zápis přímo do buňky jako Boolean FALSE (odškrtne checkbox)
-        sheet.getRange(i + 1, actIdx + 1).setValue(false);
-        changedCount++;
+      const key = String(data[i][uidIdx]).trim() + '_' + toDateStr(data[i][dateIdx]);
+      const activeRaw = String(data[i][actIdx]).toUpperCase();
+      if (wanted.has(key) && (activeRaw === 'TRUE' || activeRaw === '1')) {
+        rows.push(i + 1);
+        cleared.add(key);
       }
     }
-    
-    if (changedCount > 0) SpreadsheetApp.flush();
+    // Boolean FALSE (odškrtne checkbox)
+    _setCellsValue_(sheet, rows, actIdx + 1, false);
+    if (rows.length > 0) DB.clearCache(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+    return Array.from(cleared);
   },
-
 
   deleteMapReservation: function(mapId, userId, date) {
     if (!mapId || !userId || !date) return { success: false, error: 'Chybějí parametry.' };
