@@ -124,6 +124,7 @@ var Admin = {
     } else {
       sheet.getRange(1, 1, 1, data[0].length).setValues(data);
     }
+    DB.clearCache(DB_SHEETS.CORE.MARKETING_WEEKS);
     return { success: true };
   },
 
@@ -484,6 +485,7 @@ var Admin = {
     for (var i = 1; i < data.length; i++) {
       if (data[i][idIdx] === statusId) {
         sheet.deleteRow(i + 1);
+        DB.clearCache(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
         return true;
       }
     }
@@ -626,17 +628,16 @@ var Admin = {
     
     // Hledáme list v CORE i TRANSACTION sešitu (pro jistotu, default je TRANSACTION)
     const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     let ss = coreSS;
     if (!sheet) {
-      sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
-      ss = transSS;
+      sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      ss = DB.getTransaction();
     }
     
     if (!sheet) {
       // Pokud vůbec neexistuje, vytvoříme ho v TRANSACTION
-      sheet = transSS.insertSheet(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      sheet = DB.getTransaction().insertSheet(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
       if (typeof Setup !== 'undefined') Setup.setHeaders(sheet, DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
       return [];
     }
@@ -672,16 +673,15 @@ var Admin = {
 
   _getMapReservationStorage: function() {
     const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     let ss = coreSS;
     if (!sheet) {
-      sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
-      ss = transSS;
+      sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      ss = DB.getTransaction();
     }
     if (!sheet) {
-      sheet = transSS.insertSheet(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
-      ss = transSS;
+      sheet = DB.getTransaction().insertSheet(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      ss = DB.getTransaction();
       if (typeof Setup !== 'undefined') Setup.setHeaders(sheet, DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     }
     return { ss: ss, sheet: sheet };
@@ -777,12 +777,11 @@ var Admin = {
     if (!userId || !date) return;
     
     const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     let activeSS = coreSS;
     if (!sheet) {
-      sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
-      activeSS = transSS;
+      sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      activeSS = DB.getTransaction();
     }
     if (!sheet) return;
 
@@ -832,12 +831,11 @@ var Admin = {
     
     // Hledáme list v CORE i TRANSACTION
     const coreSS = DB.getCore();
-    const transSS = DB.getTransaction();
     let sheet = coreSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
     let ss = coreSS;
     if (!sheet) {
-      sheet = transSS.getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
-      ss = transSS;
+      sheet = DB.getTransaction().getSheetByName(DB_SHEETS.TRANSACTION.MAP_RESERVATIONS);
+      ss = DB.getTransaction();
     }
     
     if (!sheet) return { success: true };
@@ -865,8 +863,11 @@ var Admin = {
       if (!Auth.getCurrentUser()) throw new Error("Neautorizováno.");
       
       const coreSS = DB.getCore();
+      // Běžná cesta jde přes sdílenou cache (getTable) – list se při každém startu nečte
+      let table = DB.getTable(coreSS, DB_SHEETS.CORE.NAMED_DAYS);
+      if (table.length > 0) return Admin._namedDaysFromTable_(table);
+
       let sheet = coreSS.getSheetByName(DB_SHEETS.CORE.NAMED_DAYS);
-      
       // Pokud list neexistuje nebo je prázdný a uživatel je ADMIN, provedeme seedování
       if ((!sheet || sheet.getLastRow() <= 1) && Auth.hasAdminAccess()) {
         if (!sheet) {
@@ -892,28 +893,24 @@ var Admin = {
       if (!sheet || sheet.getLastRow() <= 1) {
         return CalendarData.NAMED_DAYS;
       }
-      
-      const data = sheet.getDataRange().getValues();
-      const headers = data[0];
-      const keyIdx = headers.indexOf('date_key');
-      const nameIdx = headers.indexOf('name');
-      
+
+      DB.clearCache(DB_SHEETS.CORE.NAMED_DAYS); // po seedování načíst znovu
+      return Admin._namedDaysFromTable_(DB.getTable(coreSS, DB_SHEETS.CORE.NAMED_DAYS));
+    },
+
+    /**
+     * Převede řádky listu NAMED_DAYS na mapu MM-DD → jméno.
+     * Klíč, který Sheets převedl na datum, vrací DB.getTable jako ISO řetězec – vezme se z něj MM-DD.
+     * @param {Object[]} table - Výsledek DB.getTable.
+     * @returns {Object<string, string>}
+     */
+    _namedDaysFromTable_: function(table) {
       const res = {};
-      for (let i = 1; i < data.length; i++) {
-        let key = data[i][keyIdx];
-        // Pokud Google Sheets převedl key na Date objekt, musíme jej převést zpět na MM-DD string
-        if (key instanceof Date) {
-          const m = String(key.getMonth() + 1).padStart(2, '0');
-          const d = String(key.getDate()).padStart(2, '0');
-          key = m + "-" + d;
-        } else if (key) {
-          key = String(key).trim();
-        }
-        
-        if (key) {
-          res[key] = data[i][nameIdx] || "";
-        }
-      }
+      table.forEach(function(r) {
+        let key = String(r.date_key || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}T/.test(key)) key = key.substring(5, 10);
+        if (key) res[key] = r.name || "";
+      });
       return res;
     },
 

@@ -1749,9 +1749,6 @@ function clearAttendanceEntries(entries) {
   }
 }
 /**
- * Aktualizuje aktivitu uživatele (heartbeat).
- */
-/**
  * Vrátí ID uživatelů aktivních v posledních 10 minutách, jejichž data smí aktuální uživatel vidět.
  * Stejná pravidla jako dřívější online seznam v getDailyStats.
  * @param {Object[]} allUsers - Tabulka USERS (už načtená v rámci requestu).
@@ -1759,15 +1756,51 @@ function clearAttendanceEntries(entries) {
  */
 function _getOnlineUserIds_(allUsers) {
   const rbacConfig = Admin.getRbacConfig ? Admin.getRbacConfig() : {};
+  const lastActive = _getLastActiveMap_(allUsers);
   const nowMs = Date.now();
   return allUsers.filter(function(u) {
-    if (u.active === 'false' || !u.last_active) return false;
-    const diffMs = nowMs - new Date(u.last_active).getTime();
+    if (u.active === 'false' || !lastActive[u.user_id]) return false;
+    const diffMs = nowMs - new Date(lastActive[u.user_id]).getTime();
     if (!(diffMs > 0 && diffMs / 1000 / 60 < 10)) return false;
     return Auth.canAccessUserData(u, rbacConfig);
   }).map(function(u) { return u.user_id; });
 }
 
+/** Klíč CacheService s časem poslední aktivity uživatele (přesný, každý heartbeat). */
+const LAST_ACTIVE_CACHE_PREFIX_ = 'la_';
+/** Klíč CacheService, který brání častému zápisu last_active do USERS. */
+const LAST_ACTIVE_WRITE_PREFIX_ = 'law_';
+/** Jak dlouho drží cache čas aktivity (sekundy). Online stav potřebuje 10 min, log bere
+ *  starší hodnoty z USERS (zapsané nejvýš před 30 min). Krátké TTL šetří limit script cache. */
+const LAST_ACTIVE_CACHE_TTL_S_ = 30 * 60;
+/** Jak často se last_active zapisuje do listu USERS (sekundy). */
+const LAST_ACTIVE_WRITE_INTERVAL_S_ = 30 * 60;
+
+/**
+ * Vrátí mapu user_id → ISO čas poslední aktivity. Přednost má hodnota z CacheService
+ * (zapisuje se při každém heartbeatu), jinak se použije last_active z USERS
+ * (zapisuje se nejvýš jednou za 30 minut).
+ * @param {Object[]} allUsers - Tabulka USERS.
+ * @returns {Object<string, string>}
+ */
+function _getLastActiveMap_(allUsers) {
+  let cached = {};
+  try {
+    cached = CacheService.getScriptCache().getAll(allUsers.map(function(u) { return LAST_ACTIVE_CACHE_PREFIX_ + u.user_id; }));
+  } catch (e) {
+    console.warn('_getLastActiveMap_: cache nedostupná: ' + e);
+  }
+  const map = {};
+  allUsers.forEach(function(u) {
+    const fromCache = cached[LAST_ACTIVE_CACHE_PREFIX_ + u.user_id];
+    if (fromCache || u.last_active) map[u.user_id] = fromCache || u.last_active;
+  });
+  return map;
+}
+
+/**
+ * Aktualizuje aktivitu uživatele (heartbeat).
+ */
 function updateUserActivity() {
   // Verze se vrací s každým heartbeatem, aby prohlížeč poznal, že běží na starém
   // kódu (načtené HTML se samo neaktualizuje) – nestojí to žádný request navíc.
@@ -1776,26 +1809,48 @@ function updateUserActivity() {
   try {
     const user = Auth.getCurrentUser();
     if (!user) return { success: false, version: deployedVersion };
-    
+
     const coreSS = DB.getCore();
-    const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.USERS);
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const uidIdx = headers.indexOf('user_id');
-    const actIdx = headers.indexOf('last_active');
-    
-    if (uidIdx === -1 || actIdx === -1) return { success: false, version: deployedVersion };
-    
+    const allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS); // už načteno v getCurrentUser
     const now = new Date().toISOString();
-    for (let i = 1; i < data.length; i++) {
-        if (data[i][uidIdx] === user.user_id) {
-            sheet.getRange(i + 1, actIdx + 1).setValue(now);
-            const online = _getOnlineUserIds_(DB.getTable(coreSS, DB_SHEETS.CORE.USERS));
-            if (online.indexOf(user.user_id) === -1) online.push(user.user_id);
-            return { success: true, version: deployedVersion, online: online };
-        }
+    let cache = null;
+    let throttled = false;
+    // Přesný čas aktivity jde do cache; list USERS se zapisuje nejvýš jednou za 30 min
+    try {
+      cache = CacheService.getScriptCache();
+      cache.put(LAST_ACTIVE_CACHE_PREFIX_ + user.user_id, now, LAST_ACTIVE_CACHE_TTL_S_);
+      throttled = !!cache.get(LAST_ACTIVE_WRITE_PREFIX_ + user.user_id);
+    } catch (cacheErr) {
+      // Bez cache zapsat rovnou do USERS, ať online stav i log fungují dál
+      console.warn('updateUserActivity: cache nedostupná: ' + cacheErr);
+      cache = null;
     }
-    return { success: false, version: deployedVersion };
+
+    if (!throttled) {
+      const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.USERS);
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const uidIdx = headers.indexOf('user_id');
+      const actIdx = headers.indexOf('last_active');
+      if (uidIdx === -1 || actIdx === -1) return { success: false, version: deployedVersion };
+
+      // Řádek z už načtené tabulky; ověřit, že na něm opravdu je tento uživatel
+      let row = allUsers.indexOf(user) + 2;
+      if (row < 2 || String(sheet.getRange(row, uidIdx + 1).getValue()) !== String(user.user_id)) {
+        const ids = sheet.getRange(2, uidIdx + 1, Math.max(sheet.getLastRow() - 1, 1), 1).getValues();
+        row = ids.findIndex(function(r) { return String(r[0]) === String(user.user_id); }) + 2;
+      }
+      if (row >= 2) {
+        // Apostrof = uložit jako text (Sheets by ISO řetězec převedl na datum)
+        sheet.getRange(row, actIdx + 1).setValue("'" + now);
+        if (cache) {
+          try { cache.put(LAST_ACTIVE_WRITE_PREFIX_ + user.user_id, '1', LAST_ACTIVE_WRITE_INTERVAL_S_); } catch (e) { /* další heartbeat zapíše znovu */ }
+        }
+      }
+    }
+
+    const online = _getOnlineUserIds_(allUsers);
+    if (online.indexOf(user.user_id) === -1) online.push(user.user_id);
+    return { success: true, version: deployedVersion, online: online };
   } catch (e) {
     return { success: false, error: e.toString(), version: deployedVersion };
   }
@@ -1863,10 +1918,11 @@ function getDailyStats(dateStr) {
       ostatni: []
     };
     
+    const lastActiveMap = _getLastActiveMap_(allUsers);
     activeUsers.forEach(u => {
-      // Online status (last_active v posledních 10 min)
-      if (u.last_active) {
-        const lastActive = new Date(u.last_active);
+      // Online status (last_active v posledních 10 min; čas z cache, USERS se zapisuje řidčeji)
+      if (lastActiveMap[u.user_id]) {
+        const lastActive = new Date(lastActiveMap[u.user_id]);
         // Srovnání ISO řetězců nebo Date objektů - zajistíme robustnost
         const diffMs = now.getTime() - lastActive.getTime();
         if (diffMs > 0 && diffMs / 1000 / 60 < onlineThresholdMinutes) {
@@ -2514,16 +2570,17 @@ function getUserActivityLog(offset) {
     const deptMap = {};
     depts.forEach(function(d) { deptMap[d.department_id] = d.name; });
 
-    // Filtruj uživatele s aktivitou
+    // Filtruj uživatele s aktivitou (čas z cache je přesnější než zápis v USERS)
+    var lastActive = _getLastActiveMap_(allUsers);
     var logEntries = [];
     allUsers.forEach(function(u) {
-      if (!u.last_active) return;
+      if (!lastActive[u.user_id]) return;
       logEntries.push({
           user_id: u.user_id,
           user_name: (u.first_name || '') + ' ' + (u.last_name || ''),
           email: u.email,
           dept_name: deptMap[u.department_id] || u.department_id || '—',
-          last_active: u.last_active
+          last_active: String(lastActive[u.user_id])
       });
     });
 

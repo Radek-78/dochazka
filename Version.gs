@@ -3,9 +3,18 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.22.1";
+const APP_VERSION = "2.22.2";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.22.2",
+    "date": "2026-10-16",
+    "changes": [
+      "Méně zátěže serveru: čas poslední aktivity se drží v mezipaměti a do tabulky uživatelů se zapisuje nejvýš jednou za 30 minut (online stav i log aktivity zůstávají přesné)",
+      "Jmeniny se při startu čtou ze sdílené mezipaměti; změna marketingových kampaní a smazání statusu se projeví hned",
+      "Rezervace stolů otevírají jen sešit, ve kterém data opravdu jsou"
+    ]
+  },
   {
     "version": "2.22.1",
     "date": "2026-10-16",

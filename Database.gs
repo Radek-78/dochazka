@@ -8,8 +8,8 @@ const DB = {
 
   // Listy, které se mění řádově jednou za týdny – drží se ve sdílené mezipaměti
   // mezi requesty, takže je nemusí číst každé volání každého uživatele znovu.
-  // USERS ani transakční listy tu záměrně nejsou: USERS přepisuje heartbeat
-  // každých 5 minut a ATTENDANCE by se do limitu CacheService stejně nevešla.
+  // USERS ani transakční listy tu záměrně nejsou: do USERS zapisuje heartbeat
+  // (last_active, nejvýš jednou za 30 minut) a ATTENDANCE by se do limitu CacheService stejně nevešla.
   // Názvy listů jsou napříč všemi třemi sešity unikátní, takže stačí jako klíč.
   _SHARED_CACHE_SHEETS: {
     LOCATIONS: true, SECTIONS: true, DEPARTMENTS: true, GROUPS: true, POSITIONS: true,
@@ -94,7 +94,8 @@ const DB = {
           delete cache[key];
         }
       });
-      this._sharedCacheRemove(sheetName);
+      // Do CacheService se ukládají jen vybrané listy – u ostatních (AUDIT_LOG…) není co mazat
+      if (this._SHARED_CACHE_SHEETS[sheetName]) this._sharedCacheRemove(sheetName);
     } else {
       this._tableCache = {};
       this._sharedCacheRemove(null);
