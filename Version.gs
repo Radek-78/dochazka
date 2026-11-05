@@ -3,9 +3,19 @@
  * Neprovádějte ruční změny, pokud nevíte, co děláte.
  */
 
-const APP_VERSION = "2.23.1";
+const APP_VERSION = "2.24.0";
 
 const APP_CHANGELOG = [
+  {
+    "version": "2.24.0",
+    "date": "2026-11-05",
+    "changes": [
+      "Nově: sloučení statusů v administraci (jen SUPERADMIN) – analýza bez zápisu, převod uložené docházky na společný status, deaktivace starých statusů a možnost návratu do 30 dní",
+      "Po sloučení se přegenerují události v Google Kalendářích od dneška dál a zruší se rezervace stolů u dnů, které už na stůl nemají nárok",
+      "Otevřené taby se starou stránkou po sloučení ukládají automaticky na nový společný status",
+      "Status, na který odkazují záznamy docházky, už nelze smazat; úprava a mazání statusů jsou chráněné proti souběhu"
+    ]
+  },
   {
     "version": "2.23.1",
     "date": "2026-10-16",

@@ -278,15 +278,16 @@ var CalendarSync = {
    * @param {string} slot       – ALL_DAY | AM | PM
    * @param {string} statusName – název statusu (např. "HomeOffice")
    */
-  syncPersonalEvent: function(userId, dateStr, slot, statusName) {
+  syncPersonalEvent: function(userId, dateStr, slot, statusName, throwOnError) {
     try {
       var user = CalendarSync._getUser(userId);
       if (!user || user.sync_own_attendance !== 'true' || !user.personal_calendar_id) return;
 
       var title = CalendarSync._buildTitle(statusName, slot);
-      CalendarSync._upsertEvent(user.personal_calendar_id, dateStr, slot, title);
+      CalendarSync._upsertEvent(user.personal_calendar_id, dateStr, slot, title, false, throwOnError);
     } catch (e) {
       console.warn('CalendarSync.syncPersonalEvent: ' + e);
+      if (throwOnError) throw e; // jen volající, kteří chtějí chyby počítat (sloučení statusů)
     }
   },
 
@@ -315,11 +316,11 @@ var CalendarSync = {
    * @param {object} statusObj      – { name, is_vacation, abbreviation }
    * @param {string} subordinateName – zobrazované jméno podřízeného
    */
-  syncTeamEvent: function(subordinateId, dateStr, slot, statusObj, subordinateName) {
+  syncTeamEvent: function(subordinateId, dateStr, slot, statusObj, subordinateName, throwOnError) {
     try {
       if (!CalendarSync._isTeamSyncStatus(statusObj)) return;
 
-      var managers = CalendarSync._getManagersOf(subordinateId);
+      var managers = CalendarSync._getManagersOf(subordinateId, throwOnError);
       var coreSS = DB.getCore();
       var statuses = Privacy.ensureFallbackMaskStatus(DB.getTable(coreSS, DB_SHEETS.CORE.ATTENDANCE_STATUSES));
       var positions = DB.getTable(coreSS, DB_SHEETS.CORE.POSITIONS);
@@ -337,10 +338,11 @@ var CalendarSync = {
         }
         var displayName = (displayStatus.abbreviation && displayStatus.abbreviation.toUpperCase() === 'HO') ? displayStatus.abbreviation : displayStatus.name;
         var title = subordinateName + ' – ' + CalendarSync._buildTitle(displayName, slot);
-        CalendarSync._upsertTeamEvent(manager.team_calendar_id, dateStr, slot, subordinateId, title);
+        CalendarSync._upsertTeamEvent(manager.team_calendar_id, dateStr, slot, subordinateId, title, false, throwOnError);
       });
     } catch (e) {
       console.warn('CalendarSync.syncTeamEvent: ' + e);
+      if (throwOnError) throw e;
     }
   },
 
@@ -387,15 +389,16 @@ var CalendarSync = {
   /**
    * Smaže event podřízeného z týmových kalendářů vedoucích.
    */
-  deleteTeamEvent: function(subordinateId, dateStr, slot) {
+  deleteTeamEvent: function(subordinateId, dateStr, slot, throwOnError) {
     try {
-      var managers = CalendarSync._getManagersOf(subordinateId);
+      var managers = CalendarSync._getManagersOf(subordinateId, throwOnError);
       managers.forEach(function(manager) {
         if (!manager.team_calendar_id) return;
-        CalendarSync._deleteTeamSlotEvents(manager.team_calendar_id, dateStr, slot, subordinateId);
+        CalendarSync._deleteTeamSlotEvents(manager.team_calendar_id, dateStr, slot, subordinateId, throwOnError);
       });
     } catch (e) {
       console.warn('CalendarSync.deleteTeamEvent: ' + e);
+      if (throwOnError) throw e;
     }
   },
 
@@ -480,10 +483,10 @@ var CalendarSync = {
    * Vytvoří nebo přepíše event v kalendáři pro daný den a slot.
    * Slot je uložen v extendedProperties.private.dochazka_slot pro přesný výběr.
    */
-  _upsertEvent: function(calendarId, dateStr, slot, title, skipDelete) {
+  _upsertEvent: function(calendarId, dateStr, slot, title, skipDelete, throwOnError) {
     var date = CalendarSync._toDate(dateStr);
     // skipDelete: plnění nově vytvořeného (prázdného) kalendáře – mazat není co
-    if (!skipDelete) CalendarSync._deleteSlotEvents(calendarId, date, slot);
+    if (!skipDelete) CalendarSync._deleteSlotEvents(calendarId, date, slot, throwOnError);
 
     Calendar.Events.insert({
       summary: title,
@@ -500,13 +503,19 @@ var CalendarSync = {
   /**
    * Smaže všechny eventy pro daný den a slot (identifikuje přes extendedProperties).
    */
-  _deleteSlotEvents: function(calendarId, dateStr, slot) {
+  _deleteSlotEvents: function(calendarId, dateStr, slot, throwOnError) {
     try {
       CalendarSync._listDayEvents_(calendarId, CalendarSync._toDate(dateStr), slot).forEach(function(ev) {
-        try { Calendar.Events.remove(calendarId, ev.id); } catch (e) { console.warn('CalendarSync: smazání události selhalo: ' + e); }
+        try {
+          Calendar.Events.remove(calendarId, ev.id);
+        } catch (e) {
+          console.warn('CalendarSync: smazání události selhalo: ' + e);
+          if (throwOnError) throw e;
+        }
       });
     } catch (e) {
       console.warn('CalendarSync._deleteSlotEvents: ' + e);
+      if (throwOnError) throw e;
     }
   },
 
@@ -575,9 +584,9 @@ var CalendarSync = {
   /**
    * Vytvoří nebo přepíše team event identifikovaný kombinací slot + subordinateId.
    */
-  _upsertTeamEvent: function(calendarId, dateStr, slot, subordinateId, title, skipDelete) {
+  _upsertTeamEvent: function(calendarId, dateStr, slot, subordinateId, title, skipDelete, throwOnError) {
     var date = CalendarSync._toDate(dateStr);
-    if (!skipDelete) CalendarSync._deleteTeamSlotEvents(calendarId, date, slot, subordinateId);
+    if (!skipDelete) CalendarSync._deleteTeamSlotEvents(calendarId, date, slot, subordinateId, throwOnError);
 
     Calendar.Events.insert({
       summary: title,
@@ -594,7 +603,7 @@ var CalendarSync = {
     }, calendarId);
   },
 
-  _deleteTeamSlotEvents: function(calendarId, dateStr, slot, subordinateId) {
+  _deleteTeamSlotEvents: function(calendarId, dateStr, slot, subordinateId, throwOnError) {
     try {
       CalendarSync._listDayEvents_(calendarId, CalendarSync._toDate(dateStr), slot)
         .filter(function(ev) {
@@ -603,10 +612,16 @@ var CalendarSync = {
             ev.extendedProperties.private.dochazka_user === subordinateId;
         })
         .forEach(function(ev) {
-          try { Calendar.Events.remove(calendarId, ev.id); } catch (e) { console.warn('CalendarSync: smazání události selhalo: ' + e); }
+          try {
+            Calendar.Events.remove(calendarId, ev.id);
+          } catch (e) {
+            console.warn('CalendarSync: smazání události selhalo: ' + e);
+            if (throwOnError) throw e;
+          }
         });
     } catch (e) {
       console.warn('CalendarSync._deleteTeamSlotEvents: ' + e);
+      if (throwOnError) throw e;
     }
   },
 
@@ -814,7 +829,7 @@ var CalendarSync = {
    * Vrátí seznam aktivních vedoucích, kteří mají přímou nadřízenost nad userId.
    * (Vedoucí stejného oddělení nebo sekce.)
    */
-  _getManagersOf: function(userId) {
+  _getManagersOf: function(userId, throwOnError) {
     try {
       var coreSS = DB.getCore();
       var allUsers = DB.getTable(coreSS, DB_SHEETS.CORE.USERS)
@@ -843,6 +858,7 @@ var CalendarSync = {
       });
     } catch (e) {
       console.warn('CalendarSync._getManagersOf: ' + e);
+      if (throwOnError) throw e;
       return [];
     }
   },

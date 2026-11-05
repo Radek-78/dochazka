@@ -1531,12 +1531,12 @@
                     <td style="text-align:center;">${deskRes ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">${noteFlag ? '<span class="badge-auth-yes">Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</td>
                     <td style="text-align:center;">
-                        <button onclick="admin.toggleStatusWorkTime('${s.status_id}')" title="Kliknutím přepnout" style="background:none; border:none; cursor:pointer; padding:4px;">${s.shows_work_time === 'true' ? '<span class="badge-auth-yes" style="min-width:36px;">⏰ Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</button>
+                        <button ${s.merged_into ? 'disabled' : ''} onclick="admin.toggleStatusWorkTime('${s.status_id}')" title="Kliknutím přepnout" style="background:none; border:none; cursor:pointer; padding:4px;">${s.shows_work_time === 'true' ? '<span class="badge-auth-yes" style="min-width:36px;">⏰ Ano</span>' : '<span style="color:#cbd5e0; font-size:11px;">—</span>'}</button>
                     </td>`}
-                    <td style="text-align:center;"><span class="${isActive ? 'badge-status-active' : 'badge-status-inactive'}">${isActive ? 'Aktivní' : 'Neaktivní'}</span></td>
+                    <td style="text-align:center;"><span class="${isActive ? 'badge-status-active' : 'badge-status-inactive'}">${isActive ? 'Aktivní' : 'Neaktivní'}</span>${s.merged_into ? `<div style="font-size:10px; font-weight:800; color:#92400e; margin-top:3px;">sloučeno do ${escapeHtml(((this.statuses || []).find(t => t.status_id === s.merged_into) || {}).name || '?')}</div>` : ''}</td>
                     <td style="text-align:center;">
-                        <button onclick="admin.showStatusModal('${s.status_id}')" class="btn-icon" title="Upravit">✏️</button>
-                        <button onclick="admin.deleteStatus('${s.status_id}')" class="btn-icon btn-icon-danger" title="Smazat">🗑️</button>
+                        ${s.merged_into ? '' : `<button onclick="admin.showStatusModal('${s.status_id}')" class="btn-icon" title="Upravit">✏️</button>`}
+                        ${((this.mergeState && (this.mergeState.protectedIds || []).indexOf(s.status_id) !== -1) || (s.merged_into && !this._isSuperAdmin())) ? '' : `<button onclick="admin.deleteStatus('${s.status_id}')" class="btn-icon btn-icon-danger" title="Smazat">🗑️</button>`}
                     </td>
                 </tr>`;
                 });
@@ -1545,7 +1545,328 @@
             }
 
             html += `</tbody></table></div></div>`;
+            if (this._isSuperAdmin()) html += `<div id="status-merge-section"></div>`;
             panel.innerHTML = html;
+            if (this._isSuperAdmin()) {
+                this.renderStatusMerge();
+                this.mergeLoadList(false);
+            }
+        },
+
+        // ─── Sloučení statusů (jen SUPERADMIN) ───────────────────────────────
+
+        _isSuperAdmin: function () {
+            return !!(window.plannerData && window.plannerData.user && window.plannerData.user.system_role === 'SUPERADMIN');
+        },
+
+        _mergeState: function () {
+            if (!this.mergeState) {
+                this.mergeState = { targetId: '', sources: {}, analysis: null, ack: false, result: null, list: [], listLoaded: false, protectedIds: [], busy: '', calendar: null, error: '' };
+            }
+            return this.mergeState;
+        },
+
+        mergeLoadList: async function (force) {
+            const st = this._mergeState();
+            if (st.listLoaded && !force) return;
+            st.listLoaded = true;
+            try {
+                const res = await callServer('statusMergeList');
+                if (res && res.success) {
+                    const changed = JSON.stringify(st.protectedIds) !== JSON.stringify(res.protectedStatusIds || []);
+                    st.list = res.merges || [];
+                    st.protectedIds = res.protectedStatusIds || [];
+                    this.renderStatusMerge();
+                    if (changed) this.renderStatuses();
+                } else {
+                    st.error = res ? res.error : 'Neznámá chyba';
+                    this.renderStatusMerge();
+                }
+            } catch (e) {
+                st.error = 'Chyba komunikace: ' + e;
+                this.renderStatusMerge();
+            }
+        },
+
+        mergeSetTarget: function (id) {
+            const st = this._mergeState();
+            st.targetId = id || '';
+            delete st.sources[st.targetId];
+            st.analysis = null; st.ack = false; st.result = null; st.error = '';
+            this.renderStatusMerge();
+        },
+
+        mergeToggleSource: function (id, checked) {
+            const st = this._mergeState();
+            if (checked) st.sources[id] = true; else delete st.sources[id];
+            st.analysis = null; st.ack = false; st.result = null; st.error = '';
+            this.renderStatusMerge();
+        },
+
+        mergeSetAck: function (checked) {
+            this._mergeState().ack = !!checked;
+            this.renderStatusMerge();
+        },
+
+        mergeAnalyze: async function () {
+            const st = this._mergeState();
+            const ids = Object.keys(st.sources);
+            if (st.busy || !st.targetId || ids.length === 0) return;
+            st.busy = 'analyze'; st.error = ''; st.result = null; st.analysis = null; st.ack = false;
+            this.renderStatusMerge();
+            try {
+                const res = await callServer('statusMergeAnalyze', st.targetId, ids);
+                if (res && res.success) st.analysis = res.analysis;
+                else st.error = res ? res.error : 'Neznámá chyba';
+            } catch (e) {
+                st.error = 'Chyba komunikace: ' + e;
+            }
+            st.busy = '';
+            this.renderStatusMerge();
+        },
+
+        mergeExecute: async function () {
+            const st = this._mergeState();
+            const a = st.analysis;
+            if (st.busy || !a) return;
+            if (a.warnings.length > 0 && !st.ack) { showAdminToast('Nejdřív potvrďte zobrazená varování.', 'warn'); return; }
+            const names = a.sources.map(p => p.name).join(', ');
+            if (!confirm('Opravdu sloučit statusy:\n' + names + '\n\ndo statusu "' + a.target.name + '"?\n\nPřevede se ' + a.totals.total + ' záznamů docházky. Vrátit to půjde jen do 30 dní.')) return;
+            const ids = Object.keys(st.sources);
+            st.busy = 'execute'; st.error = ''; st.result = null; st.notice = '';
+            this.renderStatusMerge();
+            let mergeIdForCalendar = '';
+            try {
+                const res = await callServer('statusMergeExecute', st.targetId, ids, a.fingerprint, !!st.ack);
+                if (res && res.mismatch) {
+                    st.analysis = res.analysis; st.ack = false; st.error = res.error;
+                    showAdminToast(res.error, 'warn');
+                } else if (res && res.success) {
+                    st.result = res.result; st.analysis = null; st.sources = {}; st.ack = false;
+                    mergeIdForCalendar = res.result.merge_id;
+                    if ((res.result.warnings || []).length > 0) {
+                        showAdminToast('Sloučení je neúplné, některý krok se nepodařilo dokončit.', 'warn');
+                    } else {
+                        showAdminToast('Statusy byly sloučeny.', 'success');
+                    }
+                } else {
+                    st.error = res ? res.error : 'Neznámá chyba';
+                    if (res && res.result) st.result = res.result;
+                }
+                if (res && (res.success || res.result || res.merge_id)) {
+                    this._loadedAt = 0;
+                    await this.refreshAllData();
+                    this.queueAppRefresh();
+                }
+            } catch (e) {
+                st.error = 'Chyba komunikace: ' + e;
+            }
+            st.busy = '';
+            this.renderStatuses();
+            this.mergeLoadList(true);
+            if (mergeIdForCalendar) await this.mergeResyncCalendars(mergeIdForCalendar);
+        },
+
+        mergeResyncCalendars: async function (mergeId) {
+            const st = this._mergeState();
+            if (st.busy && st.busy !== 'calendar') return;
+            const cal = { mergeId: mergeId, offset: 0, total: null, running: true, done: false, error: '', failed: 0 };
+            st.calendar = cal;
+            st.busy = 'calendar';
+            this.renderStatusMerge();
+            try {
+                while (true) {
+                    const r = await callServer('statusMergeResyncCalendars', mergeId, cal.offset);
+                    if (!r || !r.success) { cal.error = r ? r.error : 'Neznámá chyba'; break; }
+                    cal.offset = r.nextOffset;
+                    cal.total = r.total;
+                    cal.failed += r.failed || 0;
+                    this.renderStatusMerge();
+                    if (r.done) { cal.done = true; break; }
+                    if (!r.processed) { cal.error = 'Dávka nezpracovala žádnou položku.'; break; }
+                }
+            } catch (e) {
+                cal.error = 'Chyba komunikace: ' + e;
+            }
+            cal.running = false;
+            st.busy = '';
+            this.renderStatusMerge();
+        },
+
+        mergeRollback: async function (mergeId) {
+            const st = this._mergeState();
+            if (st.busy || !mergeId) return;
+            const m = (st.list || []).find(x => x.merge_id === mergeId);
+            if (!confirm('Opravdu vrátit sloučení do statusu "' + (m ? m.target_name : '') + '"?\n\nVrátí se jen záznamy, které mají stále převedený status. Zrušené rezervace stolů se nevracejí.')) return;
+            st.busy = 'rollback'; st.error = ''; st.result = null; st.notice = '';
+            this.renderStatusMerge();
+            let ok = false;
+            try {
+                const res = await callServer('statusMergeRollback', mergeId);
+                if (res && res.success) {
+                    ok = true;
+                    st.notice = 'Sloučení vráceno: obnoveno ' + res.restored + ', přeskočeno ' + res.skipped + '. ' + res.reservationsNote;
+                    showAdminToast('Sloučení bylo vráceno.', 'success');
+                    this._loadedAt = 0;
+                    await this.refreshAllData();
+                    this.queueAppRefresh();
+                } else {
+                    st.error = res ? res.error : 'Neznámá chyba';
+                }
+            } catch (e) {
+                st.error = 'Chyba komunikace: ' + e;
+            }
+            st.busy = '';
+            this.renderStatuses();
+            this.mergeLoadList(true);
+            if (ok) await this.mergeResyncCalendars(mergeId);
+        },
+
+        renderStatusMerge: function () {
+            const el = document.getElementById('status-merge-section');
+            if (!el) return;
+            const st = this._mergeState();
+            const busy = !!st.busy;
+            const dis = busy ? 'disabled' : '';
+            // Cíl musí být aktivní; zdroj smí být i neaktivní (může mít staré záznamy), jen nesmí být už sloučený
+            const sourceCandidates = (this.statuses || []).filter(s =>
+                String(s.status_kind || 'NORMAL').toUpperCase() !== 'MASK' && !s.merged_into);
+            const candidates = sourceCandidates.filter(s => s.active !== 'false');
+            const srcIds = Object.keys(st.sources);
+            const a = st.analysis;
+            const num = v => escapeHtml(Number(v) || 0);
+
+            let html = `
+<div class="admin-card" style="padding:0; overflow:hidden; margin-top:16px;">
+    <div style="padding:12px 16px; background:#fff; border-bottom:1px solid #f1f5f9;">
+        <h2 style="margin:0; color:var(--primary); font-size:18px; font-weight:900;">Sloučení statusů</h2>
+        <div style="font-size:11px; color:#64748b; font-weight:700; margin-top:2px;">Jen SUPERADMIN. Nejdřív analýza bez zápisu, po potvrzení převod docházky. Vrátit lze do 30 dní.</div>
+    </div>
+    <div style="padding:14px 16px;">
+        <label style="display:block; font-size:12px; font-weight:900; color:#334155; margin-bottom:4px;">Cílový status</label>
+        <select ${dis} onchange="admin.mergeSetTarget(this.value)" style="padding:8px 10px; border-radius:8px; border:1.5px solid #e2e8f0; min-width:240px;">
+            <option value="">— vyberte —</option>
+            ${candidates.map(s => `<option value="${escapeHtml(s.status_id)}" ${st.targetId === s.status_id ? 'selected' : ''}>${escapeHtml(s.name || s.abbreviation || s.status_id)}</option>`).join('')}
+        </select>
+        <div style="font-size:12px; font-weight:900; color:#334155; margin:12px 0 4px;">Zdrojové statusy (budou sloučeny do cíle a deaktivovány)</div>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            ${sourceCandidates.filter(s => s.status_id !== st.targetId).map(s => `
+            <label style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:8px; border:1.5px solid #e2e8f0; cursor:pointer; font-size:12px; font-weight:800;">
+                <input type="checkbox" data-id="${escapeHtml(s.status_id)}" ${st.sources[s.status_id] ? 'checked' : ''} ${dis} onchange="admin.mergeToggleSource(this.dataset.id, this.checked)">
+                ${escapeHtml(s.name || s.abbreviation || s.status_id)}${s.active === 'false' ? ' (neaktivní)' : ''}
+            </label>`).join('') || '<span style="color:#94a3b8; font-size:12px;">Žádné vhodné statusy.</span>'}
+        </div>
+        <div style="margin-top:14px;">
+            <button ${(busy || !st.targetId || srcIds.length === 0) ? 'disabled' : ''} onclick="admin.mergeAnalyze()" style="padding:8px 16px; border-radius:8px; border:none; background:var(--primary); color:#fff; font-weight:800; cursor:pointer;">${st.busy === 'analyze' ? 'Analyzuji…' : 'Analyzovat'}</button>
+        </div>`;
+
+            if (st.notice) {
+                html += `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:#ecfdf5; border:1px solid #bbf7d0; color:#0f172a; font-size:12px; font-weight:800;">${escapeHtml(st.notice)}</div>`;
+            }
+
+            if (st.error) {
+                html += `<div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:#fee2e2; border:1px solid #f87171; color:#991b1b; font-size:12px; font-weight:800;">${escapeHtml(st.error)}</div>`;
+            }
+
+            if (a) {
+                html += `
+        <div style="margin-top:14px; overflow-x:auto;">
+            <div style="font-size:12px; font-weight:900; color:#334155; margin-bottom:6px;">Analýza → cíl: ${escapeHtml(a.target.name)}</div>
+            <table class="admin-table">
+                <thead><tr>
+                    <th>Zdrojový status</th><th style="text-align:center">Záznamů celkem</th><th style="text-align:center">Budoucích</th>
+                    <th style="text-align:center">Čeká na schválení</th><th style="text-align:center">Zamítnutých</th>
+                    <th style="text-align:center">Rezervace stolů ke zrušení</th><th style="text-align:center">Čekající žádosti</th>
+                </tr></thead>
+                <tbody>
+                ${a.sources.map(p => `<tr>
+                    <td style="font-weight:700;">${escapeHtml(p.name)}</td>
+                    <td style="text-align:center;">${num(p.total)}</td><td style="text-align:center;">${num(p.future)}</td>
+                    <td style="text-align:center;">${num(p.pending)}</td><td style="text-align:center;">${num(p.rejected)}</td>
+                    <td style="text-align:center;">${num(p.reservations)}</td><td style="text-align:center;">${num(p.notifications)}</td>
+                </tr>`).join('')}
+                <tr style="font-weight:900;">
+                    <td>Celkem</td>
+                    <td style="text-align:center;">${num(a.totals.total)}</td><td style="text-align:center;">${num(a.totals.future)}</td>
+                    <td style="text-align:center;">${num(a.totals.pending)}</td><td style="text-align:center;">${num(a.totals.rejected)}</td>
+                    <td style="text-align:center;">${num(a.totals.reservations)}</td><td style="text-align:center;">${num(a.totals.notifications)}</td>
+                </tr>
+                </tbody>
+            </table>
+        </div>`;
+                if ((a.blockers || []).length > 0) {
+                    html += `
+        <div style="margin-top:12px; padding:10px 12px; border-radius:8px; background:#fee2e2; border:1px solid #f87171; color:#991b1b; font-size:12px; font-weight:800;">
+            ${a.blockers.map(b => `<div>${escapeHtml(b)}</div>`).join('')}
+        </div>`;
+                }
+                if (a.warnings.length > 0) {
+                    html += `
+        <div style="margin-top:12px; padding:12px 14px; border-radius:10px; background:#fffbeb; border:1px solid #fde68a; color:#92400e;">
+            <div style="font-size:12px; font-weight:900; margin-bottom:6px;">Varování – statusy se liší</div>
+            <ul style="margin:0 0 8px 18px; padding:0; font-size:11px; font-weight:700; line-height:1.6;">
+                ${a.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+            </ul>
+            <label style="display:flex; align-items:center; gap:8px; font-size:12px; font-weight:900; cursor:pointer;">
+                <input type="checkbox" ${st.ack ? 'checked' : ''} ${dis} onchange="admin.mergeSetAck(this.checked)">
+                Rozumím důsledkům a chci sloučení přesto provést
+            </label>
+        </div>`;
+                }
+                const canRun = !busy && (a.blockers || []).length === 0 && (a.warnings.length === 0 || st.ack);
+                html += `
+        <div style="margin-top:14px;">
+            <button ${canRun ? '' : 'disabled'} onclick="admin.mergeExecute()" style="padding:8px 16px; border-radius:8px; border:none; background:#dc2626; color:#fff; font-weight:800; cursor:pointer; ${canRun ? '' : 'opacity:.5;'}">${st.busy === 'execute' ? 'Probíhá sloučení…' : 'Spustit sloučení'}</button>
+        </div>`;
+            }
+
+            if (st.result) {
+                const r = st.result;
+                const ok = r.remaining === 0;
+                const clean = ok && (r.warnings || []).length === 0;
+                html += `
+        <div style="margin-top:14px; padding:12px 14px; border-radius:10px; background:${clean ? '#ecfdf5' : (ok ? '#fffbeb' : '#fee2e2')}; border:1px solid ${clean ? '#bbf7d0' : (ok ? '#fde68a' : '#f87171')}; font-size:12px; font-weight:800; color:#0f172a;">
+            <div style="font-weight:900; margin-bottom:4px;">Výsledek: očekáváno ${num(r.expected)} / převedeno ${num(r.converted)} / zbývá ${num(r.remaining)}</div>
+            <div>Čekající žádosti převedené na „bez schválení“: ${num(r.pending_converted)} · zrušené rezervace stolů: ${num(r.reservations_cleared)} · upravené žádosti v notifikacích: ${num(r.notifications_updated)}</div>
+            ${(r.warnings || []).map(w => `<div style="color:#92400e; margin-top:4px;">${escapeHtml(w)}</div>`).join('')}
+        </div>`;
+            }
+
+            if (st.calendar) {
+                const c = st.calendar;
+                html += `
+        <div style="margin-top:10px; padding:10px 12px; border-radius:8px; background:#f8fafc; border:1px solid #e2e8f0; font-size:12px; font-weight:800; color:#334155;">
+            Kalendáře (od dneška dál): ${c.running ? 'probíhá… ' : (c.done ? 'hotovo ' : 'přerušeno ')}${num(c.offset)} / ${c.total === null ? '?' : num(c.total)}${c.failed > 0 ? ` · chyb: ${num(c.failed)}` : ''}
+            ${c.error ? `<div style="color:#991b1b; margin-top:4px;">${escapeHtml(c.error)}</div>` : ''}
+            ${!c.running ? `<button ${dis} data-id="${escapeHtml(c.mergeId)}" onclick="admin.mergeResyncCalendars(this.dataset.id)" style="margin-top:6px; padding:5px 12px; border-radius:6px; border:1.5px solid #cbd5e0; background:#fff; font-weight:800; cursor:pointer;">${c.failed > 0 ? 'Zkusit znovu' : 'Přegenerovat kalendáře znovu'}</button>` : ''}
+        </div>`;
+            }
+
+            html += `
+        <div style="margin-top:18px;">
+            <div style="font-size:12px; font-weight:900; color:#334155; margin-bottom:6px;">Proběhlá sloučení</div>`;
+            if ((st.list || []).length === 0) {
+                html += `<div style="color:#94a3b8; font-size:12px;">Žádná sloučení k vrácení.</div>`;
+            } else {
+                html += `<table class="admin-table"><thead><tr><th>Provedeno</th><th>Zdroje</th><th>Cíl</th><th style="text-align:center">Záznamů</th><th style="text-align:center">Zbývá dní</th><th style="text-align:center">Akce</th></tr></thead><tbody>`;
+                st.list.forEach(m => {
+                    html += `<tr>
+                    <td>${escapeHtml(m.merged_at ? new Date(m.merged_at).toLocaleString('cs-CZ') : '')}${m.incomplete ? '<div style="font-size:10px; font-weight:800; color:#991b1b;">nedokončeno – použijte Vrátit</div>' : ''}${m.with_error ? '<div style="font-size:10px; font-weight:800; color:#92400e;">dokončeno s chybou – použijte Vrátit a sloučení zopakujte</div>' : ''}${m.rolled_back ? '<div style="font-size:10px; font-weight:800; color:#64748b;">vráceno</div>' : ''}</td>
+                    <td>${escapeHtml((m.source_names || []).join(', '))}</td>
+                    <td style="font-weight:700;">${escapeHtml(m.target_name)}</td>
+                    <td style="text-align:center;">${num(m.moved)}</td>
+                    <td style="text-align:center;">${num(m.days_left)}</td>
+                    <td style="text-align:center;">${m.can_rollback ? `<button ${dis} data-id="${escapeHtml(m.merge_id)}" onclick="admin.mergeRollback(this.dataset.id)" style="padding:5px 12px; border-radius:6px; border:1.5px solid #cbd5e0; background:#fff; font-weight:800; cursor:pointer;">Vrátit</button>` : '—'}
+                        ${m.incomplete ? '' : `<button ${dis} data-id="${escapeHtml(m.merge_id)}" onclick="admin.mergeResyncCalendars(this.dataset.id)" style="padding:5px 12px; border-radius:6px; border:1.5px solid #cbd5e0; background:#fff; font-weight:800; cursor:pointer; margin-left:4px;">Přegenerovat kalendáře</button>`}</td>
+                </tr>`;
+                });
+                html += `</tbody></table>`;
+            }
+            html += `
+        </div>
+    </div>
+</div>`;
+            el.innerHTML = html;
         },
 
         setStatusView: function (view) {

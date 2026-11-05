@@ -391,7 +391,8 @@ var Admin = {
         'work_time_text_color',
         'status_kind',
         'masked_status_id',
-        'retention_category'
+        'retention_category',
+        'merged_into'
       ];
       required.forEach(function(header) {
         if (headers.indexOf(header) === -1) {
@@ -441,6 +442,15 @@ var Admin = {
    */
   updateAttendanceStatus: function(data) {
     if (!data) data = {};
+    // merged_into spravuje jen sloučení statusů; klient (např. přepínač času příchodu) posílá celý objekt
+    delete data.merged_into;
+    if (data.status_id) {
+      const existing = DB.getTable(DB.getCore(), DB_SHEETS.CORE.ATTENDANCE_STATUSES)
+        .find(function(s) { return Privacy.normalizeStatusId(s.status_id) === Privacy.normalizeStatusId(data.status_id); });
+      if (existing && existing.merged_into) {
+        throw new Error("Sloučený status nelze upravovat. Nejdřív sloučení vraťte v sekci Sloučení statusů.");
+      }
+    }
     data.status_kind = data.status_kind === 'MASK' ? 'MASK' : 'NORMAL';
     if (!data.retention_category) {
       data.retention_category = data.is_vacation === 'true' ? 'YEAR_END' : 'SHORT_TERM';
@@ -481,28 +491,33 @@ var Admin = {
    */
   deleteAttendanceStatus: function(statusId) {
     if (!Auth.hasSystemRole(ROLES.SYSTEM.ADMIN)) throw new Error("Nedostatečná oprávnění. Vyžaduje roli ADMIN.");
-    const coreSS = DB.getCore();
-    const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-    if (!sheet) throw new Error("List ATTENDANCE_STATUSES nenalezen.");
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0];
-    const idIdx = headers.indexOf('status_id');
-    const maskedIdx = headers.indexOf('masked_status_id');
-    if (maskedIdx !== -1) {
-      for (var refI = 1; refI < data.length; refI++) {
-        if (data[refI][maskedIdx] === statusId) {
-          throw new Error("Maskovací status je použitý u jiného statusu. Nejdříve zrušte jeho vazby.");
+    // Kontrola výskytu v ATTENDANCE a smazání pod jedním zámkem (zápisy do ATTENDANCE drží stejný ScriptLock)
+    return _withScriptLock_(function() {
+      const coreSS = DB.getCore();
+      const sheet = coreSS.getSheetByName(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+      if (!sheet) throw new Error("List ATTENDANCE_STATUSES nenalezen.");
+      _statusMergeAssertDeletable_(statusId);
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0];
+      const idIdx = headers.indexOf('status_id');
+      const maskedIdx = headers.indexOf('masked_status_id');
+      if (maskedIdx !== -1) {
+        for (var refI = 1; refI < data.length; refI++) {
+          if (data[refI][maskedIdx] === statusId) {
+            throw new Error("Maskovací status je použitý u jiného statusu. Nejdříve zrušte jeho vazby.");
+          }
         }
       }
-    }
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][idIdx] === statusId) {
-        sheet.deleteRow(i + 1);
-        DB.clearCache(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
-        return true;
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][idIdx] === statusId) {
+          sheet.deleteRow(i + 1);
+          SpreadsheetApp.flush(); // další držitel zámku musí vidět nová čísla řádků
+          DB.clearCache(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+          return true;
+        }
       }
-    }
-    throw new Error("Status nenalezen.");
+      throw new Error("Status nenalezen.");
+    }, 15000);
   },
 
   /**
@@ -1480,7 +1495,11 @@ function getAttendanceStatuses() {
 function updateAttendanceStatus(data) {
   try {
     Auth.requireSystemAdmin_();
-    return Admin.updateAttendanceStatus(data);
+    // Pod zámkem a z čerstvých dat: nesmí se potkat s běžícím sloučením ani jeho výsledek přepsat
+    return _withScriptLock_(function() {
+      DB.clearCache(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+      return Admin.updateAttendanceStatus(data);
+    }, 15000);
   } catch (e) {
     return { success: false, error: e.toString() };
   }

@@ -58,7 +58,7 @@ var Backup = {
   /** Složka s exporty logu docházky (Code.gs exportAttendanceLogToSheet). */
   EXPORT_FOLDER_NAME_: "Exporty Docházky",
   /** Retence ve dnech podle typu souboru. */
-  RETENTION_DAYS_: { BACKUP: 7, PURGE_BACKUP: 30, EXPORT: 30 },
+  RETENTION_DAYS_: { BACKUP: 7, PURGE_BACKUP: 30, STATUS_MERGE: 30, EXPORT: 30 },
 
   /**
    * Najde (nebo založí) složku záloh vedle souboru fileId. Pokud ještě existuje
@@ -100,7 +100,8 @@ var Backup = {
       const bFile = backupFiles.next();
       const name = bFile.getName();
       const days = name.indexOf('[PURGE_BACKUP ') === 0 ? this.RETENTION_DAYS_.PURGE_BACKUP
-        : (name.indexOf('[BACKUP ') === 0 ? this.RETENTION_DAYS_.BACKUP : null);
+        : (name.indexOf('[STATUS_MERGE ') === 0 ? this.RETENTION_DAYS_.STATUS_MERGE
+        : (name.indexOf('[BACKUP ') === 0 ? this.RETENTION_DAYS_.BACKUP : null));
       if (days !== null && olderThan(bFile, days)) {
         console.log(`Backup: Mažu starou zálohu: ${name}`);
         bFile.setTrashed(true);
@@ -179,8 +180,23 @@ var Backup = {
         if (n > 0) console.log("Backup: Smazáno starých záznamů auditu: " + n);
       }
     }
+    // Záznamy změn sloučení statusů se po 30 dnech mažou (návrat už není dostupný)
+    const mergeLog = sys.getSheetByName(DB_SHEETS.SYSTEM.STATUS_MERGE_LOG);
+    if (mergeLog && mergeLog.getLastRow() > 1) {
+      const mH = mergeLog.getRange(1, 1, 1, mergeLog.getLastColumn()).getValues()[0];
+      const mTsIdx = mH.indexOf('merged_at');
+      if (mTsIdx !== -1) {
+        const limit = now - this.RETENTION_DAYS_.STATUS_MERGE * DAY;
+        const n = _deleteRowsWhere_(mergeLog, r => toMs(r[mTsIdx]) < limit, 200);
+        if (n > 0) {
+          console.log("Backup: Smazáno starých záznamů sloučení statusů: " + n);
+          _auditLog_("STATUS_MERGE_LOG_EXPIRED", { deleted_rows: n }, { email: "SYSTEM_BACKUP" });
+        }
+      }
+    }
     DB.clearCache(DB_SHEETS.SYSTEM.NOTIFICATIONS);
     DB.clearCache(DB_SHEETS.SYSTEM.AUDIT_LOG);
+    DB.clearCache(DB_SHEETS.SYSTEM.STATUS_MERGE_LOG);
   },
 
   /**
@@ -326,6 +342,20 @@ var Backup = {
     const copy = file.makeCopy(`[PURGE_BACKUP ${dateStr}] ${file.getName()}`, backupFolder);
     console.log("Backup: Purge záloha vytvořena: " + copy.getId());
     return copy.getId();
+  },
+
+  /**
+   * Záloha TRANSACTION spreadsheetu před sloučením statusů ([STATUS_MERGE ...], retence 30 dní).
+   * Při chybě vyhazuje výjimku – sloučení se pak nespustí.
+   * @returns {string} ID záložního souboru.
+   */
+  createStatusMergeBackup: function() {
+    const transId = PropertiesService.getScriptProperties().getProperty(CONFIG.PROP_SS_TRANSACTION_ID);
+    if (!transId) throw new Error("TRANSACTION spreadsheet není nakonfigurován.");
+    const backupFolder = this._getBackupFolder_(transId);
+    const dateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd_HH-mm");
+    const file = DriveApp.getFileById(transId);
+    return file.makeCopy(`[STATUS_MERGE ${dateStr}] ${file.getName()}`, backupFolder).getId();
   }
 };
 

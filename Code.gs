@@ -1126,10 +1126,32 @@ function saveAttendanceEntries(entries) {
     allUsers.forEach(function(u) { userMap[u.user_id] = u; });
     const statusMap = {};
     allStatuses.forEach(function(s) { statusMap[Privacy.normalizeStatusId(s.status_id)] = s; });
+    // Sdílená mezipaměť statusů může být až 2 minuty stará (po sloučení nebo jeho vrácení). Pro překlad
+    // sloučených statusů se merged_into čte přímo z listu pod zámkem, jedním čtením malého listu.
+    const statusSheetFresh = coreDbForAppr.getSheetByName(DB_SHEETS.CORE.ATTENDANCE_STATUSES);
+    if (statusSheetFresh && statusSheetFresh.getLastRow() > 1) {
+      const stFresh = statusSheetFresh.getDataRange().getValues();
+      const stIdCol = stFresh[0].indexOf('status_id');
+      const stMergedCol = stFresh[0].indexOf('merged_into');
+      if (stIdCol !== -1 && stMergedCol !== -1) {
+        for (let si = 1; si < stFresh.length; si++) {
+          const freshSt = statusMap[Privacy.normalizeStatusId(stFresh[si][stIdCol])];
+          if (freshSt) freshSt.merged_into = String(stFresh[si][stMergedCol] || '');
+        }
+      }
+    }
 
     function _getWritableStatusId(statusId) {
       const normalizedStatusId = Privacy.normalizeStatusId(statusId);
-      const st = statusMap[normalizedStatusId] || null;
+      let st = statusMap[normalizedStatusId] || null;
+      // Sloučený status: otevřený tab může ještě posílat starý status_id, přeloží se na cílový
+      const visitedIds = {};
+      while (st && st.merged_into && !visitedIds[Privacy.normalizeStatusId(st.status_id)]) {
+        visitedIds[Privacy.normalizeStatusId(st.status_id)] = true;
+        const target = statusMap[Privacy.normalizeStatusId(st.merged_into)];
+        if (!target) break;
+        st = target;
+      }
       if (!st) {
         throw new Error("Neznámý docházkový status: " + statusId);
       }
